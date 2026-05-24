@@ -17,6 +17,7 @@ namespace QuickCutscene
         internal static ConfigEntry<InputControlType> ConfigSkipButton = null!;
         internal static ConfigEntry<bool> ConfigDebugPrint = null!;
         internal static bool IsSkippable;
+        internal static Hab3DController? PendingUnityEventController;
 
         private static bool IsControllerActive =>
             LynxControls.Instance != null &&
@@ -30,6 +31,19 @@ namespace QuickCutscene
         }
 
         private GUIStyle? _hintStyle;
+
+        private void Update()
+        {
+            if (PendingUnityEventController == null || !IsSkippable || !ShouldSkip()) return;
+
+            var t = Traverse.Create(PendingUnityEventController);
+            if (ConfigDebugPrint.Value)
+                Log.LogInfo("QuickCutscene: [Plugin.Update] skipping UnityEvent scene");
+            t.Field("mPendingEndScenePAT").SetValue(false);
+            t.Field("mWaitTimeForFade").SetValue(float.MaxValue);
+            PendingUnityEventController = null;
+            IsSkippable = false;
+        }
 
         private void Awake()
         {

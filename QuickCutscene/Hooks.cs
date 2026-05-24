@@ -62,9 +62,35 @@ namespace QuickCutscene
             }
         }
 
+        // Postfix on TryStartAfterShiftSequence — fires once when a scene begins.
+        // For UnityEvent scenes, mPendingEndScenePAT is set to true here, which blocks Update()
+        // from reaching ProcessAutomationControls. We set IsSkippable directly so the hint appears.
+        // ProcessAutomationControls clears IsSkippable naturally once the scene ends (currentData→null).
+        [HarmonyPatch(typeof(Hab3DController), "TryStartAfterShiftSequence")]
+        public class Hab3DController_TryStartAfterShiftSequence
+        {
+            public static void Postfix(Hab3DController __instance)
+            {
+                var t           = Traverse.Create(__instance);
+                var currentData = t.Field("mCurrentAfterShiftData").GetValue<HabAfterShiftAsset>();
+                bool pending    = t.Field("mPendingEndScenePAT").GetValue<bool>();
+
+                if (Plugin.ConfigDebugPrint.Value)
+                    Plugin.Log.LogInfo($"QuickCutscene: [TryStart Postfix] scene={currentData?.name} type={currentData?.SceneType} pending={pending}");
+
+                if (pending && currentData?.SceneType == HabAfterShiftAsset.AfterShiftSceneType.UnityEvent)
+                {
+                    Plugin.IsSkippable = true;
+                    Plugin.PendingUnityEventController = __instance;
+                }
+            }
+        }
+
         [HarmonyPatch(typeof(Hab3DController), "ProcessAutomationControls")]
         public class Hab3DController_ProcessAutomationControls
         {
+            private static int s_logThrottle;
+
             public static void Postfix(Hab3DController __instance)
             {
                 var t = Traverse.Create(__instance);
@@ -74,6 +100,9 @@ namespace QuickCutscene
                 var  currentData    = t.Field("mCurrentAfterShiftData").GetValue<HabAfterShiftAsset>();
 
                 Plugin.IsSkippable = isInAfterShift && currentData != null && !hasFinished;
+
+                if (Plugin.ConfigDebugPrint.Value && isInAfterShift && ++s_logThrottle % 60 == 0)
+                    Plugin.Log.LogInfo($"QuickCutscene: [PAC Postfix] scene={currentData?.name} type={currentData?.SceneType} hasFinished={hasFinished} IsSkippable={Plugin.IsSkippable}");
 
                 if (!Plugin.IsSkippable || !Plugin.ShouldSkip())
                     return;
