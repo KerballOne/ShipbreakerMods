@@ -6,8 +6,15 @@ Skipping does **not** break story progression. Completion markers are posted nor
 
 ## What gets skipped
 
-- After-shift story sequences (videos, speech, scripted events) that play in the hab at specific story beats
-- The four Player Action Tracker (PAT) gated morning sequences: data drive discovery, Calysia anti-union, Rhodes arrives, and Lynx union clampdown
+All after-shift story sequences that play in the hab, across three scene types the game uses:
+
+| Scene type | Examples |
+|---|---|
+| **Speech** | Lou's intro, Calysia anti-union message |
+| **Video / Timeline** | Rhoades arrives, Lynx union clampdown |
+| **Scripted event** | DeeDee's evening call |
+
+The morning greeting sequence (data drive discovery and similar PAT-gated wake-ups) is also skippable.
 
 ## Controls
 

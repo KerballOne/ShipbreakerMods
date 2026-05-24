@@ -106,6 +106,6 @@ namespace QuickCutscene
     {
         public const string PLUGIN_GUID    = "me.kerballone.QuickCutscene";
         public const string PLUGIN_NAME    = "QuickCutscene";
-        public const string PLUGIN_VERSION = "1.1.0";
+        public const string PLUGIN_VERSION = "1.1.1";
     }
 }
