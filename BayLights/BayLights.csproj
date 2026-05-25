@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>me.kerballone.BayLights</AssemblyName>
+    <RootNamespace>BayLights</RootNamespace>
+    <Version>1.0.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <GameDir>C:\Program Files (x86)\Steam\steamapps\common\Hardspace Shipbreaker</GameDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx"
+               HintPath="$(GameDir)\BepInEx\core\BepInEx.dll"
+               Private="false" />
+    <Reference Include="UnityEngine"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.CoreModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.CoreModule.dll"
+               Private="false" />
+    <Reference Include="Unity.RenderPipelines.Core.Runtime"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.RenderPipelines.Core.Runtime.dll"
+               Private="false" />
+    <Reference Include="Unity.RenderPipelines.HighDefinition.Runtime"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.RenderPipelines.HighDefinition.Runtime.dll"
+               Private="false" />
+  </ItemGroup>
+
+  <Target Name="DeployToBepInEx" AfterTargets="Build">
+    <MakeDir Directories="$(GameDir)\BepInEx\plugins\BayLights\" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
+          DestinationFolder="$(GameDir)\BepInEx\plugins\BayLights\" />
+  </Target>
+</Project>
