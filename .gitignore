@@ -2,5 +2,6 @@ bin/
 obj/
 dist/
 *.user
+.vs/
 .vscode/
 .claude/
