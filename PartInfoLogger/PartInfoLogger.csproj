@@ -38,6 +38,12 @@
     <Reference Include="Carbon.Localization.Core"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Localization.Core.dll"
                Private="false" />
+    <Reference Include="Carbon.Core"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Core.dll"
+               Private="false" />
+    <Reference Include="Unity.Addressables"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Addressables.dll"
+               Private="false" />
   </ItemGroup>
 
   <Target Name="DeployToBepInEx" AfterTargets="Build">
