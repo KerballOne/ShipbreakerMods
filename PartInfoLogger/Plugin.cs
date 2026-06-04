@@ -51,16 +51,39 @@ namespace PartInfoLogger
                 {
                     EventDump.InGameplay = true;
                     Instance.StartCoroutine(EventDump.DumpShipComponentsDelayed());
+                    Instance.StartCoroutine(FlushJsaDelayed());
                 }
                 else
                 {
                     EventDump.InGameplay = false;
                 }
             });
+
+            // Try dumping JSA table immediately via reflection on any loaded JointabilityAsset
+            Instance.StartCoroutine(TryDumpJsaFromResources());
         }
 
         private void OnApplicationQuit() { State.Flush(force: true); JsaCompatState.Flush(); }
         private void OnDestroy()         { State.Flush(force: true); JsaCompatState.Flush(); }
+
+        static IEnumerator TryDumpJsaFromResources()
+        {
+            // Wait a few frames for addressables to load assets
+            yield return new WaitForSeconds(2f);
+            var jsaType = AccessTools.TypeByName("BBI.Unity.Game.JointabilityAsset");
+            if (jsaType == null) { Plugin.Log.LogWarning("[JsaCompat] JointabilityAsset type not found for resource scan"); yield break; }
+            var all = Resources.FindObjectsOfTypeAll(jsaType);
+            Plugin.Log.LogInfo($"[JsaCompat] Found {all.Length} JointabilityAsset instance(s) via Resources");
+            foreach (var obj in all)
+                JsaCompatState.TryDumpFull(obj);
+        }
+
+        static IEnumerator FlushJsaDelayed()
+        {
+            yield return new WaitForSeconds(5f);
+            Plugin.Log.LogInfo($"[JsaCompat] Delayed flush triggered, pairs so far: {JsaCompatState.PairCount}");
+            JsaCompatState.Flush();
+        }
     }
 
     // ── Existing patches ─────────────────────────────────────────────────────
@@ -107,7 +130,7 @@ namespace PartInfoLogger
                 }
             }
             if (root == null || string.IsNullOrEmpty(guid)) return;
-            if (State.AlreadyCaptured(guid!)) return;
+            if (State.AlreadyCaptured(guid!) && State.HasJsaName(guid!)) return;
 
             string? displayName = null;
             var rootSP = root.GetComponent<StructurePart>() ?? __instance;
@@ -147,7 +170,15 @@ namespace PartInfoLogger
                 volume = (float)Math.Round(x * y * z, 3);
             }
 
-            State.Upsert(guid!, rootName, displayName, dims, volume, mass);
+            // Capture JSA name from any StructurePart in this prefab's hierarchy
+            string? jsaName = null;
+            foreach (var sp in root.GetComponentsInChildren<StructurePart>(true))
+            {
+                var jsa = sp.StructurePartAsset?.Data?.JointSetupAsset;
+                if (jsa != null) { jsaName = jsa.name; break; }
+            }
+
+            State.Upsert(guid!, rootName, displayName, dims, volume, mass, jsaName);
         }
     }
 
@@ -379,31 +410,20 @@ namespace PartInfoLogger
         static MethodBase TargetMethod()
         {
             var t = AccessTools.TypeByName("BBI.Unity.Game.JointabilityAsset");
-            if (t == null) return null!;
-            return AccessTools.Method(t, "CanJoint");
+            if (t == null) { Plugin.Log.LogWarning("[JsaCompat] BBI.Unity.Game.JointabilityAsset type not found!"); return null!; }
+            var m = AccessTools.Method(t, "CanJoint");
+            if (m == null) { Plugin.Log.LogWarning("[JsaCompat] JointabilityAsset.CanJoint method not found!"); return null!; }
+            Plugin.Log.LogInfo($"[JsaCompat] Patching {t.FullName}.{m.Name}");
+            return m;
         }
 
-        static void Postfix(object __instance, object jsa1, object jsa2, bool __result)
+        static void Postfix(object __instance, object[] __args, bool __result)
         {
+            var jsa1 = __args?.Length > 0 ? __args[0] : null;
+            var jsa2 = __args?.Length > 1 ? __args[1] : null;
+            if (JsaCompatState.PairCount == 0)
+                Plugin.Log.LogInfo($"[JsaCompat] First CanJoint call: {jsa1?.GetType().Name ?? "null"} vs {jsa2?.GetType().Name ?? "null"} = {__result}");
             JsaCompatState.Record(jsa1, jsa2, __result);
-        }
-    }
-
-    // Also try to dump the full pairing table via reflection when the asset first loads.
-    [HarmonyPatch]
-    static class Patch_JointabilityAsset_Awake
-    {
-        static MethodBase TargetMethod()
-        {
-            var t = AccessTools.TypeByName("BBI.Unity.Game.JointabilityAsset");
-            if (t == null) return null!;
-            // MonoBehaviour.Awake or OnEnable — try both
-            return AccessTools.Method(t, "Awake") ?? AccessTools.Method(t, "OnEnable");
-        }
-
-        static void Postfix(object __instance)
-        {
-            JsaCompatState.TryDumpFull(__instance);
         }
     }
 
@@ -411,6 +431,7 @@ namespace PartInfoLogger
     {
         // (sortedName1, sortedName2) -> compatible
         static readonly Dictionary<(string, string), bool> _pairs = new();
+        public static int PairCount => _pairs.Count;
         static bool _fullDumped = false;
         static int _newSinceFlush = 0;
         const int FlushEvery = 50;
@@ -577,6 +598,7 @@ namespace PartInfoLogger
         }
 
         internal static bool AlreadyCaptured(string guid) => _data.ContainsKey(guid);
+        internal static bool HasJsaName(string guid) => _data.TryGetValue(guid, out var e) && !string.IsNullOrEmpty(e.JsaName);
 
         internal static void TrySetMass(string guid, float mass)
         {
@@ -596,7 +618,7 @@ namespace PartInfoLogger
             return g;
         }
 
-        internal static void Upsert(string guid, string partName, string? displayName, float[]? dims, float volume, float mass)
+        internal static void Upsert(string guid, string partName, string? displayName, float[]? dims, float volume, float mass, string? jsaName = null)
         {
             if (!_data.TryGetValue(guid, out var entry))
                 entry = new PartData();
@@ -605,6 +627,7 @@ namespace PartInfoLogger
             if (!string.IsNullOrEmpty(displayName)) entry.DisplayName = displayName!;
             if (dims != null) { entry.Dims = dims; entry.Volume = volume; }
             if (mass > 0f) entry.Mass = mass;
+            if (!string.IsNullOrEmpty(jsaName)) entry.JsaName = jsaName!;
 
             _data[guid] = entry;
             if (++_newSinceFlush >= FlushEvery)
@@ -647,6 +670,8 @@ namespace PartInfoLogger
         [JsonProperty("dims")]        public float[] Dims        = null!;
         [JsonProperty("volume")]      public float   Volume;
         [JsonProperty("mass")]        public float   Mass;
+        [JsonProperty("jsaName", NullValueHandling = NullValueHandling.Ignore)]
+                                      public string? JsaName;
     }
 
     public static class PluginInfo
