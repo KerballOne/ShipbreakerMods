@@ -44,6 +44,7 @@ namespace PartInfoLogger
                 if (ev.GameState == GameSession.GameState.Gameplay)
                 {
                     Instance.StartCoroutine(FlushJsaDelayed());
+                    Instance.StartCoroutine(TryDumpJsaOnGameplay());
                 }
             });
 
@@ -61,7 +62,18 @@ namespace PartInfoLogger
             var jsaType = AccessTools.TypeByName("BBI.Unity.Game.JointabilityAsset");
             if (jsaType == null) { Plugin.Log.LogWarning("[JsaCompat] JointabilityAsset type not found for resource scan"); yield break; }
             var all = Resources.FindObjectsOfTypeAll(jsaType);
-            Plugin.Log.LogInfo($"[JsaCompat] Found {all.Length} JointabilityAsset instance(s) via Resources");
+            Plugin.Log.LogInfo($"[JsaCompat] Found {all.Length} JointabilityAsset instance(s) via Resources at t=2s");
+            foreach (var obj in all)
+                JsaCompatState.TryDumpFull(obj);
+        }
+
+        internal static IEnumerator TryDumpJsaOnGameplay()
+        {
+            yield return new WaitForSeconds(1f);
+            var jsaType = AccessTools.TypeByName("BBI.Unity.Game.JointabilityAsset");
+            if (jsaType == null) { Plugin.Log.LogWarning("[JsaCompat] JointabilityAsset type not found for gameplay scan"); yield break; }
+            var all = Resources.FindObjectsOfTypeAll(jsaType);
+            Plugin.Log.LogInfo($"[JsaCompat] Found {all.Length} JointabilityAsset instance(s) via Resources at gameplay+1s");
             foreach (var obj in all)
                 JsaCompatState.TryDumpFull(obj);
         }
@@ -166,7 +178,51 @@ namespace PartInfoLogger
                 if (jsa != null) { jsaName = jsa.name; break; }
             }
 
+            // Log SP and BP asset names to confirm whether ACL has fired by the time Start() runs
+            var spAsset = __instance.StructurePartAsset;
+            var bpComp = go.GetComponent<EntityBlueprintComponent>();
+            var bpAsset = bpComp != null ? (UnityEngine.Object)AccessTools.Field(typeof(EntityBlueprintComponent), "m_BlueprintAsset")?.GetValue(bpComp) : null;
+            Plugin.Log.LogInfo($"[SP.Start] {go.name}: SP={spAsset?.name ?? "null"} BP={bpAsset?.name ?? "null"}");
+
             State.Upsert(guid!, rootName, displayName, dims, volume, mass, jsaName);
+        }
+    }
+
+    // ── Cryo flag diagnostic ──────────────────────────────────────────────────
+
+    [HarmonyPatch]
+    static class Patch_MachinePartAsset_SetComponentData
+    {
+        static MethodBase TargetMethod()
+        {
+            var t = AccessTools.TypeByName("BBI.Unity.Game.MachinePartAsset");
+            if (t == null) { Plugin.Log.LogWarning("[CryoFlags] MachinePartAsset type not found"); return null!; }
+            var m = AccessTools.Method(t, "SetComponentData");
+            if (m == null) { Plugin.Log.LogWarning("[CryoFlags] SetComponentData not found"); return null!; }
+            Plugin.Log.LogInfo($"[CryoFlags] Patching {t.FullName}.{m.Name}");
+            return m;
+        }
+
+        static void Postfix(object __instance)
+        {
+            try
+            {
+                var assetType = __instance.GetType();
+                var dataField = assetType.GetField("Data", BindingFlags.Public | BindingFlags.Instance);
+                if (dataField == null) return;
+                var data = dataField.GetValue(__instance);
+                if (data == null) return;
+                var dataType = data.GetType();
+                var cryoProp = dataType.GetProperty("CryoControl", BindingFlags.Public | BindingFlags.Instance);
+                if (cryoProp == null) return;
+                var cryoVal = (int)cryoProp.GetValue(data);
+                var name = (__instance as UnityEngine.Object)?.name ?? "?";
+                Plugin.Log.LogInfo($"[CryoFlags] {name}: CryoControl={cryoVal} " +
+                    $"(AllowsFlow={(cryoVal & 1) != 0}, ReceivesGlobally={(cryoVal & 2) != 0}, " +
+                    $"ReceivesLocally={(cryoVal & 4) != 0}, SourcesGlobally={(cryoVal & 8) != 0}, " +
+                    $"SourcesLocally={(cryoVal & 0x10) != 0})");
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning($"[CryoFlags] ex: {ex.Message}"); }
         }
     }
 
