@@ -45,6 +45,7 @@ namespace PartInfoLogger
                 {
                     Instance.StartCoroutine(FlushJsaDelayed());
                     Instance.StartCoroutine(TryDumpJsaOnGameplay());
+                    Instance.StartCoroutine(TryDumpAllSpAssets());
                 }
             });
 
@@ -76,6 +77,40 @@ namespace PartInfoLogger
             Plugin.Log.LogInfo($"[JsaCompat] Found {all.Length} JointabilityAsset instance(s) via Resources at gameplay+1s");
             foreach (var obj in all)
                 JsaCompatState.TryDumpFull(obj);
+        }
+
+        // Dump sp_jsa_map.json: StructurePartAsset name → JSA name for every loaded SP asset
+        internal static IEnumerator TryDumpAllSpAssets()
+        {
+            yield return new WaitForSeconds(1f);
+            var all = Resources.FindObjectsOfTypeAll<StructurePartAsset>();
+            Plugin.Log.LogInfo($"[SpJsa] Found {all.Length} StructurePartAsset instance(s) at gameplay+1s");
+            var map = new Dictionary<string, string>();
+            foreach (var spa in all)
+            {
+                if (spa == null) continue;
+                var jsa = spa.Data?.JointSetupAsset;
+                if (jsa == null) continue;
+                map[spa.name] = jsa.name;
+            }
+            Plugin.Log.LogInfo($"[SpJsa] {map.Count} SP→JSA mappings found");
+            if (map.Count == 0) yield break;
+            try
+            {
+                var outDir = Path.GetDirectoryName(Plugin.OutputPath.Value)!;
+                var path = Path.Combine(outDir, "sp_jsa_map.json");
+                // Merge with existing file so entries accumulate across sessions
+                Dictionary<string, string> existing = new();
+                if (File.Exists(path))
+                {
+                    try { existing = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(path)) ?? new(); }
+                    catch { }
+                }
+                foreach (var kv in map) existing[kv.Key] = kv.Value;
+                File.WriteAllText(path, JsonConvert.SerializeObject(existing, Formatting.Indented));
+                Plugin.Log.LogInfo($"[SpJsa] Wrote {existing.Count} entries to {path}");
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning($"[SpJsa] Write error: {ex.Message}"); }
         }
 
         static IEnumerator FlushJsaDelayed()
@@ -170,12 +205,14 @@ namespace PartInfoLogger
                 volume = (float)Math.Round(x * y * z, 3);
             }
 
-            // Capture JSA name from any StructurePart in this prefab's hierarchy
+            // Capture JSA name and SP asset name from any StructurePart in this prefab's hierarchy
             string? jsaName = null;
+            string? spMatName = null;
             foreach (var sp in root.GetComponentsInChildren<StructurePart>(true))
             {
-                var jsa = sp.StructurePartAsset?.Data?.JointSetupAsset;
-                if (jsa != null) { jsaName = jsa.name; break; }
+                var spa = sp.StructurePartAsset;
+                var jsa = spa?.Data?.JointSetupAsset;
+                if (jsa != null) { jsaName = jsa.name; spMatName = spa!.name; break; }
             }
 
             // Log SP and BP asset names to confirm whether ACL has fired by the time Start() runs
@@ -184,7 +221,7 @@ namespace PartInfoLogger
             var bpAsset = bpComp != null ? (UnityEngine.Object)AccessTools.Field(typeof(EntityBlueprintComponent), "m_BlueprintAsset")?.GetValue(bpComp) : null;
             Plugin.Log.LogInfo($"[SP.Start] {go.name}: SP={spAsset?.name ?? "null"} BP={bpAsset?.name ?? "null"}");
 
-            State.Upsert(guid!, rootName, displayName, dims, volume, mass, jsaName);
+            State.Upsert(guid!, rootName, displayName, dims, volume, mass, jsaName, spMatName);
         }
     }
 
@@ -444,7 +481,7 @@ namespace PartInfoLogger
             return g;
         }
 
-        internal static void Upsert(string guid, string partName, string? displayName, float[]? dims, float volume, float mass, string? jsaName = null)
+        internal static void Upsert(string guid, string partName, string? displayName, float[]? dims, float volume, float mass, string? jsaName = null, string? spMatName = null)
         {
             if (!_data.TryGetValue(guid, out var entry))
                 entry = new PartData();
@@ -454,6 +491,7 @@ namespace PartInfoLogger
             if (dims != null) { entry.Dims = dims; entry.Volume = volume; }
             if (mass > 0f) entry.Mass = mass;
             if (!string.IsNullOrEmpty(jsaName)) entry.JsaName = jsaName!;
+            if (!string.IsNullOrEmpty(spMatName)) entry.SpMatName = spMatName!;
 
             _data[guid] = entry;
             if (++_newSinceFlush >= FlushEvery)
@@ -498,6 +536,8 @@ namespace PartInfoLogger
         [JsonProperty("mass")]        public float   Mass;
         [JsonProperty("jsaName", NullValueHandling = NullValueHandling.Ignore)]
                                       public string? JsaName;
+        [JsonProperty("spMatName", NullValueHandling = NullValueHandling.Ignore)]
+                                      public string? SpMatName;
     }
 
     public static class PluginInfo
