@@ -29,6 +29,9 @@
     <Reference Include="Unity.Entities"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Entities.dll"
                Private="false" />
+    <Reference Include="Unity.Collections"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Collections.dll"
+               Private="false" />
     <Reference Include="Unity.Entities.Hybrid"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Entities.Hybrid.dll"
                Private="false" />

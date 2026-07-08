@@ -12,6 +12,8 @@ using BepInEx.Logging;
 using Carbon.Localization.Core;
 using HarmonyLib;
 using Newtonsoft.Json;
+using Unity.Collections;
+using Unity.Entities;
 using UnityEngine;
 
 namespace PartInfoLogger
@@ -21,6 +23,11 @@ namespace PartInfoLogger
     {
         internal static ManualLogSource Log = null!;
         internal static ConfigEntry<string> OutputPath = null!;
+        internal static ConfigEntry<string> JointCheckPartA = null!;
+        internal static ConfigEntry<string> JointCheckPartB = null!;
+        internal static ConfigEntry<float> JointCheckDelay = null!;
+        internal static ConfigEntry<bool> JointCensusEnabled = null!;
+        internal static ConfigEntry<float> JointCensusDelay = null!;
         internal static Plugin Instance = null!;
 
         private void Awake()
@@ -32,6 +39,23 @@ namespace PartInfoLogger
                 Path.Combine(Paths.GameRootPath, "known_assets_enriched.json"),
                 "Full path to write the enriched asset JSON. " +
                 "Point this to your ShipbreakerShipbuilder project root to use it directly in the editor.");
+
+            JointCheckPartA = Config.Bind(
+                "JointCheck", "PartAName", "",
+                "GameObject name of the first part to check joint connectivity for. Leave blank to disable the check.");
+            JointCheckPartB = Config.Bind(
+                "JointCheck", "PartBName", "",
+                "GameObject name of the second part to check joint connectivity for. Leave blank to disable the check.");
+            JointCheckDelay = Config.Bind(
+                "JointCheck", "DelaySeconds", 10f,
+                "How many seconds after gameplay start to run the joint connectivity check.");
+
+            JointCensusEnabled = Config.Bind(
+                "JointCensus", "Enabled", true,
+                "If true, dumps a CSV of every part's name and its jointed-neighbor count (excluding InvisibleJoint markers) on gameplay start.");
+            JointCensusDelay = Config.Bind(
+                "JointCensus", "DelaySeconds", 10f,
+                "How many seconds after gameplay start to run the full-ship joint census.");
 
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             harmony.PatchAll();
@@ -46,6 +70,10 @@ namespace PartInfoLogger
                     Instance.StartCoroutine(FlushJsaDelayed());
                     Instance.StartCoroutine(TryDumpJsaOnGameplay());
                     Instance.StartCoroutine(TryDumpAllSpAssets());
+                    Instance.StartCoroutine(TryDumpSpBpFields());
+                    Instance.StartCoroutine(DumpMaterialProperties());
+                    Instance.StartCoroutine(CheckJointConnectivity());
+                    Instance.StartCoroutine(DumpJointCensus());
                 }
             });
 
@@ -113,11 +141,495 @@ namespace PartInfoLogger
             catch (Exception ex) { Plugin.Log.LogWarning($"[SpJsa] Write error: {ex.Message}"); }
         }
 
+        // Dumps sp_bp_fields.json: for every loaded StructurePartAsset and blueprint asset,
+        // reflects over all public fields/properties (including the nested "Data" struct
+        // StructurePartAsset uses) and records primitive/string/enum values. This exists so
+        // the editor-side tooling can preview cut level / salvage destination / grapplePullable /
+        // density / etc. without needing the compiled BBI.Unity.Game types or a live asset file —
+        // those assets only exist inside the shipped game bundles, never as loose .asset files
+        // in the mod project.
+        internal static IEnumerator TryDumpSpBpFields()
+        {
+            yield return new WaitForSeconds(1f);
+
+            var result = new Dictionary<string, Dictionary<string, object>>();
+
+            var spAssets = Resources.FindObjectsOfTypeAll<StructurePartAsset>();
+            foreach (var spa in spAssets)
+            {
+                if (spa == null || result.ContainsKey(spa.name)) continue;
+                var fields = new Dictionary<string, object>();
+                DumpReflectedFields(spa, fields, "");
+                if (fields.Count > 0) result[spa.name] = fields;
+            }
+            Plugin.Log.LogInfo($"[SpBpFields] Reflected {result.Count} StructurePartAsset instance(s)");
+
+            var bpType = AccessTools.TypeByName("BBI.Unity.Game.BlueprintAsset");
+            if (bpType == null)
+            {
+                // Type name guess failed — resolve the real type off a live EntityBlueprintComponent
+                // instance instead of assuming the name.
+                var bpField = AccessTools.Field(typeof(EntityBlueprintComponent), "m_BlueprintAsset");
+                if (bpField != null)
+                {
+                    foreach (var ebc in Resources.FindObjectsOfTypeAll<EntityBlueprintComponent>())
+                    {
+                        if (ebc == null) continue;
+                        var val = bpField.GetValue(ebc);
+                        if (val == null) continue;
+                        bpType = val.GetType();
+                        Plugin.Log.LogInfo($"[SpBpFields] Resolved blueprint asset type via live instance: {bpType.FullName}");
+                        break;
+                    }
+                }
+                if (bpType == null)
+                    Plugin.Log.LogWarning("[SpBpFields] Could not resolve blueprint asset type by name or live instance — skipping blueprint dump");
+            }
+            if (bpType != null)
+            {
+                LogTypeSchema(bpType, "EntityBlueprintAsset");
+                var bpAssets = Resources.FindObjectsOfTypeAll(bpType);
+                int bpCount = 0;
+                foreach (var bpa in bpAssets)
+                {
+                    if (bpa == null) continue;
+                    var uObj = bpa as UnityEngine.Object;
+                    var key = uObj != null ? uObj.name : bpa.ToString();
+                    if (string.IsNullOrEmpty(key) || result.ContainsKey(key)) continue;
+                    var fields = new Dictionary<string, object>();
+                    DumpReflectedFields(bpa, fields, "");
+                    if (fields.Count > 0) { result[key] = fields; bpCount++; }
+                }
+                Plugin.Log.LogInfo($"[SpBpFields] Reflected {bpCount} blueprint asset instance(s)");
+            }
+
+            if (result.Count == 0) yield break;
+            try
+            {
+                var outDir = Path.GetDirectoryName(Plugin.OutputPath.Value)!;
+                var path = Path.Combine(outDir, "sp_bp_fields.json");
+                Dictionary<string, Dictionary<string, object>> existing = new();
+                if (File.Exists(path))
+                {
+                    try { existing = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<string, object>>>(File.ReadAllText(path)) ?? new(); }
+                    catch { }
+                }
+                foreach (var kv in result) existing[kv.Key] = kv.Value;
+                File.WriteAllText(path, JsonConvert.SerializeObject(existing, Formatting.Indented));
+                Plugin.Log.LogInfo($"[SpBpFields] Wrote {existing.Count} entries to {path}");
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning($"[SpBpFields] Write error: {ex.Message}"); }
+        }
+
+        // Reflects over instance fields and properties of obj (public AND private/[SerializeField] —
+        // Unity serializes most gameplay data as private backing fields), writing primitive/string/enum
+        // values into dest keyed by prefix+memberName. Recurses into nested non-Unity struct/class
+        // members (e.g. StructurePartAsset.Data) AND into referenced ScriptableObject assets (e.g. a
+        // "SalvageableAsset" hung off the SP asset) since real gameplay data like cut level / salvage
+        // destination / grapplePullable can live one hop away via an asset reference, not inline.
+        // `visited` guards against reference cycles / re-walking the same asset twice.
+        // Known-noisy key patterns: GUID/asset-identity plumbing, tutorial/analytics/PAT-history
+        // bookkeeping, and audio event wiring. These carry no gameplay-relevant information for
+        // the "what does this SP/BP actually do" use case (cut level, salvage, grapple, freeze,
+        // etc.) and just add volume.
+        static readonly string[] s_NoisyKeyContains =
+        {
+            "AssetGUID", "AssetID", "ID.IsValid", "IsDone", "SubObjectName",
+            "hideFlags", "OnlineEventNameTag", "OnlineTypeTag", "IsTutorialEntry",
+            "ShouldRecordInPATHistory", "WwiseGuid", "SuppressDestroyedSalvageNotifications",
+            "m_Ptr", "AssetBasis", "AssetCloneRef",
+        };
+
+        static bool IsNoisyKey(string key)
+        {
+            foreach (var pattern in s_NoisyKeyContains)
+                if (key.IndexOf(pattern, StringComparison.Ordinal) >= 0) return true;
+            return false;
+        }
+
+        // Unity backs most [SerializeField] data with a private "m_Foo" field and a public "Foo"
+        // property that just returns it — walking both doubles every value. Track member names
+        // already captured at this prefix level (case/underscore-insensitive) and skip the second.
+        static string NormalizeMemberName(string name)
+        {
+            if (name.Length > 2 && name[0] == 'm' && name[1] == '_') name = name.Substring(2);
+            return name;
+        }
+
+        static void DumpReflectedFields(object obj, Dictionary<string, object> dest, string prefix, int depth = 0, HashSet<object>? visited = null)
+        {
+            if (obj == null || depth > 3) return;
+            if (visited == null) visited = new HashSet<object>(RefEqualityComparer.Instance);
+            if (!visited.Add(obj)) return;
+
+            var type = obj.GetType();
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            var seenMembers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var f in type.GetFields(flags))
+            {
+                if (f.IsStatic) continue;
+                if (!seenMembers.Add(NormalizeMemberName(f.Name))) continue;
+                object val;
+                try { val = f.GetValue(obj); } catch { continue; }
+                AddOrRecurse(dest, prefix + f.Name, val, f.FieldType, depth, visited);
+            }
+
+            foreach (var p in type.GetProperties(flags))
+            {
+                if (p.GetIndexParameters().Length > 0 || !p.CanRead) continue;
+                if (!seenMembers.Add(NormalizeMemberName(p.Name))) continue;
+                object val;
+                try { val = p.GetValue(obj); } catch { continue; }
+                AddOrRecurse(dest, prefix + p.Name, val, p.PropertyType, depth, visited);
+            }
+        }
+
+        static void AddOrRecurse(Dictionary<string, object> dest, string key, object val, Type declaredType, int depth, HashSet<object> visited)
+        {
+            if (IsNoisyKey(key)) return;
+
+            if (IsSimpleType(declaredType))
+            {
+                dest[key] = val is Enum ? val.ToString() : val;
+                return;
+            }
+            if (val == null) return;
+            if (val is System.Delegate) return;
+
+            // Referenced ScriptableObject assets (e.g. a SalvageableAsset hung off an SP asset) are
+            // where cross-referenced gameplay data tends to live — record the reference and recurse
+            // into it. Other UnityEngine.Object types (GameObject/Component/Texture/etc.) are skipped
+            // to avoid walking into the scene graph.
+            if (val is ScriptableObject so)
+            {
+                dest[key + "@ref"] = so.name;
+                DumpReflectedFields(so, dest, key + ".", depth + 1, visited);
+                return;
+            }
+            if (val is UnityEngine.Object) return;
+
+            // Arrays/lists of ScriptableObject-derived elements (e.g. EntityBlueprintAsset's
+            // m_ComponentDataAssets — one small asset per ECS component config) carry real
+            // gameplay data per element. Walk each element by index; skip other enumerables
+            // (native collections, primitive arrays) to avoid dumping raw buffers.
+            if (val is System.Collections.IEnumerable seq && declaredType != typeof(string))
+            {
+                if (!typeof(ScriptableObject).IsAssignableFrom(declaredType.IsArray ? declaredType.GetElementType() : null))
+                    return;
+                int i = 0;
+                foreach (var item in seq)
+                {
+                    if (item is ScriptableObject itemSo)
+                    {
+                        var elemKey = $"{key}[{i}]";
+                        dest[elemKey + "@type"] = itemSo.GetType().Name;
+                        dest[elemKey + "@ref"] = itemSo.name;
+                        DumpReflectedFields(itemSo, dest, elemKey + ".", depth + 1, visited);
+                    }
+                    i++;
+                }
+                return;
+            }
+            if (declaredType.Namespace != null && declaredType.Namespace.StartsWith("System")) return;
+            DumpReflectedFields(val, dest, key + ".", depth + 1, visited);
+        }
+
+        static bool IsSimpleType(Type t)
+        {
+            return t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(decimal);
+        }
+
+        // One-time diagnostic: logs every field/property name + declared type across the full
+        // inheritance chain of `type`, regardless of whether DumpReflectedFields can extract a
+        // value from it. Use this when a type reflects to almost nothing useful — it reveals
+        // what's actually there (e.g. DOTS component collections, blob references) so the
+        // extraction logic can be pointed at the right member.
+        static readonly HashSet<Type> s_SchemaLogged = new HashSet<Type>();
+        static void LogTypeSchema(Type type, string label)
+        {
+            if (!s_SchemaLogged.Add(type)) return;
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+            Plugin.Log.LogInfo($"[SpBpFields] --- Schema for {label} ({type.FullName}) ---");
+            for (var t = type; t != null && t != typeof(UnityEngine.Object); t = t.BaseType)
+            {
+                foreach (var f in t.GetFields(flags))
+                    Plugin.Log.LogInfo($"[SpBpFields]   field  {t.Name}.{f.Name} : {f.FieldType.FullName}");
+                foreach (var p in t.GetProperties(flags))
+                    Plugin.Log.LogInfo($"[SpBpFields]   prop   {t.Name}.{p.Name} : {p.PropertyType.FullName}");
+            }
+            Plugin.Log.LogInfo($"[SpBpFields] --- end schema ---");
+        }
+
+        // net472 has no built-in ReferenceEqualityComparer — used to guard DumpReflectedFields
+        // against reference cycles when recursing into ScriptableObject asset references.
+        class RefEqualityComparer : IEqualityComparer<object>
+        {
+            public static readonly RefEqualityComparer Instance = new RefEqualityComparer();
+            bool IEqualityComparer<object>.Equals(object x, object y) => ReferenceEquals(x, y);
+            int IEqualityComparer<object>.GetHashCode(object obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+        }
+
+        static IEnumerator DumpMaterialProperties()
+        {
+            yield return new WaitForSeconds(3f);
+            var targets = new[] { "HeatExchanger", "CornerTriangle_3Cx2xA" };
+            foreach (var keyword in targets)
+            {
+                var gos = Resources.FindObjectsOfTypeAll<MeshRenderer>()
+                    .Where(r => r.gameObject.name.Contains(keyword))
+                    .Take(1)
+                    .ToArray();
+                foreach (var mr in gos)
+                {
+                    for (int si = 0; si < mr.sharedMaterials.Length; si++)
+                    {
+                        var mat = mr.sharedMaterials[si];
+                        if (mat == null) continue;
+                        Plugin.Log.LogInfo($"[MatDump] GO={mr.gameObject.name} slot={si} mat={mat.name} shader={mat.shader?.name}");
+                        Plugin.Log.LogInfo($"[MatDump]   keywords={string.Join(" ", mat.shaderKeywords)}");
+                        var shader = mat.shader;
+                        if (shader == null) continue;
+                        int count = shader.GetPropertyCount();
+                        for (int pi = 0; pi < count; pi++)
+                        {
+                            var pname = shader.GetPropertyName(pi);
+                            var ptype = shader.GetPropertyType(pi);
+                            string val;
+                            try
+                            {
+                                switch (ptype)
+                                {
+                                    case UnityEngine.Rendering.ShaderPropertyType.Float:
+                                    case UnityEngine.Rendering.ShaderPropertyType.Range:
+                                        val = mat.GetFloat(pname).ToString("G4");
+                                        break;
+                                    case UnityEngine.Rendering.ShaderPropertyType.Color:
+                                        var c = mat.GetColor(pname);
+                                        val = $"r={c.r:G3} g={c.g:G3} b={c.b:G3} a={c.a:G3}";
+                                        break;
+                                    case UnityEngine.Rendering.ShaderPropertyType.Vector:
+                                        var v = mat.GetVector(pname);
+                                        val = $"({v.x:G3},{v.y:G3},{v.z:G3},{v.w:G3})";
+                                        break;
+                                    case UnityEngine.Rendering.ShaderPropertyType.Texture:
+                                        val = mat.GetTexture(pname)?.name ?? "null";
+                                        break;
+                                    default: val = ptype.ToString(); break;
+                                }
+                            }
+                            catch { val = "?"; }
+                            Plugin.Log.LogInfo($"[MatDump]   {pname} ({ptype}): {val}");
+                        }
+                    }
+                }
+            }
+        }
+
         static IEnumerator FlushJsaDelayed()
         {
             yield return new WaitForSeconds(5f);
             Plugin.Log.LogInfo($"[JsaCompat] Delayed flush triggered, pairs so far: {JsaCompatState.PairCount}");
             JsaCompatState.Flush();
+        }
+
+        // Reports whether two named GameObjects (StructureParts) are connected in the
+        // runtime ECS structure graph, mirroring BreakableJointComponent.TryGetConnections().
+        internal static IEnumerator CheckJointConnectivity()
+        {
+            var nameA = JointCheckPartA.Value;
+            var nameB = JointCheckPartB.Value;
+            if (string.IsNullOrWhiteSpace(nameA) || string.IsNullOrWhiteSpace(nameB))
+                yield break;
+
+            yield return new WaitForSeconds(JointCheckDelay.Value);
+
+            var allParts = Resources.FindObjectsOfTypeAll<StructurePart>();
+            StructurePart? partA = allParts.FirstOrDefault(p => p != null && p.gameObject.name.Replace("(Clone)", "").Trim() == nameA);
+            StructurePart? partB = allParts.FirstOrDefault(p => p != null && p.gameObject.name.Replace("(Clone)", "").Trim() == nameB);
+
+            if (partA == null) { Plugin.Log.LogWarning($"[JointCheck] Could not find StructurePart named '{nameA}'"); yield break; }
+            if (partB == null) { Plugin.Log.LogWarning($"[JointCheck] Could not find StructurePart named '{nameB}'"); yield break; }
+
+            if (!EntityBlueprintComponent.IsValid(partA.EntityBlueprintComponent) ||
+                !EntityBlueprintComponent.IsValid(partB.EntityBlueprintComponent))
+            {
+                Plugin.Log.LogWarning($"[JointCheck] '{nameA}' or '{nameB}' has no valid EntityBlueprintComponent yet.");
+                yield break;
+            }
+
+            var entityA = partA.Entity;
+            var entityB = partB.Entity;
+            var entityManager = partA.EntityBlueprintComponent.EntityManager;
+
+            using var connectedNodes = new NativeList<Entity>(Allocator.Temp);
+            GetConnectedEntities(entityManager, entityA, connectedNodes);
+
+            bool connected = false;
+            foreach (var e in connectedNodes)
+            {
+                if (e == entityB) { connected = true; break; }
+            }
+
+            Plugin.Log.LogInfo($"[JointCheck] '{nameA}' (Entity {entityA.Index}) is " +
+                $"{(connected ? "CONNECTED" : "NOT connected")} to '{nameB}' (Entity {entityB.Index}) " +
+                $"in the structure graph. Graph size checked: {connectedNodes.Length} nodes.");
+        }
+
+        // Fills connectedNodes with every entity reachable in the runtime ECS structure graph
+        // from the given entity, mirroring BreakableJointComponent.TryGetConnections().
+        static void GetConnectedEntities(EntityManager entityManager, Entity entity, NativeList<Entity> connectedNodes)
+        {
+            var graphSystem = World.DefaultGameObjectInjectionWorld.GetOrCreateSystem<StructureGraphSystem>();
+            if (entityManager.TryGetComponent<StructureGroupMember>(entity, out var groupMember) &&
+                entityManager.TryGetBuffer<PartConnection>(groupMember.GroupEntity, out var partConnections))
+            {
+                foreach (var conn in partConnections)
+                    graphSystem.GetAllConnectedNodesFor(conn.Value, connectedNodes, clearBuffer: false);
+            }
+            else
+            {
+                graphSystem.GetAllConnectedNodesFor(entity, connectedNodes);
+            }
+        }
+
+        // Dumps a CSV of every StructurePart's name and its count of jointed neighbor parts,
+        // excluding neighbors that are InvisibleJoint bridge markers rather than real parts.
+        internal static IEnumerator DumpJointCensus()
+        {
+            if (!JointCensusEnabled.Value) yield break;
+
+            yield return new WaitForSeconds(JointCensusDelay.Value);
+
+            var ijMarkerType = AccessTools.TypeByName("InvisibleJointMarker");
+            if (ijMarkerType == null)
+                Plugin.Log.LogWarning("[JointCensus] InvisibleJointMarker type not found — IJ markers will not be excluded from neighbor counts.");
+
+            var allParts = Resources.FindObjectsOfTypeAll<StructurePart>()
+                .Where(p => p != null && p.gameObject.scene.IsValid())
+                .ToArray();
+            Plugin.Log.LogInfo($"[JointCensus] Scanning {allParts.Length} StructurePart(s)...");
+
+            // Pre-compute the set of entities belonging to InvisibleJoint markers so we can
+            // exclude them from neighbor counts without re-checking components per-pair.
+            var ijEntities = new HashSet<Entity>();
+            if (ijMarkerType != null)
+            {
+                foreach (var p in allParts)
+                {
+                    if (p.GetComponent(ijMarkerType) != null && EntityBlueprintComponent.IsValid(p.EntityBlueprintComponent))
+                        ijEntities.Add(p.Entity);
+                }
+                Plugin.Log.LogInfo($"[JointCensus] Found {ijEntities.Count} InvisibleJoint marker part(s), excluded from neighbor counts.");
+            }
+
+            var rows = new List<(string Name, int NeighborCount, Entity Entity)>();
+            var unionFind = new Dictionary<Entity, Entity>();
+            using var connectedNodes = new NativeList<Entity>(Allocator.Temp);
+
+            foreach (var part in allParts)
+            {
+                if (part == null) continue;
+                var name = part.gameObject.name.Replace("(Clone)", "").Trim();
+                if (ijEntities.Count > 0 && ijMarkerType != null && part.GetComponent(ijMarkerType) != null)
+                    continue; // don't list IJ markers themselves as parts
+
+                if (!EntityBlueprintComponent.IsValid(part.EntityBlueprintComponent))
+                {
+                    rows.Add((name, 0, Entity.Null));
+                    continue;
+                }
+
+                var entity = part.Entity;
+                UnionFind_MakeSet(unionFind, entity);
+                var entityManager = part.EntityBlueprintComponent.EntityManager;
+                connectedNodes.Clear();
+                GetConnectedEntities(entityManager, entity, connectedNodes);
+
+                int neighborCount = 0;
+                foreach (var e in connectedNodes)
+                {
+                    if (e == entity) continue;
+                    if (ijEntities.Contains(e)) continue;
+                    if (!entityManager.HasComponent<StructurePart>(e)) continue;
+                    neighborCount++;
+                    UnionFind_MakeSet(unionFind, e);
+                    UnionFind_Union(unionFind, entity, e);
+                }
+
+                rows.Add((name, neighborCount, entity));
+            }
+
+            // Assign cluster IDs, ordered by ascending cluster size (smallest/most-isolated first).
+            var clusterMembers = new Dictionary<Entity, List<int>>(); // root -> row indices
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var e = rows[i].Entity;
+                if (e == Entity.Null) continue;
+                var root = UnionFind_Find(unionFind, e);
+                if (!clusterMembers.TryGetValue(root, out var list))
+                    clusterMembers[root] = list = new List<int>();
+                list.Add(i);
+            }
+            var orderedClusters = clusterMembers.Values.OrderBy(l => l.Count).ToList();
+            var rowToCluster = new int[rows.Count];
+            var clusterSize = new int[orderedClusters.Count];
+            for (int c = 0; c < orderedClusters.Count; c++)
+            {
+                clusterSize[c] = orderedClusters[c].Count;
+                foreach (var i in orderedClusters[c]) rowToCluster[i] = c;
+            }
+
+            try
+            {
+                var outDir = Path.GetDirectoryName(Plugin.OutputPath.Value)!;
+                var path = Path.Combine(outDir, "joint_census.csv");
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("PartName,JointedNeighborCount,ClusterId,ClusterSize");
+                var indices = Enumerable.Range(0, rows.Count).OrderBy(i => rows[i].Name, StringComparer.Ordinal);
+                foreach (var i in indices)
+                {
+                    var row = rows[i];
+                    var hasCluster = row.Entity != Entity.Null;
+                    var clusterId = hasCluster ? rowToCluster[i].ToString() : "";
+                    var size = hasCluster ? clusterSize[rowToCluster[i]].ToString() : "";
+                    sb.AppendLine($"{CsvEscape(row.Name)},{row.NeighborCount},{clusterId},{size}");
+                }
+                File.WriteAllText(path, sb.ToString());
+                Plugin.Log.LogInfo($"[JointCensus] Wrote {rows.Count} part(s) in {orderedClusters.Count} cluster(s) to {path}");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[JointCensus] Write error: {ex.Message}");
+            }
+        }
+
+        static Entity UnionFind_Find(Dictionary<Entity, Entity> parent, Entity e)
+        {
+            if (!parent.TryGetValue(e, out var p)) { parent[e] = e; return e; }
+            if (p == e) return e;
+            var root = UnionFind_Find(parent, p);
+            parent[e] = root;
+            return root;
+        }
+
+        static void UnionFind_MakeSet(Dictionary<Entity, Entity> parent, Entity e)
+        {
+            if (!parent.ContainsKey(e)) parent[e] = e;
+        }
+
+        static void UnionFind_Union(Dictionary<Entity, Entity> parent, Entity a, Entity b)
+        {
+            var ra = UnionFind_Find(parent, a);
+            var rb = UnionFind_Find(parent, b);
+            if (ra != rb) parent[ra] = rb;
+        }
+
+        static string CsvEscape(string s)
+        {
+            if (s.Contains(',') || s.Contains('"') || s.Contains('\n'))
+                return "\"" + s.Replace("\"", "\"\"") + "\"";
+            return s;
         }
     }
 
