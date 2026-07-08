@@ -23,11 +23,10 @@ namespace PartInfoLogger
     {
         internal static ManualLogSource Log = null!;
         internal static ConfigEntry<string> OutputPath = null!;
-        internal static ConfigEntry<string> JointCheckPartA = null!;
-        internal static ConfigEntry<string> JointCheckPartB = null!;
-        internal static ConfigEntry<float> JointCheckDelay = null!;
+        internal static ConfigEntry<bool> EnrichmentEnabled = null!;
         internal static ConfigEntry<bool> JointCensusEnabled = null!;
         internal static ConfigEntry<float> JointCensusDelay = null!;
+        internal static ConfigEntry<bool> CampaignProgressEnabled = null!;
         internal static Plugin Instance = null!;
 
         private void Awake()
@@ -40,15 +39,12 @@ namespace PartInfoLogger
                 "Full path to write the enriched asset JSON. " +
                 "Point this to your ShipbreakerShipbuilder project root to use it directly in the editor.");
 
-            JointCheckPartA = Config.Bind(
-                "JointCheck", "PartAName", "",
-                "GameObject name of the first part to check joint connectivity for. Leave blank to disable the check.");
-            JointCheckPartB = Config.Bind(
-                "JointCheck", "PartBName", "",
-                "GameObject name of the second part to check joint connectivity for. Leave blank to disable the check.");
-            JointCheckDelay = Config.Bind(
-                "JointCheck", "DelaySeconds", 10f,
-                "How many seconds after gameplay start to run the joint connectivity check.");
+            EnrichmentEnabled = Config.Bind(
+                "General", "EnrichmentEnabled", false,
+                "If true, captures per-part enrichment data (known_assets_enriched.json, sp_jsa_map.json, " +
+                "sp_bp_fields.json) via per-instantiation Harmony patches and gameplay-start reflection scans. " +
+                "Adds real load-time cost. Leave false once those files are already populated for your project — " +
+                "re-enable only when you need to refresh them (e.g. after new parts are added to the game).");
 
             JointCensusEnabled = Config.Bind(
                 "JointCensus", "Enabled", true,
@@ -56,6 +52,13 @@ namespace PartInfoLogger
             JointCensusDelay = Config.Bind(
                 "JointCensus", "DelaySeconds", 10f,
                 "How many seconds after gameplay start to run the full-ship joint census.");
+
+            CampaignProgressEnabled = Config.Bind(
+                "CampaignProgress", "Enabled", true,
+                "If true, dumps campaign_progress.json on gameplay start: every PlayerActionTrackerAsset the " +
+                "current save has recorded (name -> count), plus every IndustrialActionShipAsset's PATConditionAsset " +
+                "requirements evaluated against that history (met/unmet), and whether each ship has already been " +
+                "generated in PlayerProfile.IndustrialActionShips.");
 
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             harmony.PatchAll();
@@ -69,11 +72,19 @@ namespace PartInfoLogger
                 {
                     Instance.StartCoroutine(FlushJsaDelayed());
                     Instance.StartCoroutine(TryDumpJsaOnGameplay());
-                    Instance.StartCoroutine(TryDumpAllSpAssets());
-                    Instance.StartCoroutine(TryDumpSpBpFields());
+                    if (EnrichmentEnabled.Value)
+                    {
+                        Instance.StartCoroutine(TryDumpAllSpAssets());
+                        Instance.StartCoroutine(TryDumpSpBpFields());
+                    }
                     Instance.StartCoroutine(DumpMaterialProperties());
-                    Instance.StartCoroutine(CheckJointConnectivity());
                     Instance.StartCoroutine(DumpJointCensus());
+                }
+                else if (ev.GameState == GameSession.GameState.Hab)
+                {
+                    Log.LogInfo($"[CampaignProgress] Hab state reached, CampaignProgressEnabled={CampaignProgressEnabled.Value}");
+                    if (CampaignProgressEnabled.Value)
+                        Instance.StartCoroutine(DumpCampaignProgress());
                 }
             });
 
@@ -433,49 +444,6 @@ namespace PartInfoLogger
             JsaCompatState.Flush();
         }
 
-        // Reports whether two named GameObjects (StructureParts) are connected in the
-        // runtime ECS structure graph, mirroring BreakableJointComponent.TryGetConnections().
-        internal static IEnumerator CheckJointConnectivity()
-        {
-            var nameA = JointCheckPartA.Value;
-            var nameB = JointCheckPartB.Value;
-            if (string.IsNullOrWhiteSpace(nameA) || string.IsNullOrWhiteSpace(nameB))
-                yield break;
-
-            yield return new WaitForSeconds(JointCheckDelay.Value);
-
-            var allParts = Resources.FindObjectsOfTypeAll<StructurePart>();
-            StructurePart? partA = allParts.FirstOrDefault(p => p != null && p.gameObject.name.Replace("(Clone)", "").Trim() == nameA);
-            StructurePart? partB = allParts.FirstOrDefault(p => p != null && p.gameObject.name.Replace("(Clone)", "").Trim() == nameB);
-
-            if (partA == null) { Plugin.Log.LogWarning($"[JointCheck] Could not find StructurePart named '{nameA}'"); yield break; }
-            if (partB == null) { Plugin.Log.LogWarning($"[JointCheck] Could not find StructurePart named '{nameB}'"); yield break; }
-
-            if (!EntityBlueprintComponent.IsValid(partA.EntityBlueprintComponent) ||
-                !EntityBlueprintComponent.IsValid(partB.EntityBlueprintComponent))
-            {
-                Plugin.Log.LogWarning($"[JointCheck] '{nameA}' or '{nameB}' has no valid EntityBlueprintComponent yet.");
-                yield break;
-            }
-
-            var entityA = partA.Entity;
-            var entityB = partB.Entity;
-            var entityManager = partA.EntityBlueprintComponent.EntityManager;
-
-            using var connectedNodes = new NativeList<Entity>(Allocator.Temp);
-            GetConnectedEntities(entityManager, entityA, connectedNodes);
-
-            bool connected = false;
-            foreach (var e in connectedNodes)
-            {
-                if (e == entityB) { connected = true; break; }
-            }
-
-            Plugin.Log.LogInfo($"[JointCheck] '{nameA}' (Entity {entityA.Index}) is " +
-                $"{(connected ? "CONNECTED" : "NOT connected")} to '{nameB}' (Entity {entityB.Index}) " +
-                $"in the structure graph. Graph size checked: {connectedNodes.Length} nodes.");
-        }
-
         // Fills connectedNodes with every entity reachable in the runtime ECS structure graph
         // from the given entity, mirroring BreakableJointComponent.TryGetConnections().
         static void GetConnectedEntities(EntityManager entityManager, Entity entity, NativeList<Entity> connectedNodes)
@@ -631,6 +599,305 @@ namespace PartInfoLogger
                 return "\"" + s.Replace("\"", "\"\"") + "\"";
             return s;
         }
+
+        // Dumps campaign_progress.json: every PlayerActionTrackerAsset recorded in the current save's
+        // PlayerProfile.PlayerActionTrackerHistory (name -> count), plus every IndustrialActionShipAsset
+        // known to JobBoardSettings with its PATConditionAsset requirements evaluated against that
+        // history (met/unmet per PATCounter, and overall AreConditionsMet-equivalent), and whether the
+        // ship has already been generated into PlayerProfile.IndustrialActionShips. All via reflection
+        // since PartInfoLogger doesn't compile against these BBI.Unity.Game types directly.
+        internal static IEnumerator DumpCampaignProgress()
+        {
+            Plugin.Log.LogInfo("[CampaignProgress] Coroutine started, waiting 1s...");
+            // Use realtime rather than WaitForSeconds: the Hab can sit at Time.timeScale = 0 (paused/menu)
+            // right after a state transition, which would make a scaled-time wait never elapse.
+            yield return new WaitForSecondsRealtime(1f);
+            Plugin.Log.LogInfo("[CampaignProgress] Wait complete, running dump...");
+
+            try
+            {
+                RunCampaignProgressDump();
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[CampaignProgress] Unhandled exception: {ex}");
+            }
+        }
+
+        static void RunCampaignProgressDump()
+        {
+            var profileServiceType = AccessTools.TypeByName("BBI.Unity.Game.PlayerProfileService");
+            if (profileServiceType == null) { Plugin.Log.LogWarning("[CampaignProgress] PlayerProfileService type not found — skipping."); return; }
+
+            var instanceProp = AccessTools.Property(profileServiceType, "Instance");
+            var profileService = instanceProp?.GetValue(null);
+            var profileProp = profileService != null ? AccessTools.Property(profileServiceType, "Profile") : null;
+            var profile = profileProp?.GetValue(profileService);
+            if (profile == null) { Plugin.Log.LogWarning("[CampaignProgress] PlayerProfileService.Instance.Profile not available — skipping."); return; }
+
+            var profileName = AccessTools.Property(profile.GetType(), "ProfileName")?.GetValue(profile) as string;
+            if (string.IsNullOrEmpty(profileName)) profileName = "UnknownProfile";
+            foreach (var invalidChar in Path.GetInvalidFileNameChars())
+                profileName = profileName!.Replace(invalidChar, '_');
+
+            var patHistory = AccessTools.Field(profile.GetType(), "PlayerActionTrackerHistory")?.GetValue(profile) as IDictionary;
+            if (patHistory == null) { Plugin.Log.LogWarning("[CampaignProgress] PlayerActionTrackerHistory field not found — skipping."); return; }
+
+            var patHistoryByName = new Dictionary<string, int>();
+            foreach (DictionaryEntry entry in patHistory)
+            {
+                var patName = (entry.Key as UnityEngine.Object)?.name ?? entry.Key?.ToString() ?? "?";
+                patHistoryByName[patName] = (int)entry.Value!;
+            }
+            Plugin.Log.LogInfo($"[CampaignProgress] PlayerActionTrackerHistory has {patHistoryByName.Count} entries.");
+
+            var industrialShipsProfileField = AccessTools.Field(profile.GetType(), "IndustrialActionShips");
+            var industrialShipsGenerated = industrialShipsProfileField?.GetValue(profile) as IDictionary;
+            var generatedShipIds = new HashSet<string>();
+            if (industrialShipsGenerated != null)
+            {
+                foreach (var key in industrialShipsGenerated.Keys)
+                    generatedShipIds.Add(key?.ToString() ?? "?");
+            }
+
+            var iaShipList = new List<Dictionary<string, object>>();
+            var mainType = AccessTools.TypeByName("BBI.Unity.Game.Main");
+            var mainInstance = AccessTools.Property(mainType, "Instance")?.GetValue(null);
+            var mainSettings = mainInstance != null ? AccessTools.Property(mainType, "MainSettings")?.GetValue(mainInstance) : null;
+            var habSettings = mainSettings != null ? AccessTools.Property(mainSettings.GetType(), "HabSettings")?.GetValue(mainSettings) : null;
+            var jobBoardSettings = habSettings != null ? AccessTools.Property(habSettings.GetType(), "JobBoardSettings")?.GetValue(habSettings) : null;
+            var iaShips = jobBoardSettings != null ? AccessTools.Property(jobBoardSettings.GetType(), "IndustrialActionShips")?.GetValue(jobBoardSettings) as IEnumerable : null;
+
+            if (iaShips == null)
+            {
+                Plugin.Log.LogWarning("[CampaignProgress] Could not resolve JobBoardSettings.IndustrialActionShips — falling back to a Resources scan.");
+                var iaType = AccessTools.TypeByName("BBI.Unity.Game.IndustrialActionShipAsset");
+                iaShips = iaType != null ? Resources.FindObjectsOfTypeAll(iaType) : null;
+            }
+
+            if (iaShips != null)
+            {
+                foreach (var shipAsset in iaShips)
+                {
+                    if (shipAsset == null) continue;
+                    var shipName = (shipAsset as UnityEngine.Object)?.name ?? shipAsset.ToString();
+                    var shipEntry = new Dictionary<string, object> { ["name"] = shipName };
+
+                    var idVal = AccessTools.Property(shipAsset.GetType(), "ID")?.GetValue(shipAsset);
+                    if (idVal != null) shipEntry["alreadyGenerated"] = generatedShipIds.Contains(idVal.ToString() ?? "?");
+
+                    var dataField = AccessTools.Field(shipAsset.GetType(), "Data");
+                    var data = dataField?.GetValue(shipAsset);
+                    var conditionAsset = data != null ? AccessTools.Field(data.GetType(), "ConditionAsset")?.GetValue(data) : null;
+
+                    if (conditionAsset == null)
+                    {
+                        shipEntry["conditionAsset"] = null!;
+                        iaShipList.Add(shipEntry);
+                        continue;
+                    }
+
+                    shipEntry["conditionAsset"] = (conditionAsset as UnityEngine.Object)?.name ?? "?";
+                    bool allMet = true;
+                    var conditions = new List<Dictionary<string, object>>();
+                    foreach (var listFieldName in new[] { "m_All", "m_Any", "m_None" })
+                    {
+                        var listField = AccessTools.Field(conditionAsset.GetType(), listFieldName);
+                        var list = listField?.GetValue(conditionAsset) as IEnumerable;
+                        if (list == null) continue;
+                        foreach (var counter in list)
+                        {
+                            var patObj = AccessTools.Property(counter.GetType(), "PAT")?.GetValue(counter);
+                            var patName = (patObj as UnityEngine.Object)?.name ?? "?";
+                            var specificCount = (int)(AccessTools.Property(counter.GetType(), "SpecificCount")?.GetValue(counter) ?? 0);
+                            var countIrrelevant = (bool)(AccessTools.Property(counter.GetType(), "CountIrrelevant")?.GetValue(counter) ?? false);
+                            var orGreater = (bool)(AccessTools.Property(counter.GetType(), "SpecificCountOrGreater")?.GetValue(counter) ?? false);
+
+                            patHistoryByName.TryGetValue(patName, out var actualCount);
+                            bool has = patHistoryByName.ContainsKey(patName);
+                            bool met = has && (countIrrelevant || actualCount == specificCount || (orGreater && actualCount > specificCount));
+                            if (listFieldName == "m_All" && !met) allMet = false;
+
+                            conditions.Add(new Dictionary<string, object>
+                            {
+                                ["list"] = listFieldName,
+                                ["pat"] = patName,
+                                ["requiredCount"] = specificCount,
+                                ["countIrrelevant"] = countIrrelevant,
+                                ["orGreater"] = orGreater,
+                                ["actualCount"] = actualCount,
+                                ["met"] = met,
+                            });
+                        }
+                    }
+                    shipEntry["conditions"] = conditions;
+                    shipEntry["allListSatisfied"] = allMet;
+                    iaShipList.Add(shipEntry);
+                }
+            }
+
+            // Scan every loaded NarrativeMessageAsset (the terminal/inbox + Hab-greeting-popup email
+            // system) and report which PAT(s) each one fires when read, so we can identify — by subject
+            // line and sender, not just PAT name — exactly which in-game message corresponds to a given
+            // PAT (e.g. PAT_CMP_A3_SC04_MessageFromLou_Read), and whether that PAT is present in this
+            // save's history (i.e. actually marked read).
+            //
+            // IMPORTANT: NarrativeMessageAsset instances loaded via Resources.FindObjectsOfTypeAll are
+            // GLOBAL — an asset shows up there once anything in the game references it, regardless of
+            // whether THIS profile's inbox has ever received it. To know whether a specific save has
+            // actually been delivered a given message (as opposed to merely having the asset resident in
+            // memory), we cross-reference PlayerProfile.NarrativeInventory.UnreadMessages/ReadMessages —
+            // the two dictionaries NarrativeInventory.HasMessage() actually checks — keyed by the
+            // message's AssetTypeID. A message present in the global scan but absent from BOTH of these
+            // dictionaries has never been delivered to this player's inbox at all.
+            var narrativeInventory = AccessTools.Property(profile.GetType(), "NarrativeInventory")?.GetValue(profile);
+            var unreadMessages = narrativeInventory != null ? AccessTools.Property(narrativeInventory.GetType(), "UnreadMessages")?.GetValue(narrativeInventory) as IDictionary : null;
+            var readMessagesByCategory = narrativeInventory != null ? AccessTools.Property(narrativeInventory.GetType(), "ReadMessages")?.GetValue(narrativeInventory) as IDictionary : null;
+
+            var unreadIds = new HashSet<string>();
+            if (unreadMessages != null)
+                foreach (var key in unreadMessages.Keys)
+                    unreadIds.Add(key?.ToString() ?? "?");
+
+            var readIds = new HashSet<string>();
+            if (readMessagesByCategory != null)
+            {
+                foreach (var categoryDict in readMessagesByCategory.Values)
+                {
+                    if (categoryDict is IDictionary catDict)
+                        foreach (var key in catDict.Keys)
+                            readIds.Add(key?.ToString() ?? "?");
+                }
+            }
+            Plugin.Log.LogInfo($"[CampaignProgress] NarrativeInventory: {unreadIds.Count} unread, {readIds.Count} read message ID(s).");
+
+            var narrativeMessages = new List<Dictionary<string, object>>();
+            var nmaType = AccessTools.TypeByName("BBI.Unity.Game.NarrativeMessageAsset");
+            if (nmaType != null)
+            {
+                foreach (var nma in Resources.FindObjectsOfTypeAll(nmaType))
+                {
+                    if (nma == null) continue;
+                    var subjectLocID = AccessTools.Property(nmaType, "SubjectLineLocID")?.GetValue(nma) as string ?? "";
+                    var senderLocID = AccessTools.Property(nmaType, "SenderLocID")?.GetValue(nma) as string ?? "";
+                    var loc = Main.Instance?.LocalizationService;
+                    string? subjectText = null, senderText = null;
+                    if (loc != null)
+                    {
+                        if (!string.IsNullOrEmpty(subjectLocID) && loc.TryLocalize(subjectLocID, out var s) && !string.IsNullOrEmpty(s)) subjectText = s;
+                        if (!string.IsNullOrEmpty(senderLocID) && loc.TryLocalize(senderLocID, out var r) && !string.IsNullOrEmpty(r)) senderText = r;
+                    }
+
+                    var idVal = AccessTools.Property(nmaType, "ID")?.GetValue(nma);
+                    var idStr = idVal?.ToString() ?? "?";
+                    string inboxState = unreadIds.Contains(idStr) ? "unread"
+                        : readIds.Contains(idStr) ? "read"
+                        : "notDeliveredToInbox";
+
+                    var entry = new Dictionary<string, object>
+                    {
+                        ["name"] = (nma as UnityEngine.Object)?.name ?? "?",
+                        ["inboxState"] = inboxState,
+                        ["subjectLineLocID"] = subjectLocID,
+                        ["subjectText"] = subjectText ?? "",
+                        ["senderLocID"] = senderLocID,
+                        ["senderText"] = senderText ?? "",
+                        ["isHabGreeting"] = AccessTools.Property(nmaType, "IsHabGreeting")?.GetValue(nma) ?? false,
+                    };
+
+                    var greetingPat = AccessTools.Property(nmaType, "HABGreetingPopupReadPAT")?.GetValue(nma);
+                    var greetingPatName = (greetingPat as UnityEngine.Object)?.name;
+                    if (!string.IsNullOrEmpty(greetingPatName))
+                    {
+                        entry["habGreetingPopupReadPAT"] = greetingPatName!;
+                        entry["habGreetingPopupReadPAT_actualCount"] = patHistoryByName.TryGetValue(greetingPatName!, out var gc) ? gc : 0;
+                    }
+
+                    var inboxPat = AccessTools.Property(nmaType, "InboxMessageReadPAT")?.GetValue(nma);
+                    var inboxPatName = (inboxPat as UnityEngine.Object)?.name;
+                    if (!string.IsNullOrEmpty(inboxPatName))
+                    {
+                        entry["inboxMessageReadPAT"] = inboxPatName!;
+                        entry["inboxMessageReadPAT_actualCount"] = patHistoryByName.TryGetValue(inboxPatName!, out var ic) ? ic : 0;
+                    }
+
+                    if (entry.ContainsKey("habGreetingPopupReadPAT") || entry.ContainsKey("inboxMessageReadPAT"))
+                        narrativeMessages.Add(entry);
+                }
+                Plugin.Log.LogInfo($"[CampaignProgress] Found {narrativeMessages.Count} NarrativeMessageAsset(s) with a read-PAT wired.");
+            }
+            else
+            {
+                Plugin.Log.LogWarning("[CampaignProgress] NarrativeMessageAsset type not found — skipping message scan.");
+            }
+
+            // Dump the live asset-save-key hash table: AssetSaveKeyMapService.Instance holds the exact
+            // FNV-1a32(SaveKey) -> ScriptableObject mapping the game uses to serialize PlayerActionTracker
+            // (and other) asset references into .lpw save files as (uint hash, int value) pairs — see
+            // PlayerActionTrackerDataReaderWriterV1.Write/Read and AssetSaveKeyMapService.
+            // TryGetHashedAssetKeyFromAsset (hash = FNV1a32(SaveKey, 2166136261)). Reflecting the live
+            // dictionary sidesteps needing to know whether SaveKey always equals the asset name, and lets
+            // an offline script reverse-hash any .lpw file without the game running, by name AND type —
+            // useful for inspecting archived/backup saves (e.g. a .zip pulled from the Saves/Profiles
+            // folder) that were never loaded through PIL directly.
+            var assetSaveKeys = new Dictionary<string, object>();
+            var mapServiceType = AccessTools.TypeByName("BBI.Unity.Game.AssetSaveKeyMapService");
+            var mapServiceInstance = AccessTools.Property(mapServiceType, "Instance")?.GetValue(null);
+            if (mapServiceInstance != null)
+            {
+                var hashMap = AccessTools.Field(mapServiceType, "mAssetToHashedAssetKeyMap")?.GetValue(mapServiceInstance) as IDictionary;
+                if (hashMap != null)
+                {
+                    foreach (DictionaryEntry entry in hashMap)
+                    {
+                        var asset = entry.Key as UnityEngine.Object;
+                        if (asset == null) continue;
+                        var hash = (uint)entry.Value!;
+                        assetSaveKeys[asset.name] = new Dictionary<string, object>
+                        {
+                            ["hash"] = hash,
+                            ["type"] = entry.Key!.GetType().Name,
+                        };
+                    }
+                }
+                Plugin.Log.LogInfo($"[CampaignProgress] AssetSaveKeyMapService: {assetSaveKeys.Count} asset->hash entries.");
+            }
+            else
+            {
+                Plugin.Log.LogWarning("[CampaignProgress] AssetSaveKeyMapService.Instance not available — skipping asset-save-key dump.");
+            }
+
+            var result = new Dictionary<string, object>
+            {
+                ["profileName"] = profileName,
+                ["capturedAtUtc"] = DateTime.UtcNow.ToString("o"),
+                ["playerActionTrackerHistory"] = patHistoryByName,
+                ["industrialActionShips"] = iaShipList,
+                ["narrativeMessages"] = narrativeMessages,
+            };
+
+            try
+            {
+                var outDir = Path.Combine(Path.GetDirectoryName(Plugin.OutputPath.Value)!, "campaign_progress");
+                Directory.CreateDirectory(outDir);
+
+                // The asset-save-key table is game-global (identical across every profile/session), so
+                // it's written once to a shared file rather than duplicated inside every per-profile JSON.
+                if (assetSaveKeys.Count > 0)
+                {
+                    var keysPath = Path.Combine(outDir, "asset_save_keys.json");
+                    File.WriteAllText(keysPath, JsonConvert.SerializeObject(assetSaveKeys, Formatting.Indented));
+                    Plugin.Log.LogInfo($"[CampaignProgress] Wrote {assetSaveKeys.Count} asset-save-key entries to {keysPath}");
+                }
+                var path = Path.Combine(outDir, $"{profileName}.json");
+                File.WriteAllText(path, JsonConvert.SerializeObject(result, Formatting.Indented));
+                Plugin.Log.LogInfo($"[CampaignProgress] Wrote {iaShipList.Count} Industrial Action ship condition set(s) and {patHistoryByName.Count} PAT entries to {path}");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[CampaignProgress] Write error: {ex.Message}");
+            }
+        }
     }
 
     // ── Existing patches ─────────────────────────────────────────────────────
@@ -640,6 +907,7 @@ namespace PartInfoLogger
     {
         static void Postfix(GameObject obj, float __result)
         {
+            if (!Plugin.EnrichmentEnabled.Value) return;
             if (obj == null || __result <= 0f) return;
             State.PendingMass[obj.name.Replace("(Clone)", "").Trim()] = __result;
 
@@ -661,6 +929,7 @@ namespace PartInfoLogger
     {
         static void Postfix(StructurePart __instance)
         {
+            if (!Plugin.EnrichmentEnabled.Value) return;
             var go = __instance.gameObject;
 
             GameObject? root = null;
