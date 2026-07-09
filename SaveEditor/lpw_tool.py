@@ -754,11 +754,26 @@ def goto_milestone(save: LpwSave, target: str, *, rank_offset: int = 0,
         raise KeyError(f"'{target}' not in MILESTONE_CHAIN. Known milestones: {', '.join(names)}")
 
     idx = names.index(target)
+    target_rank = MILESTONE_CHAIN[idx][1]
     # cutoff = index one past the last PRESERVED milestone. If preserving
     # target, that's target's own index (inclusive); if not, it's idx-1.
     cutoff = idx if preserve_target else idx - 1
     preserved = MILESTONE_CHAIN[: cutoff + 1]
-    base_rank = max((r for _, r in preserved), default=1)
+    preserved_rank = max((r for _, r in preserved), default=1)
+    # Land on the TARGET's own rank, not just the highest rank among what's
+    # preserved -- 2026-07-08 correction: the original preserved-only logic
+    # left the save sitting one or more ranks BELOW target whenever target
+    # is the first/only milestone at its rank (e.g. targeting 07_00, whose
+    # nearest preserved predecessor is a rank-5 milestone, landed the save
+    # at rank 5 -- requiring the player to actually grind rank-up shifts
+    # just to reach eligibility for the very milestone being tested, which
+    # defeats the entire point of goto-milestone). A milestone only becomes
+    # eligible to trigger at its OWN rank, so that must be the floor;
+    # max(...) with preserved_rank still correctly handles the same-rank-
+    # cluster case this replaced (e.g. 17_03_LouUpsetAboutKaito_Night,
+    # where several preserved rank-17 siblings already imply rank 17 --
+    # target's own rank matches theirs, so this is a no-op there).
+    base_rank = max(preserved_rank, target_rank)
     new_rank = base_rank + rank_offset
 
     set_rank(save, new_rank)
@@ -767,8 +782,15 @@ def goto_milestone(save: LpwSave, target: str, *, rank_offset: int = 0,
         for name, _ in MILESTONE_CHAIN[cutoff + 1:]:
             save.action_tracker.pop(name, None)
 
-        x1_idx = names.index("PAT_CMP_17_X1_LouRecruitsCrew_Complete")
-        if strip_downstream_story_pats and cutoff + 1 >= x1_idx:
+        # 2026-07-08 correction: previously gated on `cutoff + 1 >= x1_idx` (only sweep when
+        # targeting 17_X1/17_X2/later), on the assumption Act-3 content could only exist that far
+        # into the chain. Wrong -- a fully-completed reference save (e.g. Beltalowda's) has Act-3
+        # content regardless of what target you roll back TO; targeting an early milestone like
+        # 07_00 left all of SC01-SC12 untouched, producing an impossible save state (rank 7 with
+        # Act-3 completion markers already present) that broke live in-game testing. The sweep
+        # itself is already safe for any target (kept_names always protects everything preserved),
+        # so just always run it whenever strip_downstream_story_pats is true.
+        if strip_downstream_story_pats:
             kept_names = {n for n, _ in preserved}  # everything preserved must survive the sweep
             for name in list(save.action_tracker):
                 if name in kept_names:
