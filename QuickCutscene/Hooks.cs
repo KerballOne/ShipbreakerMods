@@ -1,6 +1,7 @@
 using BBI.Unity.Game;
 using Doozy.Engine.UI;
 using HarmonyLib;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Playables;
 
@@ -20,47 +21,64 @@ namespace QuickCutscene
             }
         }
 
-        // Direct fallback for PAT_CMP_17_X2_LYNXUnionClampDown_Complete: investigated extensively
-        // 2026-07-08 and found no code path, timer, or UI-state signal that posts this PAT for the
-        // NARCON_Message_LynxInternal_UnionClampDown greeting -- it's not HABGreetingPopupReadPAT
-        // (null on this asset), not tied to mRemainingTime/btnInteractable in any way we could safely
-        // hook, and not owned by the speech/subtitle systems (which are entirely separate from
-        // HabCustomGreetingController). Since skipping this specific greeting via Hide() permanently
-        // loses whatever normally posts it (reproduced heidi's real save gap exactly), post it
-        // directly by name here rather than continuing to chase the real trigger. Looked up once via
-        // Resources.FindObjectsOfTypeAll and cached, since PlayerActionTrackerAsset instances are
-        // static game data, not per-greeting.
-        static PlayerActionTrackerAsset? s_cachedLynxUnionClampDownPat;
-        const string LynxUnionClampDownMessageName = "NARCON_Message_LynxInternal_UnionClampDown";
-        const string LynxUnionClampDownPatName = "PAT_CMP_17_X2_LYNXUnionClampDown_Complete";
-
-        private static void PostLynxUnionClampDownPatIfNeeded(NarrativeMessageAsset? narrativeAsset)
+        // Direct fallback for greeting-gated completion PATs that skip can silently drop.
+        //
+        // NARCON_Message_LynxInternal_UnionClampDown -> PAT_CMP_17_X2_LYNXUnionClampDown_Complete:
+        // investigated extensively 2026-07-08, found no code path, timer, or UI-state signal that
+        // posts this PAT -- it's not HABGreetingPopupReadPAT (null on this asset), not tied to
+        // mRemainingTime/btnInteractable in any way safely hookable, and not owned by the
+        // speech/subtitle systems (entirely separate from HabCustomGreetingController). Skipping via
+        // Hide() permanently loses whatever normally posts it (reproduced heidi's real save gap).
+        //
+        // NARCON_Message_LynxInternal_IncomingTransmission -> PAT_CMP_07_00_CalyssiaAntiUnion_Complete:
+        // also confirmed 2026-07-08. Different mechanism than 17_X2 -- Calyssia's dialogue is a
+        // separate speech/subtitle sequence (LynxSpeechEventController) layered UNDER this greeting
+        // popup; mNarrativeAsset never changes during her speech, and the PAT posts mid-sequence while
+        // the IncomingTransmission greeting is still showing (confirmed live via continuous
+        // mNarrativeAsset polling in PartInfoLogger, independent of skip). If skip closes this
+        // greeting via Hide() before Calyssia's speech finishes, the same class of loss as 17_X2
+        // applies -- so gate on this greeting's asset the same way, even though the PAT's real trigger
+        // is technically a different subsystem.
+        //
+        // Both looked up once via Resources.FindObjectsOfTypeAll and cached, since
+        // PlayerActionTrackerAsset instances are static game data, not per-greeting.
+        static readonly (string MessageName, string PatName)[] s_directPostGreetings =
         {
-            if (narrativeAsset == null || narrativeAsset.name != LynxUnionClampDownMessageName)
-                return;
+            ("NARCON_Message_LynxInternal_UnionClampDown", "PAT_CMP_17_X2_LYNXUnionClampDown_Complete"),
+            ("NARCON_Message_LynxInternal_IncomingTransmission", "PAT_CMP_07_00_CalyssiaAntiUnion_Complete"),
+        };
+        static readonly Dictionary<string, PlayerActionTrackerAsset?> s_cachedDirectPostPats = new();
 
-            if (s_cachedLynxUnionClampDownPat == null)
+        private static void PostDirectFallbackPatIfNeeded(NarrativeMessageAsset? narrativeAsset)
+        {
+            if (narrativeAsset == null) return;
+
+            foreach (var (messageName, patName) in s_directPostGreetings)
             {
-                foreach (var pat in Resources.FindObjectsOfTypeAll<PlayerActionTrackerAsset>())
+                if (narrativeAsset.name != messageName) continue;
+
+                if (!s_cachedDirectPostPats.TryGetValue(patName, out var pat) || pat == null)
                 {
-                    if (pat.name == LynxUnionClampDownPatName)
+                    pat = null;
+                    foreach (var candidate in Resources.FindObjectsOfTypeAll<PlayerActionTrackerAsset>())
                     {
-                        s_cachedLynxUnionClampDownPat = pat;
-                        break;
+                        if (candidate.name == patName) { pat = candidate; break; }
                     }
+                    s_cachedDirectPostPats[patName] = pat;
                 }
-            }
 
-            if (s_cachedLynxUnionClampDownPat == null)
-            {
+                if (pat == null)
+                {
+                    if (Plugin.ConfigDebugPrint.Value)
+                        Plugin.Log.LogWarning($"QuickCutscene: skip pressed — could not find PlayerActionTrackerAsset '{patName}'");
+                    return;
+                }
+
                 if (Plugin.ConfigDebugPrint.Value)
-                    Plugin.Log.LogWarning($"QuickCutscene: skip pressed — could not find PlayerActionTrackerAsset '{LynxUnionClampDownPatName}'");
+                    Plugin.Log.LogInfo($"QuickCutscene: skip pressed — directly posting {patName}");
+                Main.EventSystem.Post(PlayerActionTrackerEvent.GetEvent(pat, MathUtility.OperationType.Add, 1));
                 return;
             }
-
-            if (Plugin.ConfigDebugPrint.Value)
-                Plugin.Log.LogInfo($"QuickCutscene: skip pressed — directly posting {LynxUnionClampDownPatName}");
-            Main.EventSystem.Post(PlayerActionTrackerEvent.GetEvent(s_cachedLynxUnionClampDownPat, MathUtility.OperationType.Add, 1));
         }
 
         // Patching ProcessAutomationControls rather than Update because:
@@ -91,7 +109,9 @@ namespace QuickCutscene
 
                 var t3 = Traverse.Create(__instance);
                 var narrativeAsset = t3.Field("mNarrativeAsset").GetValue<NarrativeMessageAsset>();
-                PostLynxUnionClampDownPatIfNeeded(narrativeAsset);
+                if (Plugin.ConfigDebugPrint.Value)
+                    Plugin.Log.LogInfo($"QuickCutscene: skip pressed — mNarrativeAsset={(narrativeAsset != null ? narrativeAsset.name : "null")}");
+                PostDirectFallbackPatIfNeeded(narrativeAsset);
 
                 __instance.Hide();
                 var absT = Traverse.Create(ActionBlockerService.Instance);
