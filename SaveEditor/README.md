@@ -29,14 +29,33 @@ python lpw_tool.py --keymap path/to/asset_save_keys.json dump SAVE.lpw
 python lpw_tool.py --keymap path/to/asset_save_keys.json set-pat SAVE.lpw PAT_NAME --value 1 --out OUT.lpw
 python lpw_tool.py --keymap path/to/asset_save_keys.json set-pat SAVE.lpw PAT_NAME --out OUT.lpw   # omit --value to remove
 python lpw_tool.py --keymap path/to/asset_save_keys.json set-rank SAVE.lpw 17 --out OUT.lpw
+python lpw_tool.py --keymap path/to/asset_save_keys.json goto-milestone SAVE.lpw PAT_CMP_17_X2_LYNXUnionClampDown_Complete --out OUT.lpw
+python lpw_tool.py list-milestones
 python lpw_tool.py --keymap path/to/asset_save_keys.json rename-header SAVE.lpw new_profile_name --out OUT.lpw
 ```
 
 `set-rank` also trims `PAT_RankXX_Reached` / `PAT_CMP_RankXX_ShiftTracker`
-entries above the new rank by default (`--no-trim` to keep them). It does
-**not** touch currency, upgrades, durability, available ships, XP, or
+entries above the new rank by default (`--no-trim` to keep them), and syncs
+`PAT_STICKERS_EmployeeAdvancement_RankUp` to the new rank. It does **not**
+touch currency, upgrades, durability, available ships, XP, or
 per-certification-type tier values — see the investigation memory for why
 that's a deliberate scope decision, not an oversight.
+
+`goto-milestone` is the "time machine": rolls a save back to just before a
+named story milestone in `MILESTONE_CHAIN` (`list-milestones` to see the
+full ordered list, rank 2 through 17), so its trigger can be re-approached
+from below. This replicates the recipe confirmed live on 2026-07-08 (the
+first successful milestone retrigger of the whole investigation, `17_X1`
+on `heidi_test1`): sets rank to `target's rank - 1`, and **removes** (not
+zeroes) the target and every later milestone in the chain if present.
+Earlier milestones are left untouched — force-filling them was tried once
+and made no measurable difference. Critically: a not-yet-triggered
+milestone PAT must be fully **absent** from `ActionTrackerData`, not set to
+`0` — confirmed no genuine save ever carries a `_Complete`-style milestone
+PAT at value 0 (the format only ever serializes PATs that have actually
+posted), and a leftover `key: 0` entry from an earlier "reset" attempt is
+suspected to be why two earlier retrigger attempts on the same save failed
+even with the correct rank already rolled back.
 
 `rename-header` computes the target `Saves/Profiles` filename for you
 (`vglpp3_<FNV1a32(new_name)>.lpw`) — the game derives save filenames

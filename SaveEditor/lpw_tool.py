@@ -50,9 +50,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import struct
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -88,7 +90,7 @@ DATA_KEYS = [
 HASH_TO_KEY = {fnv1a32(k): k for k in DATA_KEYS}
 KEY_TO_HASH = {k: fnv1a32(k) for k in DATA_KEYS}
 
-DECODED_KEYS = {"ActionTrackerData", "RandomSceneHistory", "GeneralData", "CertificationTierData"}
+DECODED_KEYS = {"ActionTrackerData", "RandomSceneHistory", "GeneralData", "CertificationTierData", "MessageData"}
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +159,29 @@ class AssetKeyMap:
 
 
 # ---------------------------------------------------------------------------
+# Certification XP thresholds (from PartInfoLogger's certification_levels.json,
+# added 2026-07-08 -- see PartInfoLogger/Plugin.cs DumpCertificationLevels).
+# Indexed by rank-1 (rank 1 -> index 0), matching CertificationLevelAssets'
+# in-game array indexing. Used by goto-milestone's XP auto-calculation.
+# ---------------------------------------------------------------------------
+
+def _load_certification_levels(keymap_path: Path) -> list[dict]:
+    candidates = [
+        keymap_path.parent / "certification_levels.json",
+        Path("certification_levels.json"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            with open(candidate, "r", encoding="utf-8") as f:
+                entries = json.load(f)
+            return sorted(entries, key=lambda e: e["rank"])
+    return []
+
+
+_CERTIFICATION_LEVELS: list[dict] = []
+
+
+# ---------------------------------------------------------------------------
 # Parsed representation
 # ---------------------------------------------------------------------------
 
@@ -198,6 +223,7 @@ class LpwSave:
     random_scene_history: Optional[list[str]] = None
     general_data: Optional[GeneralData] = None
     certification: Optional[CertificationTierData] = None
+    message_history: Optional[dict[str, int]] = None  # NarrativeMessageAsset name -> Unix epoch seconds
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +293,8 @@ def decode_known_sections(save: LpwSave, keymap: AssetKeyMap) -> None:
             save.general_data = _decode_general_data(sec.payload)
         elif sec.key == "CertificationTierData":
             save.certification = _decode_certification(sec.payload)
+        elif sec.key == "MessageData":
+            save.message_history = _decode_message_data(sec.payload, keymap)
 
 
 def _decode_action_tracker(payload: bytes, keymap: AssetKeyMap) -> dict[str, int]:
@@ -292,6 +320,40 @@ def _decode_scene_history(payload: bytes, keymap: AssetKeyMap) -> list[str]:
         h = struct.unpack_from("<I", payload, p)[0]
         p += 4
         result.append(keymap.resolve(h))
+    return result
+
+
+def _decode_message_data(payload: bytes, keymap: AssetKeyMap) -> dict[str, int]:
+    """MessageData: count(int32) + count * (hash:uint32, unixEpochSeconds:int64).
+
+    Reverse-engineered 2026-07-08 during the Industrial Action investigation:
+    this is a per-NarrativeMessageAsset "first delivered/read" timestamp table,
+    entirely separate from ActionTrackerData's PAT completion flags. Critically,
+    this section is UNTOUCHED by set_rank()/goto_milestone() -- confirmed live
+    that a message (and its read state) can remain visible/interactable in a
+    profile's inbox after every relevant ActionTrackerData PAT (including the
+    entire main-story/Act3 chain) has been stripped, because the message's
+    entry here was never removed. Re-opening such a message re-posts its
+    read-PAT and can retrigger downstream PATConditionalTriggerComponent
+    scenes, bypassing the intended linear story gate entirely -- this is the
+    root cause of an otherwise-inexplicable retrigger seen on a from-scratch
+    Beltalowda clone with the full Act 3 PAT chain removed.
+
+    4 trailing zero bytes observed after the last entry in every save examined
+    so far -- likely an empty second count-prefixed list (unknown purpose,
+    possibly "sent" messages or similar) -- preserved as `trailer` but not
+    itself decoded pending a save with a nonzero value there.
+    """
+    p = 0
+    count = struct.unpack_from("<i", payload, p)[0]
+    p += 4
+    result = {}
+    for _ in range(count):
+        h = struct.unpack_from("<I", payload, p)[0]
+        p += 4
+        ts = struct.unpack_from("<q", payload, p)[0]
+        p += 8
+        result[keymap.resolve(h)] = ts
     return result
 
 
@@ -356,6 +418,22 @@ def _encode_certification(cert: CertificationTierData) -> bytes:
     return bytes(out)
 
 
+def _encode_message_data(entries: dict[str, int], keymap: AssetKeyMap) -> bytes:
+    """Inverse of _decode_message_data. Appends the 4 trailing zero bytes
+    observed after the entry list in every save examined so far (see the
+    decoder's docstring) -- if a future save turns up a nonzero value there,
+    this encoder will silently corrupt it; not yet handled since no such
+    save has been found.
+    """
+    out = bytearray()
+    out += struct.pack("<i", len(entries))
+    for name, ts in entries.items():
+        out += struct.pack("<I", keymap.hash_of(name))
+        out += struct.pack("<q", ts)
+    out += b"\x00\x00\x00\x00"
+    return bytes(out)
+
+
 def _encode_general_data(gd: GeneralData) -> bytes:
     out = bytearray()
     name_bytes = gd.profile_name.encode("utf-8")
@@ -388,6 +466,8 @@ def rebuild(save: LpwSave) -> bytes:
             payload = _encode_certification(save.certification)
         elif sec.key == "GeneralData" and save.general_data is not None:
             payload = _encode_general_data(save.general_data)
+        elif sec.key == "MessageData" and save.message_history is not None:
+            payload = _encode_message_data(save.message_history, save._keymap)  # type: ignore[attr-defined]
         else:
             payload = sec.payload
         out += struct.pack("<I", KEY_TO_HASH[sec.key])
@@ -480,6 +560,281 @@ def set_rank(save: LpwSave, rank: int, *, trim_reached_above: bool = True,
         for r in range(rank + 1, 100):
             save.action_tracker.pop(f"PAT_CMP_Rank{r:02d}_ShiftTracker", None)
 
+    save.action_tracker["PAT_STICKERS_EmployeeAdvancement_RankUp"] = rank
+
+
+# ---------------------------------------------------------------------------
+# Milestone "time machine" -- roll a save back to just before a specific
+# numbered story milestone, so its trigger can be re-approached from below.
+#
+# Full ordered chain, confirmed via Beltalowda's fully-completed save
+# (project_industrial_action_investigation memory). Each entry's rank is the
+# leading number in its own PAT name -- confirmed as a strong but NOT
+# code-verified naming convention (the real gate is a separate serialized
+# m_RequiredLevel/PATConditionAsset field not visible in decompiled IL).
+# ---------------------------------------------------------------------------
+
+MILESTONE_CHAIN = [
+    ("PAT_CMP_02_00_HABIntro_Night_Complete", 2),
+    ("PAT_CMP_02_01_WeaverBackstory_Tracker", 2),
+    ("PAT_CMP_04_01_LouHopes_Night_Complete", 4),
+    ("PAT_CMP_05_01_LouUnionNewsletterSignup_Complete", 5),
+    ("PAT_CMP_05_02_WeaverLouFriction_ScenePlayed", 5),
+    ("PAT_CMP_07_00_CalyssiaAntiUnion_Complete", 7),
+    ("PAT_CMP_09_00_RhodesArrives_Complete", 9),
+    ("PAT_CMP_10_00_RhodesUpsHazardLevel_Complete", 10),
+    ("PAT_CMP_11_00_RhodesDemoCharges_Complete", 11),
+    ("PAT_CMP_11_01_CrewPrivateComms_Night_Complete", 11),
+    ("PAT_CMP_12_00_RhodesPowerGens_Complete", 12),
+    ("PAT_CMP_13_01_CrewCommiserates_Night_Complete", 13),
+    ("PAT_CMP_14_00_RhodesRadiation_Complete", 14),
+    ("PAT_CMP_15_00_RhodesCutter1on1_Night_Complete", 15),
+    ("PAT_CMP_16_01_LouResolveWaning_Complete", 16),
+    ("PAT_CMP_17_01_KaitoScrewUpWarning_Complete", 17),
+    ("PAT_CMP_17_02_KaitoPulledAside_Complete", 17),
+    ("PAT_CMP_17_02_WeaverUpsetAboutKaito_Complete", 17),
+    ("PAT_CMP_17_03_KaitoPunished_Complete", 17),
+    ("PAT_CMP_17_03_LouUpsetAboutKaito_Complete", 17),
+    ("PAT_CMP_17_03_LouUpsetAboutKaito_Night_Complete", 17),
+    ("PAT_CMP_17_X1_LouRecruitsCrew_Complete", 17),
+    ("PAT_CMP_17_X2_LYNXUnionClampDown_Complete", 17),
+]
+
+MILESTONE_NAMES = [name for name, _ in MILESTONE_CHAIN]
+
+# ---------------------------------------------------------------------------
+# Message-to-checkpoint matrix (checkpoint_matrix.md, built 2026-07-08).
+#
+# Each entry is (message_asset_name, gap_start, gap_end), where gap_start is
+# the milestone/scene name the message becomes relevant AT OR AFTER, and
+# gap_end is the next confirmed anchor (exclusive) -- i.e. the message
+# belongs somewhere in (gap_start, gap_end], but its exact position within
+# that range is NOT confirmed for "?"-confidence entries. Per the directional
+# rule agreed 2026-07-08: rolling BACKWARD past gap_start removes the
+# message; filling FORWARD to at/past gap_start adds it. Confirmed (C) and
+# inferred-by-name (I) entries have gap_start == gap_end == the one PAT they
+# actually map to.
+#
+# gap_end of None means "no known upper bound" (extends past 17_X2 into
+# Act 3, not yet further mapped).
+# ---------------------------------------------------------------------------
+
+MESSAGE_MAP = [
+    ("NARCON_Message_Union_Welcome", "PAT_CMP_02_00_HABIntro_Night_Complete", "PAT_CMP_02_00_HABIntro_Night_Complete"),
+    ("NARCON_Message_Lou_UnionSignup", "PAT_CMP_05_01_LouUnionNewsletterSignup_Complete", "PAT_CMP_05_01_LouUnionNewsletterSignup_Complete"),
+    ("NARCON_Message_Union_Contracts", "PAT_CMP_05_02_WeaverLouFriction_ScenePlayed", "PAT_CMP_09_00_RhodesArrives_Complete"),
+    ("NARCON_Message_Union_CancelDebt", "PAT_CMP_05_02_WeaverLouFriction_ScenePlayed", "PAT_CMP_09_00_RhodesArrives_Complete"),
+    ("NARCON_Message_LynxInternal_IncomingTransmission", "PAT_CMP_07_00_CalyssiaAntiUnion_Complete", "PAT_CMP_09_00_RhodesArrives_Complete"),
+    ("NARCON_Message_Union_LouInterview", "PAT_CMP_07_00_CalyssiaAntiUnion_Complete", "PAT_CMP_09_00_RhodesArrives_Complete"),
+    ("NARCON_Message_Rhodes_Arrives", "PAT_CMP_09_00_RhodesArrives_Complete", "PAT_CMP_09_00_RhodesArrives_Complete"),
+    ("NARCON_Message_Union_Admins", "PAT_CMP_16_01_LouResolveWaning_Complete", "PAT_CMP_17_X2_LYNXUnionClampDown_Complete"),
+    ("NARCON_Message_Union_Crackdowns", "PAT_CMP_16_01_LouResolveWaning_Complete", "PAT_CMP_17_X2_LYNXUnionClampDown_Complete"),
+    ("NARCON_Message_Union_CallToAction", "PAT_CMP_16_01_LouResolveWaning_Complete", "PAT_CMP_17_X2_LYNXUnionClampDown_Complete"),
+    ("NARCON_Message_LynxInternal_UnionClampDown", "PAT_CMP_17_X2_LYNXUnionClampDown_Complete", "PAT_CMP_17_X2_LYNXUnionClampDown_Complete"),
+    ("NARCON_Message_Lou_MessageFromLou", "PAT_CMP_A3_SC04_MessageFromLou_Read", None),
+    ("NARCON_Message_LynxInternal_DebtComplete", "PAT_CMP_A3_SC09_OutroArbitration_Complete", None),
+]
+
+# Act 3 sub-chain, appended after MILESTONE_CHAIN for message-gap purposes only
+# (goto_milestone's rank logic doesn't need these -- they're all rank 17).
+# SC10 deliberately excluded: confirmed optional/conditional (absent from
+# every save examined 2026-07-08 including Beltalowda's fully-completed one)
+# -- do not strip-by-default or fill-by-default, only touch explicitly.
+_ACT3_ORDER = [
+    "PAT_CMP_A3_SC01_CrewInDisarray_Complete",
+    "PAT_CMP_A3_SC02_KaitoConfesses_Complete",
+    "PAT_CMP_A3_SC03_FullOnDespair_Complete",
+    "PAT_CMP_A3_SC04_MessageFromLou_Read",
+    "PAT_CMP_A3_SC05_CrewUnites_Complete",
+    "PAT_CMP_A3_SC06_IndustrialActionIntroVO_Complete",
+    "PAT_CMP_A3_SC07_SceneComplete",
+    "PAT_CMP_A3_SC08_IndustrialActionOutro_Complete",
+    "PAT_CMP_A3_SC09_OutroArbitration_Complete",
+    "PAT_CMP_A3_SC11_TheWayOut_Complete",
+    "PAT_CMP_A3_SC12_TheNewNormal_Complete",
+]
+_CHECKPOINT_ORDER = MILESTONE_NAMES + _ACT3_ORDER
+
+
+
+
+# Matches sequential story-content PATs that should be stripped by goto_milestone
+# when rolling back to/through 17_X1 or 17_X2: the numbered main-story chain
+# (PAT_CMP_02_00_..., PAT_CMP_17_03_..., etc.) and the undocumented downstream
+# Act 3 sub-chain (PAT_CMP_A3_SC01_... through SC12_..., found in Beltalowda's
+# save on 2026-07-08 -- NOT previously tracked in MILESTONE_CHAIN, includes
+# dozens of per-goal/per-scene sub-PATs like PAT_CMP_A3_SC07_RF_1-3_SalvDestroyed_01_Complete).
+# Deliberately excludes PAT_CMP_NONSEQ_... (non-sequential ambient/rank-window
+# content, e.g. Rank_09_12_Start/End, DeedeeChatter) and other bookkeeping
+# families (Overall_ShiftTracker, RankXX_ShiftTracker) which set_rank() already
+# handles separately -- these are NOT part of the linear story-progress chain
+# and must not be wiped just because a later numbered milestone is targeted.
+_SEQUENTIAL_STORY_PAT_RE = re.compile(r"^PAT_CMP_(\d{2}_|A3_)")
+
+
+def goto_milestone(save: LpwSave, target: str, *, rank_offset: int = 0,
+                    preserve_target: bool = False,
+                    strip_downstream_story_pats: bool = True,
+                    strip_messages: bool = True) -> int:
+    """Roll a save back to just BEFORE `target` -- `target` itself (and
+    everything after it in the chain) is REMOVED by default, so it
+    retriggers on next load. This is the final semantics as of 2026-07-08
+    (two earlier revisions this same day flip-flopped on this: first
+    "strip target," then briefly "preserve target" per user feedback, now
+    reverted back to "strip target" as the more natural reading of a GOTO
+    command -- the user expects PAT_CMP_X to actually fire when they say
+    "goto PAT_CMP_X").
+
+    Pass preserve_target=True to instead land ON `target` with it kept
+    (useful for setting up a save at a specific completed checkpoint without
+    wanting anything to retrigger). Rank is NEVER simply target's rank
+    number directly -- it's always computed as the highest rank among
+    whatever milestones remain preserved after stripping (i.e. the max rank
+    in MILESTONE_CHAIN[:cutoff]). This matters because
+    multiple milestones can share the same rank (five sit at rank 17 before
+    17_X1, for example) -- stripping just the last of a same-rank cluster
+    must NOT drop rank below what the still-preserved same-rank milestones
+    require (2026-07-08: caught a bug where stripping
+    17_03_LouUpsetAboutKaito_Night_Complete would have incorrectly computed
+    rank 16, even though 17_01/17_02 (x2)/17_03_KaitoPunished/
+    17_03_LouUpsetAboutKaito -- all rank 17 -- remain preserved before it).
+
+      1. CurrentCertificationRank set to target's OWN rank (plus
+         rank_offset, e.g. +1 to sit a rank higher if a wider approach
+         window from below the NEXT milestone is wanted), via set_rank()
+         -- trims Reached/ShiftTracker above and fixes
+         EmployeeAdvancement_RankUp.
+      2. Every milestone STRICTLY AFTER `target` in the chain is REMOVED
+         entirely (not set to 0) from ActionTrackerData if present --
+         confirmed this session that real saves never carry a not-yet-
+         triggered milestone PAT at value 0, only fully absent; leaving a
+         stale `key: 0` entry was the likely reason two earlier retrigger
+         attempts failed even with the correct rank already rolled back.
+         `target` itself is left in place -- it's the checkpoint being
+         landed on, not the one being retriggered.
+      3. Every milestone AT OR BEFORE `target` in the chain is left
+         untouched -- does not force-add earlier milestones the save
+         doesn't have, since doing so was tried once already (heidi_test1's
+         original fill-in attempt) and made no difference to retriggering.
+      4. If `target` is 17_X1, 17_X2, or later (i.e. strip_downstream_story_pats
+         is True and the target's index is at/after 17_X1's), ALSO removes
+         every PAT_CMP_NN_... and PAT_CMP_A3_... entry STRICTLY AFTER
+         `target` in the save, not just the ones listed in MILESTONE_CHAIN
+         -- this catches the large, previously untracked PAT_CMP_A3_SC01
+         through SC12 downstream sub-chain (found 2026-07-08 still present
+         in a Beltalowda clone after targeting 17_X1 -- MILESTONE_CHAIN
+         alone missed it entirely). Does NOT touch PAT_CMP_NONSEQ_... or
+         other non-sequential/bookkeeping PATs -- pass
+         strip_downstream_story_pats=False to disable this step entirely.
+      5. If strip_messages is True, ALSO removes every MessageData entry
+         (see checkpoint_matrix.md / MESSAGE_MAP) STRICTLY AFTER `target`
+         in story order -- this closes the bypass discovered live: a
+         message's delivered/read record in MessageData survives steps 1-4
+         untouched, and reopening an already-read message can re-post its
+         read-PAT and retrigger a downstream scene EVEN THOUGH the upstream
+         milestone chain was just stripped, because message delivery is
+         tracked completely independently of ActionTrackerData. Messages
+         with only a "gap"-level mapping (not pinned to one exact PAT) are
+         stripped as a whole group per the directional rule: if `target`
+         falls anywhere strictly before a message's gap upper bound, that
+         message is removed too, even without an exact PAT match. Requires
+         save.message_history to be populated (i.e. keymap available);
+         silently skipped if not.
+
+    Does NOT touch AvailableShipsData, currency, upgrades, durability, XP,
+    or NonSeq rank-window PATs (Rank_05_08/09_12/13_16 Start/End) -- add
+    those manually if a specific test needs them, same scope discipline as
+    set_rank(). Does NOT touch PAT_CMP_A3_SC10_FeeReduction_Complete (see
+    checkpoint_matrix.md -- confirmed optional/conditional, skip-by-default).
+
+    Returns the rank the save was set to, for confirmation/logging.
+    """
+    names = [name for name, _ in MILESTONE_CHAIN]
+    if target not in names:
+        raise KeyError(f"'{target}' not in MILESTONE_CHAIN. Known milestones: {', '.join(names)}")
+
+    idx = names.index(target)
+    # cutoff = index one past the last PRESERVED milestone. If preserving
+    # target, that's target's own index (inclusive); if not, it's idx-1.
+    cutoff = idx if preserve_target else idx - 1
+    preserved = MILESTONE_CHAIN[: cutoff + 1]
+    base_rank = max((r for _, r in preserved), default=1)
+    new_rank = base_rank + rank_offset
+
+    set_rank(save, new_rank)
+
+    if save.action_tracker is not None:
+        for name, _ in MILESTONE_CHAIN[cutoff + 1:]:
+            save.action_tracker.pop(name, None)
+
+        x1_idx = names.index("PAT_CMP_17_X1_LouRecruitsCrew_Complete")
+        if strip_downstream_story_pats and cutoff + 1 >= x1_idx:
+            kept_names = {n for n, _ in preserved}  # everything preserved must survive the sweep
+            for name in list(save.action_tracker):
+                if name in kept_names:
+                    continue
+                if _SEQUENTIAL_STORY_PAT_RE.match(name):
+                    save.action_tracker.pop(name, None)
+
+    if strip_messages and save.message_history is not None:
+        cutoff_checkpoint_idx = _CHECKPOINT_ORDER.index(names[cutoff]) if cutoff >= 0 else -1
+        for msg_name, gap_start, _gap_end in MESSAGE_MAP:
+            if gap_start not in _CHECKPOINT_ORDER:
+                continue
+            if _CHECKPOINT_ORDER.index(gap_start) > cutoff_checkpoint_idx:
+                save.message_history.pop(msg_name, None)
+
+    return new_rank
+
+
+def fill_to_milestone(save: LpwSave, reference: LpwSave, target: str, *,
+                       fill_messages: bool = True) -> None:
+    """Inverse of goto_milestone: patch `save` FORWARD to have completed
+    everything up to and including `target`, copying actual values from
+    `reference` (intended to be a known-good, fully-completed save such as
+    Beltalowda's) rather than fabricating placeholder values.
+
+    For each milestone in MILESTONE_CHAIN at or before `target` (main-story
+    chain only -- does NOT walk the Act 3 sub-chain, since fill-forward
+    across A3_SC content hasn't been needed/tested yet): if `save` is
+    missing the PAT, copies `reference`'s value for it verbatim (not
+    hardcoded to 1, in case a PAT's real completed value differs, e.g.
+    PAT_CMP_11_00_RhodesDemoCharges_Complete was seen at 2 in Beltalowda's
+    save, not 1).
+
+    If fill_messages is True (default), also copies MessageData entries
+    (hash + REFERENCE's own delivery timestamp, per the directional gap
+    rule -- see checkpoint_matrix.md) for every message whose gap_start is
+    at/before `target`, if `save` doesn't already have that message.
+
+    Does NOT touch rank/XP -- call set_rank() separately if the save's rank
+    also needs to move forward to match. Does NOT touch SC10 (optional,
+    skip-by-default -- see checkpoint_matrix.md) or anything not present in
+    `reference` itself (can't fill from a hole that's also in the reference).
+    """
+    if save.action_tracker is None or reference.action_tracker is None:
+        raise ValueError("ActionTrackerData not decoded on save and/or reference")
+
+    names = [name for name, _ in MILESTONE_CHAIN]
+    if target not in names:
+        raise KeyError(f"'{target}' not in MILESTONE_CHAIN. Known milestones: {', '.join(names)}")
+    idx = names.index(target)
+
+    for name in names[: idx + 1]:
+        if name in save.action_tracker:
+            continue
+        if name in reference.action_tracker:
+            save.action_tracker[name] = reference.action_tracker[name]
+
+    if fill_messages and save.message_history is not None and reference.message_history is not None:
+        wanted = {name for name, gap_start, _ in MESSAGE_MAP
+                  if gap_start in _CHECKPOINT_ORDER and _CHECKPOINT_ORDER.index(gap_start) <= idx}
+        for msg_name in wanted:
+            if msg_name in save.message_history:
+                continue
+            if msg_name in reference.message_history:
+                save.message_history[msg_name] = reference.message_history[msg_name]
+
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -521,6 +876,15 @@ def _cmd_dump(args: argparse.Namespace) -> None:
         print(f"--- RandomSceneHistory: {len(save.random_scene_history)} entries ---")
         for name in sorted(save.random_scene_history):
             print(f"  {name}")
+        print()
+
+    if save.message_history is not None:
+        unresolved = [k for k in save.message_history if k.startswith("<unknown")]
+        print(f"--- MessageData: {len(save.message_history)} entries ({len(unresolved)} unresolved) ---")
+        for name in sorted(save.message_history, key=lambda k: save.message_history[k]):
+            ts = save.message_history[name]
+            iso = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            print(f"  {name}: {ts} ({iso})")
 
 
 def _cmd_set_pat(args: argparse.Namespace) -> None:
@@ -549,6 +913,135 @@ def _cmd_set_rank(args: argparse.Namespace) -> None:
           f"{' (trimmed Reached/ShiftTracker PATs above new rank)' if not args.no_trim else ''}")
     save_to(save, Path(args.out))
     print(f"Wrote {args.out}")
+
+
+def _snapshot(save: LpwSave) -> dict:
+    """Capture a comparable snapshot of every decoded field, for diffing
+    before/after a goto-milestone or fill-milestone run."""
+    return {
+        "rank": save.certification.rank if save.certification else None,
+        "xp": save.certification.xp if save.certification else None,
+        "action_tracker": dict(save.action_tracker) if save.action_tracker is not None else {},
+        "message_history": dict(save.message_history) if save.message_history is not None else {},
+    }
+
+
+def _print_diff(before: dict, after: dict) -> None:
+    """Print a full before/after diff: rank, xp, and every ActionTrackerData/
+    MessageData key that was added, removed, or changed value."""
+    print()
+    print("=== DIFF ===")
+    if before["rank"] != after["rank"]:
+        print(f"  rank:  {before['rank']} -> {after['rank']}")
+    if before["xp"] != after["xp"]:
+        print(f"  xp:    {before['xp']} -> {after['xp']}")
+
+    at_before, at_after = before["action_tracker"], after["action_tracker"]
+    removed = sorted(set(at_before) - set(at_after))
+    added = sorted(set(at_after) - set(at_before))
+    changed = sorted(k for k in set(at_before) & set(at_after) if at_before[k] != at_after[k])
+
+    if removed:
+        print(f"\n  ActionTrackerData removed ({len(removed)}):")
+        for k in removed:
+            print(f"    - {k}: {at_before[k]}")
+    if added:
+        print(f"\n  ActionTrackerData added ({len(added)}):")
+        for k in added:
+            print(f"    + {k}: {at_after[k]}")
+    if changed:
+        print(f"\n  ActionTrackerData changed ({len(changed)}):")
+        for k in changed:
+            print(f"    ~ {k}: {at_before[k]} -> {at_after[k]}")
+
+    msg_before, msg_after = before["message_history"], after["message_history"]
+    msg_removed = sorted(set(msg_before) - set(msg_after))
+    msg_added = sorted(set(msg_after) - set(msg_before))
+
+    if msg_removed:
+        print(f"\n  MessageData removed ({len(msg_removed)}):")
+        for k in msg_removed:
+            print(f"    - {k}")
+    if msg_added:
+        print(f"\n  MessageData added ({len(msg_added)}):")
+        for k in msg_added:
+            print(f"    + {k}")
+
+    if not (removed or added or changed or msg_removed or msg_added
+            or before["rank"] != after["rank"] or before["xp"] != after["xp"]):
+        print("  (no changes)")
+    print()
+
+
+def _cmd_goto_milestone(args: argparse.Namespace) -> None:
+    keymap = AssetKeyMap.load(Path(args.keymap))
+    save = load(Path(args.file), keymap)
+    before = _snapshot(save)
+
+    new_rank = goto_milestone(save, args.milestone, rank_offset=args.rank_offset,
+                               preserve_target=args.preserve_target,
+                               strip_messages=not args.no_messages)
+
+    print(f"Rank: {before['rank']} -> {new_rank}")
+    print(f"Removed '{args.milestone}' and every later milestone in the chain (if present)")
+
+    if not args.no_xp and save.certification is not None:
+        # The HUD progress bar shows (CurrentXP - rank[N-1].RequiredXP) out of
+        # (rank[N].RequiredXP - rank[N-1].RequiredXP) when at rank N -- i.e.
+        # it's progress toward completing the save's OWN current rank, not
+        # toward the next one. So "5 XP of headroom" means CurrentXP should
+        # sit 5 below THIS rank's own threshold (new_rank's), not next
+        # rank's -- confirmed the hard way 2026-07-08: an earlier version of
+        # this code used new_rank+1's threshold, which produced xp=5340 at
+        # rank 17 and rendered as an overflowing 1440/625 bar instead of the
+        # intended 620/625.
+        levels_by_rank = {e["rank"]: e["requiredXP"] for e in _CERTIFICATION_LEVELS}
+        if new_rank in levels_by_rank:
+            required_xp = levels_by_rank[new_rank]
+            new_xp = required_xp - 5.0
+            save.certification.xp = new_xp
+            print(f"xp: {before['xp']} -> {new_xp} (5 below rank {new_rank}'s own {required_xp} threshold)")
+        else:
+            print(f"xp: left at {before['xp']} (certification_levels.json not found/missing rank {new_rank} -- "
+                  f"run PIL in-game to refresh it, or pass --no-xp to suppress this warning)")
+
+    if not args.no_diff:
+        _print_diff(before, _snapshot(save))
+
+    save_to(save, Path(args.out))
+    print(f"Wrote {args.out}")
+
+
+def _cmd_fill_milestone(args: argparse.Namespace) -> None:
+    keymap = AssetKeyMap.load(Path(args.keymap))
+    save = load(Path(args.file), keymap)
+    reference = load(Path(args.reference), keymap)
+    before = _snapshot(save)
+
+    fill_to_milestone(save, reference, args.milestone, fill_messages=not args.no_messages)
+
+    pats_added = set(save.action_tracker or {}) - set(before["action_tracker"])
+    messages_added = set(save.message_history or {}) - set(before["message_history"])
+
+    print(f"Filled forward to '{args.milestone}' using {args.reference} as reference")
+    if pats_added:
+        print(f"Added {len(pats_added)} PAT(s): {', '.join(sorted(pats_added))}")
+    else:
+        print("No PATs needed adding (save already had everything up to the target)")
+    if messages_added:
+        print(f"Added {len(messages_added)} MessageData entr{'y' if len(messages_added)==1 else 'ies'}: "
+              f"{', '.join(sorted(messages_added))}")
+
+    if not args.no_diff:
+        _print_diff(before, _snapshot(save))
+
+    save_to(save, Path(args.out))
+    print(f"Wrote {args.out}")
+
+
+def _cmd_list_milestones(args: argparse.Namespace) -> None:
+    for name, rank in MILESTONE_CHAIN:
+        print(f"  rank {rank:2d}  {name}")
 
 
 def _cmd_rename(args: argparse.Namespace) -> None:
@@ -587,6 +1080,48 @@ def main() -> None:
     p_rank.add_argument("--out", required=True)
     p_rank.set_defaults(func=_cmd_set_rank)
 
+    p_goto = sub.add_parser("goto-milestone",
+                             help="Roll a save back to just before a numbered story milestone, replicating "
+                                  "the confirmed 17_X1 retrigger recipe (rank rollback + true removal, not "
+                                  "zeroing, of the target and all later milestones)")
+    p_goto.add_argument("file")
+    p_goto.add_argument("milestone", help="Target PAT name, e.g. PAT_CMP_17_X2_LYNXUnionClampDown_Complete "
+                                           "(see 'list-milestones' for the full chain)")
+    p_goto.add_argument("--rank-offset", type=int, default=0,
+                         help="Extra rank adjustment on top of the computed rank (default: 0)")
+    p_goto.add_argument("--preserve-target", action="store_true",
+                         help="Land ON the target checkpoint with it kept, instead of stripping it too "
+                              "(default: target is stripped, so it retriggers on next load)")
+    p_goto.add_argument("--no-messages", action="store_true",
+                         help="Don't strip MessageData entries at/after the target (see checkpoint_matrix.md "
+                              "-- disabling this risks the already-read-message bypass found 2026-07-08)")
+    p_goto.add_argument("--no-xp", action="store_true",
+                         help="Don't auto-set xp to 5 below the new rank's next threshold "
+                              "(requires certification_levels.json next to --keymap; see PartInfoLogger)")
+    p_goto.add_argument("--no-diff", action="store_true",
+                         help="Don't print the full before/after diff (rank, xp, every ActionTrackerData/"
+                              "MessageData key added/removed/changed)")
+    p_goto.add_argument("--out", required=True)
+    p_goto.set_defaults(func=_cmd_goto_milestone)
+
+    p_fill = sub.add_parser("fill-milestone",
+                             help="Inverse of goto-milestone: patch a save FORWARD to have completed "
+                                  "everything up to and including a milestone, copying real PAT/message "
+                                  "values from a known-good reference save (e.g. Beltalowda's)")
+    p_fill.add_argument("file")
+    p_fill.add_argument("milestone", help="Target PAT name to fill forward to (inclusive)")
+    p_fill.add_argument("--reference", required=True, help="Path to a fully-completed reference .lpw")
+    p_fill.add_argument("--no-messages", action="store_true",
+                         help="Don't copy MessageData entries at/before the target from the reference")
+    p_fill.add_argument("--no-diff", action="store_true",
+                         help="Don't print the full before/after diff (rank, xp, every ActionTrackerData/"
+                              "MessageData key added/removed/changed)")
+    p_fill.add_argument("--out", required=True)
+    p_fill.set_defaults(func=_cmd_fill_milestone)
+
+    p_list = sub.add_parser("list-milestones", help="Print the full known milestone chain (name -> rank)")
+    p_list.set_defaults(func=_cmd_list_milestones)
+
     p_rename = sub.add_parser("rename-header", help="Rewrite the profile-name string(s) in the raw file header (for creating a new test profile)")
     p_rename.add_argument("file")
     p_rename.add_argument("new_name")
@@ -594,6 +1129,10 @@ def main() -> None:
     p_rename.set_defaults(func=_cmd_rename)
 
     args = ap.parse_args()
+
+    global _CERTIFICATION_LEVELS
+    _CERTIFICATION_LEVELS = _load_certification_levels(Path(args.keymap))
+
     args.func(args)
 
 
