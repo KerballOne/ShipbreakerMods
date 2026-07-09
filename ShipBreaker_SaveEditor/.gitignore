@@ -1,6 +1,7 @@
 node_modules/
 backups/
 dist/
+dist_release/
 *.log
 test/_cross_validate_tmp/
 test/_cross_validate_fill_tmp/
