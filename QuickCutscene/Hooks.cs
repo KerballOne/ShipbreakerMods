@@ -20,6 +20,49 @@ namespace QuickCutscene
             }
         }
 
+        // Direct fallback for PAT_CMP_17_X2_LYNXUnionClampDown_Complete: investigated extensively
+        // 2026-07-08 and found no code path, timer, or UI-state signal that posts this PAT for the
+        // NARCON_Message_LynxInternal_UnionClampDown greeting -- it's not HABGreetingPopupReadPAT
+        // (null on this asset), not tied to mRemainingTime/btnInteractable in any way we could safely
+        // hook, and not owned by the speech/subtitle systems (which are entirely separate from
+        // HabCustomGreetingController). Since skipping this specific greeting via Hide() permanently
+        // loses whatever normally posts it (reproduced heidi's real save gap exactly), post it
+        // directly by name here rather than continuing to chase the real trigger. Looked up once via
+        // Resources.FindObjectsOfTypeAll and cached, since PlayerActionTrackerAsset instances are
+        // static game data, not per-greeting.
+        static PlayerActionTrackerAsset? s_cachedLynxUnionClampDownPat;
+        const string LynxUnionClampDownMessageName = "NARCON_Message_LynxInternal_UnionClampDown";
+        const string LynxUnionClampDownPatName = "PAT_CMP_17_X2_LYNXUnionClampDown_Complete";
+
+        private static void PostLynxUnionClampDownPatIfNeeded(NarrativeMessageAsset? narrativeAsset)
+        {
+            if (narrativeAsset == null || narrativeAsset.name != LynxUnionClampDownMessageName)
+                return;
+
+            if (s_cachedLynxUnionClampDownPat == null)
+            {
+                foreach (var pat in Resources.FindObjectsOfTypeAll<PlayerActionTrackerAsset>())
+                {
+                    if (pat.name == LynxUnionClampDownPatName)
+                    {
+                        s_cachedLynxUnionClampDownPat = pat;
+                        break;
+                    }
+                }
+            }
+
+            if (s_cachedLynxUnionClampDownPat == null)
+            {
+                if (Plugin.ConfigDebugPrint.Value)
+                    Plugin.Log.LogWarning($"QuickCutscene: skip pressed — could not find PlayerActionTrackerAsset '{LynxUnionClampDownPatName}'");
+                return;
+            }
+
+            if (Plugin.ConfigDebugPrint.Value)
+                Plugin.Log.LogInfo($"QuickCutscene: skip pressed — directly posting {LynxUnionClampDownPatName}");
+            Main.EventSystem.Post(PlayerActionTrackerEvent.GetEvent(s_cachedLynxUnionClampDownPat, MathUtility.OperationType.Add, 1));
+        }
+
         // Patching ProcessAutomationControls rather than Update because:
         //   1. It's called at the end of Update, so the timer logic has already run for this frame.
         //   2. It's empty in the shipped binary — clearly designed as an extension point.
@@ -45,6 +88,11 @@ namespace QuickCutscene
 
                 if (Plugin.ConfigDebugPrint.Value)
                     Plugin.Log.LogInfo("QuickCutscene: skip pressed — calling Hide() + unblocking all blocked actions");
+
+                var t3 = Traverse.Create(__instance);
+                var narrativeAsset = t3.Field("mNarrativeAsset").GetValue<NarrativeMessageAsset>();
+                PostLynxUnionClampDownPatIfNeeded(narrativeAsset);
+
                 __instance.Hide();
                 var absT = Traverse.Create(ActionBlockerService.Instance);
                 var blocked = absT.Field("mSavedBlockedBindings")
