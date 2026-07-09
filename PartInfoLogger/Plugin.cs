@@ -27,6 +27,7 @@ namespace PartInfoLogger
         internal static ConfigEntry<bool> JointCensusEnabled = null!;
         internal static ConfigEntry<float> JointCensusDelay = null!;
         internal static ConfigEntry<bool> CampaignProgressEnabled = null!;
+        internal static ConfigEntry<bool> SkipDiagnosticsEnabled = null!;
         internal static Plugin Instance = null!;
 
         private void Awake()
@@ -54,11 +55,21 @@ namespace PartInfoLogger
                 "How many seconds after gameplay start to run the full-ship joint census.");
 
             CampaignProgressEnabled = Config.Bind(
-                "CampaignProgress", "Enabled", true,
+                "CampaignProgress", "Enabled", false,
                 "If true, dumps campaign_progress.json on gameplay start: every PlayerActionTrackerAsset the " +
                 "current save has recorded (name -> count), plus every IndustrialActionShipAsset's PATConditionAsset " +
                 "requirements evaluated against that history (met/unmet), and whether each ship has already been " +
-                "generated in PlayerProfile.IndustrialActionShips.");
+                "generated in PlayerProfile.IndustrialActionShips. QC/progression-investigation tooling -- leave " +
+                "off for normal use.");
+
+            SkipDiagnosticsEnabled = Config.Bind(
+                "SkipDiagnostics", "Enabled", false,
+                "If true, independently logs every PlayerActionTrackerEvent posted by the game (name, op, value, " +
+                "IsResetAction) and every Hab3DController/HabCustomGreetingController after-shift-scene state " +
+                "transition, regardless of whether QuickCutscene's own debug logging fires. Built to verify " +
+                "QuickCutscene skip behavior without relying on QC's own (possibly incomplete) log output — " +
+                "see project_industrial_action_investigation memory. Adds per-frame overhead while an after-shift " +
+                "scene or greeting is active; leave off otherwise.");
 
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             harmony.PatchAll();
@@ -82,11 +93,22 @@ namespace PartInfoLogger
                 }
                 else if (ev.GameState == GameSession.GameState.Hab)
                 {
-                    Log.LogInfo($"[CampaignProgress] Hab state reached, CampaignProgressEnabled={CampaignProgressEnabled.Value}");
                     if (CampaignProgressEnabled.Value)
+                    {
+                        Log.LogInfo($"[CampaignProgress] Hab state reached, CampaignProgressEnabled={CampaignProgressEnabled.Value}");
                         Instance.StartCoroutine(DumpCampaignProgress());
+                        Instance.StartCoroutine(DumpCertificationLevels());
+                        Instance.StartCoroutine(DumpTriggerConditions());
+                    }
                 }
             });
+
+            // Independent, QC-agnostic ground truth for every PAT the game actually posts. Registered
+            // via reflection (PlayerActionTrackerEvent is BBI.Unity.Game, not referenced by this project)
+            // against Main.EventSystem the same way GameStateChangedEvent is handled above — NOT a Harmony
+            // patch on any Update method, to avoid the PatchAll-abort footgun documented in
+            // feedback_harmony_patch_update memory.
+            TryHookPlayerActionTrackerEvents();
 
             // Try dumping JSA table immediately via reflection on any loaded JointabilityAsset
             Instance.StartCoroutine(TryDumpJsaFromResources());
@@ -94,6 +116,98 @@ namespace PartInfoLogger
 
         private void OnApplicationQuit() { State.Flush(force: true); JsaCompatState.Flush(); }
         private void OnDestroy()         { State.Flush(force: true); JsaCompatState.Flush(); }
+
+        // Prefix every [SkipDiag] line with a wall-clock timestamp (to correlate against player-reported
+        // "I pressed skip at roughly X") AND the current GameSession.GameState (to remove the exact
+        // ambiguity that bit us earlier this session: a Hab3DController field read during
+        // GameState.LoadingInProgress can show leftover/stale controller state from a previous save,
+        // easily mistaken for a live scene if you only look at line-number proximity in the log).
+        static string SkipDiagPrefix()
+        {
+            string state;
+            try { state = GameSession.CurrentGameState.ToString(); }
+            catch { state = "?"; }
+            return $"[SkipDiag {DateTime.Now:HH:mm:ss.fff} state={state}]";
+        }
+
+        static void TryHookPlayerActionTrackerEvents()
+        {
+            try
+            {
+                Main.EventSystem.AddHandler((PlayerActionTrackerEvent ev) =>
+                {
+                    if (!SkipDiagnosticsEnabled.Value) return;
+                    var assetName = ev.TrackingAsset != null ? ev.TrackingAsset.name : "null";
+                    Log.LogInfo($"{SkipDiagPrefix()} PAT event: {assetName} op={ev.TrackingOperationType} " +
+                        $"value={ev.TrackingOperationValue} isReset={ev.IsResetAction}");
+                });
+                if (SkipDiagnosticsEnabled.Value)
+                    Log.LogInfo($"{SkipDiagPrefix()} PlayerActionTrackerEvent hook registered.");
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning($"[SkipDiag] Could not register PlayerActionTrackerEvent hook: {ex.Message}");
+            }
+        }
+
+        // Independent, QC-agnostic polling of Hab3DController/HabCustomGreetingController state via the
+        // BepInEx plugin's own Update() (a MonoBehaviour method BepInEx calls directly — NOT a Harmony
+        // patch on the game's Hab3DController.Update, which is known to silently abort PatchAll(), see
+        // feedback_harmony_patch_update memory). Logs only on state CHANGE, not every frame, to keep
+        // output readable. Reflection-based since these are private fields on BBI.Unity.Game types.
+        static bool s_lastIsInAfterShift;
+        static string? s_lastSceneName;
+        static bool s_lastGreetingShowing;
+        static string? s_lastGreetingNarrativeAsset;
+
+        private void Update()
+        {
+            if (SkipDiagnosticsEnabled == null || !SkipDiagnosticsEnabled.Value) return;
+
+            var habController = Resources.FindObjectsOfTypeAll<Hab3DController>().FirstOrDefault();
+            if (habController != null)
+            {
+                var t = HarmonyLib.Traverse.Create(habController);
+                bool isInAfterShift = t.Field("mIsInAfterShiftHab").GetValue<bool>();
+                var currentData = t.Field("mCurrentAfterShiftData").GetValue<HabAfterShiftAsset>();
+                string? sceneName = currentData != null ? currentData.name : null;
+
+                if (isInAfterShift != s_lastIsInAfterShift || sceneName != s_lastSceneName)
+                {
+                    Log.LogInfo($"{SkipDiagPrefix()} Hab3DController: mIsInAfterShiftHab={isInAfterShift} " +
+                        $"mCurrentAfterShiftData={sceneName ?? "null"} type={currentData?.SceneType}");
+                    s_lastIsInAfterShift = isInAfterShift;
+                    s_lastSceneName = sceneName;
+                }
+            }
+
+            bool greetingShowing = HabCustomGreetingController.HabGreetingShowing;
+            if (greetingShowing != s_lastGreetingShowing)
+            {
+                Log.LogInfo($"{SkipDiagPrefix()} HabCustomGreetingController.HabGreetingShowing={greetingShowing}");
+                s_lastGreetingShowing = greetingShowing;
+                if (!greetingShowing) s_lastGreetingNarrativeAsset = null;
+            }
+
+            // Independent of skip -- QC only logs mNarrativeAsset at the moment skip is pressed, which
+            // misses (a) no-skip runs entirely and (b) mid-queue asset swaps if HabGreetingShowing stays
+            // true across several queued messages. Polling every frame here catches every message in the
+            // queue, logging only on CHANGE so it doesn't spam.
+            if (greetingShowing)
+            {
+                var greetingController = Resources.FindObjectsOfTypeAll<HabCustomGreetingController>().FirstOrDefault();
+                if (greetingController != null)
+                {
+                    var narrativeAsset = HarmonyLib.Traverse.Create(greetingController).Field("mNarrativeAsset").GetValue<NarrativeMessageAsset>();
+                    string? assetName = narrativeAsset != null ? narrativeAsset.name : null;
+                    if (assetName != s_lastGreetingNarrativeAsset)
+                    {
+                        Log.LogInfo($"{SkipDiagPrefix()} HabCustomGreetingController.mNarrativeAsset={assetName ?? "null"}");
+                        s_lastGreetingNarrativeAsset = assetName;
+                    }
+                }
+            }
+        }
 
         static IEnumerator TryDumpJsaFromResources()
         {
@@ -896,6 +1010,186 @@ namespace PartInfoLogger
             catch (Exception ex)
             {
                 Plugin.Log.LogWarning($"[CampaignProgress] Write error: {ex.Message}");
+            }
+        }
+
+        // Dumps certification_levels.json: RequiredXP (cumulative XP threshold to reach that rank) and
+        // CertificationName for every entry in CertificationSettings.CertificationLevelAssets, indexed by
+        // rank (CertificationLevelAssets[i] corresponds to CurrentCertificationRank == i + 1, per
+        // TrySetCertification/RequiresLevelUp in the decompiled source). This is fixed game-config data,
+        // identical across every profile/session, so it's written once to a shared file rather than
+        // duplicated per-profile like campaign_progress.json.
+        internal static IEnumerator DumpCertificationLevels()
+        {
+            yield return new WaitForSecondsRealtime(1f);
+
+            try
+            {
+                RunCertificationLevelsDump();
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[CertificationLevels] Unhandled exception: {ex}");
+            }
+        }
+
+        static void RunCertificationLevelsDump()
+        {
+            var levelAssets = Main.Instance?.MainSettings?.CertificationSettings?.CertificationLevelAssets;
+            if (levelAssets == null) { Plugin.Log.LogWarning("[CertificationLevels] CertificationLevelAssets not available — skipping."); return; }
+
+            var levels = new List<Dictionary<string, object>>();
+            for (int i = 0; i < levelAssets.Length; i++)
+            {
+                var data = levelAssets[i]?.Data;
+                if (data == null) continue;
+                levels.Add(new Dictionary<string, object>
+                {
+                    ["rank"] = i + 1,
+                    ["certificationName"] = data.CertificationName ?? "",
+                    ["requiredXP"] = data.RequiredXP,
+                });
+            }
+            Plugin.Log.LogInfo($"[CertificationLevels] {levels.Count} certification level entries found.");
+
+            try
+            {
+                var outDir = Path.Combine(Path.GetDirectoryName(Plugin.OutputPath.Value)!, "campaign_progress");
+                Directory.CreateDirectory(outDir);
+                var path = Path.Combine(outDir, "certification_levels.json");
+                File.WriteAllText(path, JsonConvert.SerializeObject(levels, Formatting.Indented));
+                Plugin.Log.LogInfo($"[CertificationLevels] Wrote {levels.Count} entries to {path}");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[CertificationLevels] Write error: {ex.Message}");
+            }
+        }
+
+        // Dumps trigger_conditions.json: for every currently-loaded TriggerableBase-derived component
+        // (scans Resources.FindObjectsOfTypeAll, so only assets Unity has actually instantiated/loaded
+        // this session will appear — a scene/cutscene must have been touched for its triggers to show up),
+        // reports m_RequiredLevel / m_RequiredLevelComparison / m_RequirePlayerLevel / m_OnlyTriggersOnce /
+        // HasBeenTriggered, plus (for PATConditionalTriggerComponent specifically) each conditional
+        // trigger's PATConditionAsset name and its m_All/m_Any/m_None PAT-count requirements. Built to
+        // answer whether a milestone PAT's numeric name prefix (e.g. "17" in
+        // PAT_CMP_17_X1_LouRecruitsCrew_Complete) actually matches its trigger's real rank requirement --
+        // that's an asset-data fact not visible anywhere in decompiled IL, only readable live via
+        // reflection against loaded instances. All via reflection since PartInfoLogger doesn't compile
+        // against these BBI.Unity.Game types directly.
+        internal static IEnumerator DumpTriggerConditions()
+        {
+            yield return new WaitForSecondsRealtime(1f);
+
+            try
+            {
+                RunTriggerConditionsDump();
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[TriggerConditions] Unhandled exception: {ex}");
+            }
+        }
+
+        static void RunTriggerConditionsDump()
+        {
+            var triggerableBaseType = AccessTools.TypeByName("BBI.Unity.Game.TriggerableBase");
+            if (triggerableBaseType == null) { Plugin.Log.LogWarning("[TriggerConditions] TriggerableBase type not found — skipping."); return; }
+
+            var patConditionalType = AccessTools.TypeByName("BBI.Unity.Game.PATConditionalTriggerComponent");
+            var patConditionAssetType = AccessTools.TypeByName("BBI.Unity.Game.PATConditionAsset");
+
+            var requiredLevelField = AccessTools.Field(triggerableBaseType, "m_RequiredLevel");
+            var requiredLevelComparisonField = AccessTools.Field(triggerableBaseType, "m_RequiredLevelComparison");
+            var requirePlayerLevelField = AccessTools.Field(triggerableBaseType, "m_RequirePlayerLevel");
+            var onlyTriggersOnceField = AccessTools.Field(triggerableBaseType, "m_OnlyTriggersOnce");
+            var hasBeenTriggeredProp = AccessTools.Property(triggerableBaseType, "HasBeenTriggered");
+
+            var conditionalTriggersField = patConditionalType != null ? AccessTools.Field(patConditionalType, "m_ConditionalTriggers") : null;
+            var conditionAssetField = AccessTools.Field(AccessTools.Inner(patConditionalType, "PATConditionEventPair"), "m_ConditionAsset");
+
+            var allField = patConditionAssetType != null ? AccessTools.Field(patConditionAssetType, "m_All") : null;
+            var anyField = patConditionAssetType != null ? AccessTools.Field(patConditionAssetType, "m_Any") : null;
+            var noneField = patConditionAssetType != null ? AccessTools.Field(patConditionAssetType, "m_None") : null;
+            var patCounterType = patConditionAssetType != null ? AccessTools.Inner(patConditionAssetType, "PATCounter") : null;
+            var counterPatField = patCounterType != null ? AccessTools.Field(patCounterType, "m_PAT") : null;
+            var counterSpecificCountField = patCounterType != null ? AccessTools.Field(patCounterType, "m_SpecificCount") : null;
+            var counterSpecificCountOrGreaterField = patCounterType != null ? AccessTools.Field(patCounterType, "m_SpecificCountOrGreater") : null;
+            var counterCountIrrelevantField = patCounterType != null ? AccessTools.Field(patCounterType, "m_CountIrrelevant") : null;
+
+            List<Dictionary<string, object>> DumpPatCounters(IEnumerable? counters)
+            {
+                var list = new List<Dictionary<string, object>>();
+                if (counters == null) return list;
+                foreach (var counter in counters)
+                {
+                    if (counter == null) continue;
+                    var patAsset = counterPatField?.GetValue(counter) as UnityEngine.Object;
+                    list.Add(new Dictionary<string, object>
+                    {
+                        ["pat"] = patAsset?.name ?? "<null>",
+                        ["specificCount"] = counterSpecificCountField?.GetValue(counter) ?? 0,
+                        ["specificCountOrGreater"] = counterSpecificCountOrGreaterField?.GetValue(counter) ?? false,
+                        ["countIrrelevant"] = counterCountIrrelevantField?.GetValue(counter) ?? false,
+                    });
+                }
+                return list;
+            }
+
+            var triggers = new List<Dictionary<string, object>>();
+            var instances = Resources.FindObjectsOfTypeAll(triggerableBaseType);
+            foreach (var instance in instances)
+            {
+                if (instance == null) continue;
+                var unityObj = instance as UnityEngine.Object;
+                var entry = new Dictionary<string, object>
+                {
+                    ["name"] = unityObj?.name ?? "?",
+                    ["type"] = instance.GetType().Name,
+                    ["requirePlayerLevel"] = requirePlayerLevelField?.GetValue(instance) ?? false,
+                    ["requiredLevel"] = requiredLevelField?.GetValue(instance) ?? -1,
+                    ["requiredLevelComparison"] = requiredLevelComparisonField?.GetValue(instance)?.ToString() ?? "?",
+                    ["onlyTriggersOnce"] = onlyTriggersOnceField?.GetValue(instance) ?? false,
+                    ["hasBeenTriggered"] = hasBeenTriggeredProp?.GetValue(instance) ?? false,
+                };
+
+                if (patConditionalType != null && patConditionalType.IsInstanceOfType(instance) && conditionalTriggersField != null)
+                {
+                    var conditionalList = conditionalTriggersField.GetValue(instance) as IEnumerable;
+                    var conditions = new List<Dictionary<string, object>>();
+                    if (conditionalList != null)
+                    {
+                        foreach (var pair in conditionalList)
+                        {
+                            var conditionAsset = conditionAssetField?.GetValue(pair) as UnityEngine.Object;
+                            if (conditionAsset == null) continue;
+                            conditions.Add(new Dictionary<string, object>
+                            {
+                                ["conditionAsset"] = conditionAsset.name,
+                                ["all"] = DumpPatCounters(allField?.GetValue(conditionAsset) as IEnumerable),
+                                ["any"] = DumpPatCounters(anyField?.GetValue(conditionAsset) as IEnumerable),
+                                ["none"] = DumpPatCounters(noneField?.GetValue(conditionAsset) as IEnumerable),
+                            });
+                        }
+                    }
+                    entry["conditionalTriggers"] = conditions;
+                }
+
+                triggers.Add(entry);
+            }
+            Plugin.Log.LogInfo($"[TriggerConditions] {triggers.Count} loaded TriggerableBase instance(s) found.");
+
+            try
+            {
+                var outDir = Path.Combine(Path.GetDirectoryName(Plugin.OutputPath.Value)!, "campaign_progress");
+                Directory.CreateDirectory(outDir);
+                var path = Path.Combine(outDir, "trigger_conditions.json");
+                File.WriteAllText(path, JsonConvert.SerializeObject(triggers, Formatting.Indented));
+                Plugin.Log.LogInfo($"[TriggerConditions] Wrote {triggers.Count} entries to {path}");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[TriggerConditions] Write error: {ex.Message}");
             }
         }
     }
