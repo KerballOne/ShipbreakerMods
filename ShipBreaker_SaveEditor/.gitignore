@@ -1,0 +1,6 @@
+node_modules/
+backups/
+dist/
+*.log
+test/_cross_validate_tmp/
+test/_cross_validate_fill_tmp/

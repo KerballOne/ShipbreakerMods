@@ -1,0 +1,416 @@
+:root {
+  --bg: #14120f;
+  --bg-raised: #1c1913;
+  --bg-card: #201c15;
+  --line: #3a3325;
+  --line-soft: #2a2519;
+  --text: #ece5d3;
+  --text-dim: #a89e86;
+  --text-faint: #766d59;
+  --amber: #e8952e;
+  --amber-dim: #a86d24;
+  --green: #5fae8c;
+  --green-dim: #3f7562;
+  --red: #d9634a;
+  --red-dim: #a84c39;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  margin: 0;
+  padding: 32px 20px 60px;
+  line-height: 1.5;
+}
+
+.wrap { max-width: 760px; margin: 0 auto; }
+
+h1 {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.subtitle {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 0 0 28px;
+}
+
+h2 {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 28px 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin-bottom: 10px;
+}
+
+.card.clickable {
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.card.clickable:hover {
+  border-color: var(--amber-dim);
+}
+
+.profile-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.profile-name {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.profile-meta {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 3px;
+}
+
+.pill {
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 100px;
+  white-space: nowrap;
+}
+.pill.mode-known { background: var(--green-dim); color: #eafff5; }
+.pill.mode-unknown { background: var(--line); color: var(--text-dim); }
+
+button {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  color: var(--text);
+  cursor: pointer;
+}
+button:hover { border-color: var(--amber-dim); }
+button.primary {
+  background: var(--amber);
+  color: #1a1206;
+  border-color: var(--amber);
+}
+button.primary:hover { background: #f3a745; }
+button.danger {
+  background: var(--red-dim);
+  color: #fff0ec;
+  border-color: var(--red-dim);
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.milestone-groups { display: flex; flex-direction: column; }
+
+.rank-group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.rank-group-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 2px 4px 8px;
+}
+
+.milestone-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-raised);
+  margin-bottom: 4px;
+}
+.milestone-row:last-child { margin-bottom: 0; }
+
+/* Every row shares the same base look regardless of status -- "not reached
+   yet" is not "unavailable", it's just the normal default state. Only the
+   dot color and the current-position highlight carry meaning. */
+.milestone-row .dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.milestone-row .dot.dot-complete { background: var(--green); }
+.milestone-row .dot.dot-incomplete { background: var(--text-faint); }
+.milestone-row .dot.dot-gap { background: var(--red); box-shadow: 0 0 0 3px rgba(217, 99, 74, 0.25); }
+
+.milestone-row.current-position {
+  background: rgba(232, 149, 46, 0.14);
+  border-color: var(--amber-dim);
+  font-weight: 700;
+}
+
+.milestone-row .name {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+.milestone-row .name-human {
+  font-size: 13.5px;
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+}
+.milestone-row .name-raw {
+  margin-left: 3em;
+  font-family: monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.milestone-row button { padding: 4px 10px; font-size: 12px; font-weight: 500; flex-shrink: 0; }
+
+.mode-list { display: flex; flex-direction: column; gap: 8px; }
+.mode-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border-radius: 6px; border: 1px solid var(--line-soft);
+  background: var(--bg-raised);
+}
+.mode-row.current { border-color: var(--green-dim); }
+
+.notice {
+  border-left: 3px solid var(--amber-dim);
+  background: rgba(232, 149, 46, 0.08);
+  border-radius: 0 6px 6px 0;
+  padding: 12px 16px;
+  font-size: 13.5px;
+  color: var(--text-dim);
+  margin: 14px 0;
+}
+.notice.warning {
+  border-left-color: var(--red-dim);
+  background: rgba(217, 99, 74, 0.1);
+}
+
+.diff-section { margin-top: 10px; }
+.diff-list { font-family: monospace; font-size: 12px; margin: 4px 0 12px; padding-left: 16px; }
+.diff-list.removed { color: var(--red); }
+.diff-list.added { color: var(--green); }
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 16px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+}
+.back-link:hover { color: var(--amber); }
+
+.empty-state {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 40px 20px;
+}
+
+.error-box {
+  border: 1px solid var(--red-dim);
+  background: rgba(217, 99, 74, 0.1);
+  color: #ffd9cf;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 12px 0;
+  font-size: 13.5px;
+}
+
+input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-family: monospace;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------------
+   LYNX employee-card profile picker -- visual homage to the game's own
+   profile-select screen (yellow/black corp branding, skull badge, barcode).
+   Scoped to .lynx-picker so it doesn't affect any other screen.
+   --------------------------------------------------------------------- */
+
+.lynx-picker {
+  display: grid;
+  grid-template-columns: 1fr 525px;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 780px) {
+  .lynx-picker { grid-template-columns: 1fr; }
+}
+
+.lynx-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 2px solid #000;
+}
+
+.lynx-row {
+  background: #0a0a0a;
+  color: #f0ead8;
+  border: 2px solid #000;
+  padding: 14px 18px;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: background 0.1s;
+}
+.lynx-row:hover { background: #201d17; }
+.lynx-row.selected {
+  background: #f0ead8;
+  color: #0a0a0a;
+}
+.lynx-row .lynx-mode-icon {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+.lynx-row .lynx-row-sub {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  opacity: 0.65;
+  text-transform: none;
+}
+
+.lynx-browse-row {
+  margin-top: 14px;
+  display: flex;
+  gap: 8px;
+}
+.lynx-browse-row input {
+  flex: 1;
+}
+
+.lynx-card {
+  width: 525px;
+  max-width: 100%;
+  background: #f0ead8;
+  color: #16140f;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.lynx-card-header {
+  background: linear-gradient(180deg, #f0c93a, #dcae1e);
+  color: #16140f;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+.lynx-card-header .lynx-pawmark {
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.lynx-card-body {
+  padding: 22px 20px;
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 18px;
+}
+
+.lynx-badge {
+  width: 96px;
+  height: 96px;
+  background: linear-gradient(180deg, #f0c93a, #dcae1e);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lynx-badge svg { width: 62px; height: 62px; }
+
+.lynx-fields {
+  display: grid;
+  grid-template-columns: 140px 211px;
+  gap: 10px 20px;
+  align-content: start;
+}
+.lynx-field-label {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a8272;
+  margin-bottom: 2px;
+}
+.lynx-field-value {
+  width: 100%;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lynx-field-value.mono { font-family: "Consolas", monospace; font-size: 14px; }
+
+.lynx-barcode {
+  height: 40px;
+  margin: 4px 20px 20px;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  opacity: 0.9;
+}
+
+.lynx-card-empty {
+  padding: 60px 20px;
+  text-align: center;
+  color: #8a8272;
+  font-size: 13px;
+}

@@ -1,0 +1,23 @@
+{
+  "name": "shipbreaker-saveeditor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local web app for fixing stuck Hardspace: Shipbreaker save files (story-milestone retrigger, difficulty mode switch).",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "test": "tsx --test test/*.test.ts",
+    "cross-validate": "tsx test/cross-validate.ts"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.5.0"
+  }
+}

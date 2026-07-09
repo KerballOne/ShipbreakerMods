@@ -1,0 +1,177 @@
+{
+  "milestoneChain": [
+    {
+      "name": "PAT_CMP_02_00_HABIntro_Night_Complete",
+      "rank": 2
+    },
+    {
+      "name": "PAT_CMP_02_01_WeaverBackstory_Tracker",
+      "rank": 2
+    },
+    {
+      "name": "PAT_CMP_04_01_LouHopes_Night_Complete",
+      "rank": 4
+    },
+    {
+      "name": "PAT_CMP_05_01_LouUnionNewsletterSignup_Complete",
+      "rank": 5
+    },
+    {
+      "name": "PAT_CMP_05_02_WeaverLouFriction_ScenePlayed",
+      "rank": 5
+    },
+    {
+      "name": "PAT_CMP_07_00_CalyssiaAntiUnion_Complete",
+      "rank": 7
+    },
+    {
+      "name": "PAT_CMP_09_00_RhodesArrives_Complete",
+      "rank": 9
+    },
+    {
+      "name": "PAT_CMP_10_00_RhodesUpsHazardLevel_Complete",
+      "rank": 10
+    },
+    {
+      "name": "PAT_CMP_11_00_RhodesDemoCharges_Complete",
+      "rank": 11
+    },
+    {
+      "name": "PAT_CMP_11_01_CrewPrivateComms_Night_Complete",
+      "rank": 11
+    },
+    {
+      "name": "PAT_CMP_12_00_RhodesPowerGens_Complete",
+      "rank": 12
+    },
+    {
+      "name": "PAT_CMP_13_01_CrewCommiserates_Night_Complete",
+      "rank": 13
+    },
+    {
+      "name": "PAT_CMP_14_00_RhodesRadiation_Complete",
+      "rank": 14
+    },
+    {
+      "name": "PAT_CMP_15_00_RhodesCutter1on1_Night_Complete",
+      "rank": 15
+    },
+    {
+      "name": "PAT_CMP_16_01_LouResolveWaning_Complete",
+      "rank": 16
+    },
+    {
+      "name": "PAT_CMP_17_01_KaitoScrewUpWarning_Complete",
+      "rank": 17
+    },
+    {
+      "name": "PAT_CMP_17_02_KaitoPulledAside_Complete",
+      "rank": 17
+    },
+    {
+      "name": "PAT_CMP_17_02_WeaverUpsetAboutKaito_Complete",
+      "rank": 17
+    },
+    {
+      "name": "PAT_CMP_17_03_KaitoPunished_Complete",
+      "rank": 17
+    },
+    {
+      "name": "PAT_CMP_17_03_LouUpsetAboutKaito_Complete",
+      "rank": 17
+    },
+    {
+      "name": "PAT_CMP_17_03_LouUpsetAboutKaito_Night_Complete",
+      "rank": 17
+    },
+    {
+      "name": "PAT_CMP_17_X1_LouRecruitsCrew_Complete",
+      "rank": 17
+    },
+    {
+      "name": "PAT_CMP_17_X2_LYNXUnionClampDown_Complete",
+      "rank": 17
+    }
+  ],
+  "messageMap": [
+    {
+      "messageName": "NARCON_Message_Union_Welcome",
+      "gapStart": "PAT_CMP_02_00_HABIntro_Night_Complete",
+      "gapEnd": "PAT_CMP_02_00_HABIntro_Night_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_Lou_UnionSignup",
+      "gapStart": "PAT_CMP_05_01_LouUnionNewsletterSignup_Complete",
+      "gapEnd": "PAT_CMP_05_01_LouUnionNewsletterSignup_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_Union_Contracts",
+      "gapStart": "PAT_CMP_05_02_WeaverLouFriction_ScenePlayed",
+      "gapEnd": "PAT_CMP_09_00_RhodesArrives_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_Union_CancelDebt",
+      "gapStart": "PAT_CMP_05_02_WeaverLouFriction_ScenePlayed",
+      "gapEnd": "PAT_CMP_09_00_RhodesArrives_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_LynxInternal_IncomingTransmission",
+      "gapStart": "PAT_CMP_07_00_CalyssiaAntiUnion_Complete",
+      "gapEnd": "PAT_CMP_09_00_RhodesArrives_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_Union_LouInterview",
+      "gapStart": "PAT_CMP_07_00_CalyssiaAntiUnion_Complete",
+      "gapEnd": "PAT_CMP_09_00_RhodesArrives_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_Rhodes_Arrives",
+      "gapStart": "PAT_CMP_09_00_RhodesArrives_Complete",
+      "gapEnd": "PAT_CMP_09_00_RhodesArrives_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_Union_Admins",
+      "gapStart": "PAT_CMP_16_01_LouResolveWaning_Complete",
+      "gapEnd": "PAT_CMP_17_X2_LYNXUnionClampDown_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_Union_Crackdowns",
+      "gapStart": "PAT_CMP_16_01_LouResolveWaning_Complete",
+      "gapEnd": "PAT_CMP_17_X2_LYNXUnionClampDown_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_Union_CallToAction",
+      "gapStart": "PAT_CMP_16_01_LouResolveWaning_Complete",
+      "gapEnd": "PAT_CMP_17_X2_LYNXUnionClampDown_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_LynxInternal_UnionClampDown",
+      "gapStart": "PAT_CMP_17_X2_LYNXUnionClampDown_Complete",
+      "gapEnd": "PAT_CMP_17_X2_LYNXUnionClampDown_Complete"
+    },
+    {
+      "messageName": "NARCON_Message_Lou_MessageFromLou",
+      "gapStart": "PAT_CMP_A3_SC04_MessageFromLou_Read",
+      "gapEnd": null
+    },
+    {
+      "messageName": "NARCON_Message_LynxInternal_DebtComplete",
+      "gapStart": "PAT_CMP_A3_SC09_OutroArbitration_Complete",
+      "gapEnd": null
+    }
+  ],
+  "act3Order": [
+    "PAT_CMP_A3_SC01_CrewInDisarray_Complete",
+    "PAT_CMP_A3_SC02_KaitoConfesses_Complete",
+    "PAT_CMP_A3_SC03_FullOnDespair_Complete",
+    "PAT_CMP_A3_SC04_MessageFromLou_Read",
+    "PAT_CMP_A3_SC05_CrewUnites_Complete",
+    "PAT_CMP_A3_SC06_IndustrialActionIntroVO_Complete",
+    "PAT_CMP_A3_SC07_SceneComplete",
+    "PAT_CMP_A3_SC08_IndustrialActionOutro_Complete",
+    "PAT_CMP_A3_SC09_OutroArbitration_Complete",
+    "PAT_CMP_A3_SC11_TheWayOut_Complete",
+    "PAT_CMP_A3_SC12_TheNewNormal_Complete"
+  ],
+  "sequentialStoryPatRegex": "^PAT_CMP_(\\d{2}_|A3_)"
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Standard",
+    "bytesHex": "9F4525AF",
+    "confirmed": true,
+    "note": "Confirmed 2026-07-08 against test5's real save via the in-game profile-select card screenshot (labeled 'Standard', rank 7 Apprentice). Originally only a by-elimination guess matching the Discord thread's 'Normal mode' entry (GophTheGreat, ~2021) -- since directly verified, no longer a guess."
+  },
+  {
+    "name": "Open Shift",
+    "bytesHex": "A4C73E62",
+    "confirmed": true,
+    "note": "Confirmed 2026-07-08 against Beltalowda's real save (profile actually set to Open Shift mode in-game)."
+  },
+  {
+    "name": "No Revives",
+    "bytesHex": "6E0C960E",
+    "confirmed": true,
+    "note": "Confirmed 2026-07-08 against Heidi's real save (profile actually confirmed No Revives mode in-game, cross-checked directly against the in-game profile-select card after this byte value was independently found). User also independently confirmed personally using this exact technique successfully in the past."
+  },
+  {
+    "name": "Limited",
+    "bytesHex": "79862906",
+    "confirmed": true,
+    "note": "Confirmed 2026-07-08 against NEVARMOAR's real save via the in-game profile-select card screenshot (labeled 'Limited', rank 6 Junior Apprentice) -- a 4th, previously-unknown mode not mentioned in the original Discord thread, which only listed 3. This value was NOT community-sourced; found by decoding an actual save's ProfileDifficultyData bytes and then confirming the label in-game."
+  }
+]
