@@ -5,7 +5,7 @@
 // MessageData timestamps use bigint (Int64) since JS number cannot safely
 // represent all int64 values. bigint is used throughout for correctness.
 import type { AssetKeyMap } from "./keymap";
-import type { GeneralData, CertificationTierData, MessageDataSections } from "./parse";
+import type { GeneralData, CertificationTierData, MessageDataSections, CurrencyEntry, DurabilityData, DurabilityRecord } from "./parse";
 import { read7BitLen, write7BitLen } from "./binary";
 
 export function decodeActionTracker(payload: Buffer, keymap: AssetKeyMap): Map<string, number> {
@@ -279,6 +279,121 @@ export function encodeHabData(values: number[]): Buffer {
   for (const v of values) {
     out.writeInt32LE(v, p);
     p += 4;
+  }
+  return out;
+}
+
+/**
+ * CurrencyData: count(int32) + count * (hash:uint32, amount:float32,
+ * spentAmount:float32). Fully confirmed 2026-07-10 via PartInfoLogger's
+ * profileFieldDump/collectionContents reflection dump of the live
+ * PlayerProfile.CurrencyController.Currencies dictionary, cross-checked
+ * against test5's real save byte-for-byte: hash resolves through the same
+ * AssetKeyMap used for PATs (e.g. Credits_CurrencyAsset, LT_CurrencyAsset,
+ * RepairKit_CurrencyAsset, SpareParts_CurrencyAsset), amount/spentAmount
+ * matched the live CurrencyInstance.Amount/SpentAmount exactly (4118542.75 /
+ * 2204013.0 for Credits in that capture).
+ */
+export function decodeCurrencyData(payload: Buffer, keymap: AssetKeyMap): Map<string, CurrencyEntry> {
+  let p = 0;
+  const count = payload.readInt32LE(p);
+  p += 4;
+  const result = new Map<string, CurrencyEntry>();
+  for (let i = 0; i < count; i++) {
+    const h = payload.readUInt32LE(p);
+    p += 4;
+    const amount = payload.readFloatLE(p);
+    p += 4;
+    const spentAmount = payload.readFloatLE(p);
+    p += 4;
+    result.set(keymap.resolve(h), { amount, spentAmount });
+  }
+  return result;
+}
+export function encodeCurrencyData(entries: Map<string, CurrencyEntry>, keymap: AssetKeyMap): Buffer {
+  const out = Buffer.alloc(4 + entries.size * 12);
+  out.writeInt32LE(entries.size, 0);
+  let p = 4;
+  for (const [name, { amount, spentAmount }] of entries) {
+    out.writeUInt32LE(keymap.hashOf(name), p);
+    p += 4;
+    out.writeFloatLE(amount, p);
+    p += 4;
+    out.writeFloatLE(spentAmount, p);
+    p += 4;
+  }
+  return out;
+}
+
+/**
+ * DurabilityData: a 19-byte header followed by count * 16-byte tool records.
+ * Reverse-engineered 2026-07-10 by byte-diffing against PartInfoLogger's live
+ * PlayerProfile.StoredDurabilityMap dump (5 tools: Cutter/DemoCharge/Grapple/
+ * Thrusters/Scanner), cross-checked against test5's real save byte-for-byte --
+ * durability floats matched Current/Previous/MaxDurability exactly.
+ *
+ * Header (19 bytes, only PARTIALLY understood -- see below):
+ *   thrusterCharge:float32(4) -- confirmed, matches PlayerProfile.ThrusterCharge
+ *   field2:int32(4)           -- HIGH CONFIDENCE but unconfirmed: likely Tethers
+ *                                (PlayerProfile.Tethers was -1 in the one save
+ *                                where this field was also -1; varies 7-50 in
+ *                                other fixtures, consistent with a real count)
+ *   field3:int32(4)           -- HIGH CONFIDENCE but unconfirmed: likely
+ *                                DemoCharges, same reasoning as field2
+ *   opaque:7 bytes            -- UNCONFIRMED, preserved byte-for-byte on
+ *                                rebuild, never decoded/exposed
+ * Then: count * [toolType:int32(4), previous:float32(4), current:float32(4),
+ * max:float32(4)] -- toolType is a small int enum (1=Cutter, 7=DemoCharge,
+ * 2=Grapple, 5=Thrusters, 3=Scanner observed; exact enum not independently
+ * confirmed against game source, but ordering/values were consistent with
+ * PlayerProfile.StoredDurabilityMap's iteration order in the one capture
+ * done so far).
+ *
+ * `count` itself was NOT found at a clean 4-byte-aligned little-endian
+ * offset in the header (the raw bytes only make sense read as a single byte
+ * mid-header) -- rather than guess at that encoding, count is DERIVED from
+ * payload length instead: (payload.length - HEADER_LEN) / RECORD_LEN. This
+ * is safe because RECORD_LEN (16) evenly divides the observed remainder in
+ * every fixture checked, and byte-identical round-trip is verified by tests.
+ */
+const DURABILITY_HEADER_LEN = 19;
+const DURABILITY_RECORD_LEN = 16;
+
+export function decodeDurabilityData(payload: Buffer): DurabilityData {
+  const thrusterCharge = payload.readFloatLE(0);
+  const field2 = payload.readInt32LE(4);
+  const field3 = payload.readInt32LE(8);
+  const opaque = Buffer.from(payload.subarray(12, DURABILITY_HEADER_LEN));
+
+  const remaining = payload.length - DURABILITY_HEADER_LEN;
+  const count = Math.floor(remaining / DURABILITY_RECORD_LEN);
+  const records: DurabilityRecord[] = [];
+  let p = DURABILITY_HEADER_LEN;
+  for (let i = 0; i < count; i++) {
+    records.push({
+      toolType: payload.readInt32LE(p),
+      previous: payload.readFloatLE(p + 4),
+      current: payload.readFloatLE(p + 8),
+      max: payload.readFloatLE(p + 12),
+    });
+    p += DURABILITY_RECORD_LEN;
+  }
+  return { header: { thrusterCharge, field2, field3, opaque }, records };
+}
+
+export function encodeDurabilityData(data: DurabilityData): Buffer {
+  const out = Buffer.alloc(DURABILITY_HEADER_LEN + data.records.length * DURABILITY_RECORD_LEN);
+  out.writeFloatLE(data.header.thrusterCharge, 0);
+  out.writeInt32LE(data.header.field2, 4);
+  out.writeInt32LE(data.header.field3, 8);
+  data.header.opaque.copy(out, 12);
+  let p = DURABILITY_HEADER_LEN;
+  for (const rec of data.records) {
+    out.writeInt32LE(rec.toolType, p);
+    out.writeFloatLE(rec.previous, p + 4);
+    out.writeFloatLE(rec.current, p + 8);
+    out.writeFloatLE(rec.max, p + 12);
+    p += DURABILITY_RECORD_LEN;
   }
   return out;
 }

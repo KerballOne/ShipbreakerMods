@@ -91,20 +91,21 @@ function barcodeGradient(seed) {
   return `linear-gradient(90deg, ${stops.join(", ")})`;
 }
 
-// Truncate in the middle, not the end, so a long generated filename's
-// extension (.lpw) stays visible instead of being clipped off.
-function middleEllipsis(text, maxLen) {
-  if (text.length <= maxLen) return text;
-  const keep = maxLen - 1;
-  const head = Math.ceil(keep / 2);
-  const tail = Math.floor(keep / 2);
-  return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
+// Formats a debt/balance number the same way the game's own card does:
+// thousands-separated, 2 decimal places, no currency symbol prefix (the
+// card's own layout implies $ via context, matching the in-game screenshots).
+function formatDebtAmount(n) {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function renderLynxCard(profile) {
   if (!profile) {
     return el("div", { className: "lynx-card" }, el("div", { className: "lynx-card-empty" }, "Select a save to view details."));
   }
+  const debt = profile.debt;
+  const debtLabel = debt === null ? "Debt" : debt.isPaidOff ? "Balance" : "Debt";
+  const debtValue = debt === null ? "Unknown" : formatDebtAmount(debt.amount);
+
   return el("div", { className: "lynx-card" }, [
     el("div", { className: "lynx-card-header" }, [el("span", { className: "lynx-pawmark", html: "\u{1F43E}" }), "LYNX CORP."]),
     el("div", { className: "lynx-card-body" }, [
@@ -113,10 +114,7 @@ function renderLynxCard(profile) {
         el("div", {}, [el("div", { className: "lynx-field-label" }, "Name"), el("div", { className: "lynx-field-value" }, profile.profileName.toUpperCase())]),
         el("div", {}, [el("div", { className: "lynx-field-label" }, "Difficulty"), el("div", { className: "lynx-field-value" }, profile.difficultyMode ?? "Unknown")]),
         el("div", {}, [el("div", { className: "lynx-field-label" }, "Rank"), el("div", { className: "lynx-field-value" }, String(profile.rank ?? "?"))]),
-        el("div", {}, [
-          el("div", { className: "lynx-field-label" }, "File"),
-          el("div", { className: "lynx-field-value mono", title: profile.fileName }, middleEllipsis(profile.fileName, 25)),
-        ]),
+        el("div", {}, [el("div", { className: "lynx-field-label" }, debtLabel), el("div", { className: "lynx-field-value mono" }, debtValue)]),
       ]),
     ]),
     el("div", { className: "lynx-barcode", style: `background-image: ${barcodeGradient(profile.fileName)}` }),
@@ -294,6 +292,27 @@ function renderMilestoneGroups(milestones, saveRank) {
   return wrap;
 }
 
+// Shared profile summary card -- used at the top of both the save-detail
+// screen and Advanced mode, so users can scroll a long JSON tree and still
+// see which profile they're editing without going back.
+function renderProfileHeader(detail, buttons) {
+  const debt = detail.debt;
+  const debtText = debt === null ? "Debt Unknown" : `${debt.isPaidOff ? "Balance" : "Debt"} $${formatDebtAmount(debt.amount)}`;
+  return el("div", { className: "card" }, [
+    el("div", { className: "profile-row" }, [
+      el("div", {}, [
+        el("div", { className: "profile-name" }, detail.profileName ?? "(unknown profile)"),
+        el(
+          "div",
+          { className: "profile-meta" },
+          `Rank ${detail.rank ?? "?"} · XP ${detail.xp ?? "?"} · ${detail.difficultyMode ?? "Unknown mode"} · ${debtText}`,
+        ),
+      ]),
+      el("div", { className: "btn-row", style: "margin-top:0" }, buttons),
+    ]),
+  ]);
+}
+
 async function renderSaveDetail() {
   app.replaceChildren(el("div", {}, "Loading save..."));
   let detail;
@@ -304,21 +323,9 @@ async function renderSaveDetail() {
     return;
   }
 
-  const header = el("div", { className: "card" }, [
-    el("div", { className: "profile-row" }, [
-      el("div", {}, [
-        el("div", { className: "profile-name" }, detail.profileName ?? "(unknown profile)"),
-        el(
-          "div",
-          { className: "profile-meta" },
-          `Rank ${detail.rank ?? "?"} · XP ${detail.xp ?? "?"} · ${detail.difficultyMode ?? "Unknown mode"}`,
-        ),
-      ]),
-      el("div", { className: "btn-row", style: "margin-top:0" }, [
-        el("button", { onClick: renderBackupList }, "View backups"),
-        el("button", { onClick: renderAdvancedEditor }, "Advanced mode"),
-      ]),
-    ]),
+  const header = renderProfileHeader(detail, [
+    el("button", { onClick: renderBackupList }, "View backups"),
+    el("button", { onClick: renderAdvancedEditor }, "Advanced mode"),
   ]);
 
   // "Go Back" (goto-milestone): only makes sense on a milestone the save has
@@ -745,9 +752,9 @@ function advancedSearchFilter(searchState, query) {
 
 async function renderAdvancedEditor() {
   app.replaceChildren(el("div", {}, "Loading advanced editor..."));
-  let data;
+  let data, detail;
   try {
-    data = await api(`/save/${currentProfileId}/advanced`);
+    [data, detail] = await Promise.all([api(`/save/${currentProfileId}/advanced`), api(`/save/${currentProfileId}`)]);
   } catch (err) {
     app.replaceChildren(renderError(err));
     return;
@@ -828,6 +835,7 @@ async function renderAdvancedEditor() {
   app.replaceChildren(
     el("div", {}, [
       backLink("Cancel", renderSaveDetail),
+      renderProfileHeader(detail, []),
       el("h2", { style: "margin-top:0" }, "Advanced mode"),
       el(
         "div",

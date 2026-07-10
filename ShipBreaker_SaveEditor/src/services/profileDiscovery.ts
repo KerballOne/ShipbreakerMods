@@ -9,6 +9,7 @@ import * as path from "node:path";
 import { load } from "../lpw/rebuild";
 import type { AssetKeyMap } from "../lpw/keymap";
 import { loadDifficultyModes, resolveDifficultyMode, type DifficultyMode } from "../lpw/difficultyMode";
+import { computeDebt, type DebtStatus } from "../lpw/debt";
 
 export function getSavesProfilesDir(): string {
   return path.join(
@@ -27,6 +28,8 @@ export interface ProfileSummary {
   profileName: string;
   rank: number | null;
   difficultyMode: string | null;
+  /** Computed live from Credits.Amount, not a stored save field -- see debt.ts. */
+  debt: DebtStatus | null;
   /** Absolute path -- used as the opaque :id (base64-encoded) by the API. */
   path: string;
 }
@@ -55,11 +58,13 @@ export function scanProfiles(keymap: AssetKeyMap, modes: DifficultyMode[]): Prof
 
 export function summarizeProfile(filePath: string, keymap: AssetKeyMap, modes: DifficultyMode[]): ProfileSummary {
   const save = load(filePath, keymap);
+  const credits = save.currencyData?.get("Credits_CurrencyAsset")?.amount ?? null;
   return {
     fileName: path.basename(filePath),
     profileName: save.generalData?.profileName ?? "<unknown>",
     rank: save.certification?.rank ?? null,
     difficultyMode: resolveDifficultyMode(save, modes),
+    debt: computeDebt(credits),
     path: filePath,
   };
 }

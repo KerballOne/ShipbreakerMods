@@ -33,10 +33,81 @@ for (const fixtureFile of fixtureFiles) {
     assert.ok(Array.isArray(save.habData));
     assert.equal(save.habData!.length, 7, "all 5 known real saves have exactly 7 HabData entries");
 
+    assert.ok(save.currencyData instanceof Map);
+    assert.ok(save.currencyData!.has("Credits_CurrencyAsset"), "every real save fixture should have a Credits currency entry");
+    assert.ok(save.durabilityData !== null);
+    assert.equal(save.durabilityData!.records.length, 5, "all 5 known real saves have exactly 5 tool durability records");
+
     const rebuilt = rebuild(save, keymap);
-    assert.ok(original.equals(rebuilt), "decoding+re-encoding the 4 new sections must not change a single byte when nothing was edited");
+    assert.ok(original.equals(rebuilt), "decoding+re-encoding the new sections must not change a single byte when nothing was edited");
   });
 }
+
+test("CurrencyData: test5's Credits amount/spentAmount match the confirmed in-game capture", () => {
+  const fixturePath = path.join(FIXTURES_DIR, "test5_rank4_pristine.lpw");
+  const save = load(fixturePath, keymap);
+  const credits = save.currencyData!.get("Credits_CurrencyAsset")!;
+  assert.equal(credits.amount, 4118542.75);
+  assert.equal(credits.spentAmount, 2204013.0);
+});
+
+test("editing currencyData through advanced JSON changes only that entry", () => {
+  const fixturePath = path.join(FIXTURES_DIR, "test5_rank4_pristine.lpw");
+  const save = load(fixturePath, keymap);
+  const json = toAdvancedJson(save, difficultyModes);
+  assert.ok(json.currencyData);
+  json.currencyData!["Credits_CurrencyAsset"].amount = 9999999;
+
+  fromAdvancedJson(save, keymap, difficultyModes, json);
+  assert.equal(save.currencyData!.get("Credits_CurrencyAsset")!.amount, 9999999);
+  assert.equal(save.currencyData!.get("LT_CurrencyAsset")!.amount, 68, "unrelated currency entries must be untouched");
+
+  const rebuilt = rebuild(save, keymap);
+  const tmpPath = path.join(__dirname, "_tmp_currency_test.lpw");
+  fs.writeFileSync(tmpPath, rebuilt);
+  const reloaded = load(tmpPath, keymap);
+  fs.unlinkSync(tmpPath);
+  assert.equal(reloaded.currencyData!.get("Credits_CurrencyAsset")!.amount, 9999999);
+});
+
+test("fromAdvancedJson rejects an unknown currency asset name", () => {
+  const fixturePath = path.join(FIXTURES_DIR, "test5_rank4_pristine.lpw");
+  const save = load(fixturePath, keymap);
+  const json: any = toAdvancedJson(save, difficultyModes);
+  json.currencyData["TotallyFake_CurrencyAsset"] = { amount: 1, spentAmount: 0 };
+
+  assert.throws(() => fromAdvancedJson(save, keymap, difficultyModes, json), /not found in asset_save_keys/);
+});
+
+test("editing durabilityData records preserves the header and other records", () => {
+  const fixturePath = path.join(FIXTURES_DIR, "test5_rank4_pristine.lpw");
+  const save = load(fixturePath, keymap);
+  const json = toAdvancedJson(save, difficultyModes);
+  assert.ok(json.durabilityData);
+  const cutterIdx = json.durabilityData!.records.findIndex((r) => r.toolType === 1);
+  json.durabilityData!.records[cutterIdx].current = 42;
+
+  fromAdvancedJson(save, keymap, difficultyModes, json);
+  assert.equal(save.durabilityData!.records[cutterIdx].current, 42);
+  assert.equal(save.durabilityData!.header.thrusterCharge, json.durabilityData!.thrusterCharge);
+
+  const rebuilt = rebuild(save, keymap);
+  const tmpPath = path.join(__dirname, "_tmp_durability_test.lpw");
+  fs.writeFileSync(tmpPath, rebuilt);
+  const reloaded = load(tmpPath, keymap);
+  fs.unlinkSync(tmpPath);
+  assert.equal(reloaded.durabilityData!.records[cutterIdx].current, 42);
+  assert.equal(reloaded.durabilityData!.records.length, 5);
+});
+
+test("fromAdvancedJson rejects a durabilityData.opaqueHex of the wrong length", () => {
+  const fixturePath = path.join(FIXTURES_DIR, "test5_rank4_pristine.lpw");
+  const save = load(fixturePath, keymap);
+  const json: any = toAdvancedJson(save, difficultyModes);
+  json.durabilityData.opaqueHex = "aabb"; // too short -- real opaque region is 7 bytes
+
+  assert.throws(() => fromAdvancedJson(save, keymap, difficultyModes, json), /must decode to exactly/);
+});
 
 test("editing voiceData through advanced JSON changes only that field", () => {
   const fixturePath = path.join(FIXTURES_DIR, "test5_rank4_pristine.lpw");

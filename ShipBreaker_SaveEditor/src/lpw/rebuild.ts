@@ -16,6 +16,8 @@ import {
   decodeOxygenDrainData,
   decodeFoodChoiceData,
   decodeHabData,
+  decodeCurrencyData,
+  decodeDurabilityData,
   encodeActionTracker,
   encodeCertification,
   encodeGeneralData,
@@ -24,6 +26,8 @@ import {
   encodeOxygenDrainData,
   encodeFoodChoiceData,
   encodeHabData,
+  encodeCurrencyData,
+  encodeDurabilityData,
 } from "./sections";
 
 /** Populate the decoded convenience fields on an LpwSave in place. */
@@ -62,6 +66,12 @@ export function decodeKnownSections(save: LpwSave, keymap: AssetKeyMap): void {
         break;
       case "HabData":
         save.habData = decodeHabData(sec.payload);
+        break;
+      case "CurrencyData":
+        save.currencyData = decodeCurrencyData(sec.payload, keymap);
+        break;
+      case "DurabilityData":
+        save.durabilityData = decodeDurabilityData(sec.payload);
         break;
       default:
         break;
@@ -103,6 +113,10 @@ export function rebuild(save: LpwSave, keymap: AssetKeyMap): Buffer {
       payload = encodeFoodChoiceData(save.foodChoiceData);
     } else if (sec.key === "HabData" && save.habData !== null) {
       payload = encodeHabData(save.habData);
+    } else if (sec.key === "CurrencyData" && save.currencyData !== null) {
+      payload = encodeCurrencyData(save.currencyData, keymap);
+    } else if (sec.key === "DurabilityData" && save.durabilityData !== null) {
+      payload = encodeDurabilityData(save.durabilityData);
     } else {
       payload = sec.payload;
     }

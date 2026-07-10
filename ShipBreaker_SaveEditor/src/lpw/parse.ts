@@ -38,6 +38,32 @@ export interface MessageDataSections {
   pending: Map<string, bigint>;
 }
 
+/** One CurrencyData entry -- see sections.ts decodeCurrencyData. Defined here
+ * (not sections.ts) to avoid a circular import, same reasoning as MessageDataSections. */
+export interface CurrencyEntry {
+  amount: number;
+  spentAmount: number;
+}
+
+/** DurabilityData's header + per-tool records -- see sections.ts decodeDurabilityData. */
+export interface DurabilityHeader {
+  thrusterCharge: number;
+  field2: number;
+  field3: number;
+  /** 7 still-unexplained bytes, preserved byte-for-byte. */
+  opaque: Buffer;
+}
+export interface DurabilityRecord {
+  toolType: number;
+  previous: number;
+  current: number;
+  max: number;
+}
+export interface DurabilityData {
+  header: DurabilityHeader;
+  records: DurabilityRecord[];
+}
+
 export interface LpwSave {
   /** Raw bytes from file start up to (not including) the first section. */
   headerPrefix: Buffer;
@@ -58,14 +84,18 @@ export interface LpwSave {
    * comparison/override (see difficultyMode.ts) -- not decoded into named fields
    * since the format beyond "4 raw bytes = one of 3 known constants" is unknown. */
   difficultyModeBytes: Buffer | null;
-  /** Single int32, meaning unconfirmed (observed values: 0, 2). */
+  /** PlayerProfile.VoiceIndex -- confirmed 2026-07-10 via live reflection dump. */
   voiceData: number | null;
-  /** Single byte, meaning unconfirmed (always observed as 0). */
+  /** PlayerProfile.IgnoreOxygenDrain (boolean, stored as one byte) -- confirmed 2026-07-10. */
   oxygenDrainData: number | null;
-  /** Single int32, meaning unconfirmed (observed values: 1, 2). */
+  /** PlayerProfile.FoodChoice (LynxFoodOption enum ordinal) -- confirmed 2026-07-10; 2=PlasticFree observed. */
   foodChoiceData: number | null;
-  /** 7-entry int32 list, per-slot meaning unconfirmed (see sections.ts decodeHabData). */
+  /** PlayerProfile.HabSavedPosters -- confirmed 2026-07-10 (exact byte-for-byte match), poster ID per hab wall slot. */
   habData: number[] | null;
+  /** PlayerProfile.CurrencyController.Currencies -- confirmed 2026-07-10. See sections.ts decodeCurrencyData. */
+  currencyData: Map<string, CurrencyEntry> | null;
+  /** PlayerProfile.StoredDurabilityMap + ThrusterCharge -- confirmed 2026-07-10 (records), header partially confirmed. See sections.ts decodeDurabilityData. */
+  durabilityData: DurabilityData | null;
 }
 
 /**
@@ -133,5 +163,7 @@ export function parse(data: Buffer): LpwSave {
     oxygenDrainData: null,
     foodChoiceData: null,
     habData: null,
+    currencyData: null,
+    durabilityData: null,
   };
 }

@@ -17,6 +17,7 @@ import { loadDifficultyModes, resolveDifficultyMode, setDifficultyMode } from ".
 import { scanProfiles, summarizeProfile, validateBrowsedPath } from "./services/profileDiscovery";
 import { createBackup, restoreLatestBackup, restoreSpecificBackup, listBackups } from "./services/backup";
 import { toAdvancedJson, fromAdvancedJson } from "./lpw/advancedJson";
+import { computeDebt } from "./lpw/debt";
 import type { LpwSave } from "./lpw/parse";
 
 const APP_ROOT = path.join(__dirname, "..");
@@ -87,6 +88,7 @@ app.get("/api/save/:id", (req: Request, res: Response) => {
       rank: save.certification?.rank ?? null,
       xp: save.certification?.xp ?? null,
       difficultyMode: resolveDifficultyMode(save, difficultyModes),
+      debt: computeDebt(save.currencyData?.get("Credits_CurrencyAsset")?.amount ?? null),
       milestones: checklist,
     });
   } catch (err) {

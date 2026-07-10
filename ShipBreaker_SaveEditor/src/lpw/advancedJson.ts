@@ -8,16 +8,19 @@
  *
  * Only fields with both a decoder AND an encoder are exposed (generalData,
  * certification, actionTracker, messageHistory, difficultyModeBytes,
- * voiceData, oxygenDrainData, foodChoiceData, habData). The last 4 were
- * reverse-engineered from scratch across 5 real saves -- their byte layout
- * (single int32 / single byte / count-prefixed int32 list) is confirmed via
- * byte-identical round-trip, but the semantic MEANING of specific values is
- * NOT confirmed against in-game labels (see each decode function's own
- * docstring in sections.ts for what's actually been observed).
+ * voiceData, oxygenDrainData, foodChoiceData, habData, currencyData,
+ * durabilityData). voiceData/oxygenDrainData/foodChoiceData/habData/
+ * currencyData/durabilityData were reverse-engineered from scratch (byte
+ * layout via fixture-diffing, semantics confirmed 2026-07-10 against
+ * PartInfoLogger's live PlayerProfile reflection dump -- see each decode
+ * function's own docstring in sections.ts for exactly what's confirmed vs.
+ * still uncertain, e.g. durabilityData's header has 3 confirmed/high-
+ * confidence fields plus 7 opaque bytes).
  * randomSceneHistory is decoded but has no encoder (see sections.ts) -- it's
  * included read-only for visibility; submitting a changed value is rejected.
  * Any other undecoded/unknown section (AvailableShipsData, AbilitiesData,
- * CurrencyData, etc.) is not shown at all and is untouched by rebuild()'s
+ * UpgradeData, SpaceTruckState, StickerCollectionData, StickerPlacementData,
+ * NarrativeData) is not shown at all and is untouched by rebuild()'s
  * raw-payload passthrough regardless.
  *
  * MessageData timestamps are bigint (int64) -- JSON has no bigint type, so
@@ -62,8 +65,19 @@ export interface AdvancedJson {
   oxygenDrainData: number | null;
   /** Meaning unconfirmed -- see sections.ts decodeFoodChoiceData. */
   foodChoiceData: number | null;
-  /** Per-slot meaning unconfirmed -- see sections.ts decodeHabData. */
+  /** Confirmed: poster ID per hab wall slot -- see sections.ts decodeHabData. */
   habData: number[] | null;
+  /** Confirmed -- see sections.ts decodeCurrencyData. Keyed by currency asset name. */
+  currencyData: Record<string, { amount: number; spentAmount: number }> | null;
+  /** Header partially confirmed, records fully confirmed -- see sections.ts decodeDurabilityData. */
+  durabilityData: {
+    thrusterCharge: number;
+    field2: number;
+    field3: number;
+    /** 7 opaque bytes, hex-encoded. Preserved byte-for-byte; not editable in a meaningful way. */
+    opaqueHex: string;
+    records: Array<{ toolType: number; previous: number; current: number; max: number }>;
+  } | null;
 }
 
 export function toAdvancedJson(save: LpwSave, modes: DifficultyMode[]): AdvancedJson {
@@ -97,6 +111,20 @@ export function toAdvancedJson(save: LpwSave, modes: DifficultyMode[]): Advanced
     oxygenDrainData: save.oxygenDrainData,
     foodChoiceData: save.foodChoiceData,
     habData: save.habData === null ? null : [...save.habData],
+    currencyData:
+      save.currencyData === null
+        ? null
+        : Object.fromEntries([...save.currencyData].map(([k, v]) => [k, { amount: v.amount, spentAmount: v.spentAmount }])),
+    durabilityData:
+      save.durabilityData === null
+        ? null
+        : {
+            thrusterCharge: save.durabilityData.header.thrusterCharge,
+            field2: save.durabilityData.header.field2,
+            field3: save.durabilityData.header.field3,
+            opaqueHex: save.durabilityData.header.opaque.toString("hex"),
+            records: save.durabilityData.records.map((r) => ({ ...r })),
+          },
   };
 }
 
@@ -275,6 +303,49 @@ export function fromAdvancedJson(save: LpwSave, keymap: AssetKeyMap, modes: Diff
     newHabData = data.habData as number[];
   }
 
+  let newCurrencyData: LpwSave["currencyData"] = save.currencyData;
+  if ("currencyData" in data && data.currencyData !== null) {
+    assertPlainObject(data.currencyData, "currencyData");
+    const entries = new Map<string, { amount: number; spentAmount: number }>();
+    for (const [name, v] of Object.entries(data.currencyData)) {
+      assertPlainObject(v, `currencyData['${name}']`);
+      if (typeof v.amount !== "number") throw new Error(`currencyData['${name}'].amount must be a number`);
+      if (typeof v.spentAmount !== "number") throw new Error(`currencyData['${name}'].spentAmount must be a number`);
+      keymap.hashOf(name);
+      entries.set(name, { amount: v.amount, spentAmount: v.spentAmount });
+    }
+    newCurrencyData = entries;
+  }
+
+  let newDurabilityData: LpwSave["durabilityData"] = save.durabilityData;
+  if ("durabilityData" in data && data.durabilityData !== null) {
+    assertPlainObject(data.durabilityData, "durabilityData");
+    const dd = data.durabilityData;
+    if (typeof dd.thrusterCharge !== "number") throw new Error("durabilityData.thrusterCharge must be a number");
+    if (typeof dd.field2 !== "number" || !Number.isInteger(dd.field2)) throw new Error("durabilityData.field2 must be an integer");
+    if (typeof dd.field3 !== "number" || !Number.isInteger(dd.field3)) throw new Error("durabilityData.field3 must be an integer");
+    if (typeof dd.opaqueHex !== "string" || !/^[0-9a-fA-F]*$/.test(dd.opaqueHex)) {
+      throw new Error("durabilityData.opaqueHex must be a hex string");
+    }
+    const opaque = Buffer.from(dd.opaqueHex, "hex");
+    if (opaque.length !== (save.durabilityData?.header.opaque.length ?? opaque.length)) {
+      throw new Error(`durabilityData.opaqueHex must decode to exactly ${save.durabilityData?.header.opaque.length} bytes`);
+    }
+    if (!Array.isArray(dd.records)) throw new Error("durabilityData.records must be an array");
+    const records = dd.records.map((r: unknown, i: number) => {
+      assertPlainObject(r, `durabilityData.records[${i}]`);
+      if (typeof r.toolType !== "number" || !Number.isInteger(r.toolType)) throw new Error(`durabilityData.records[${i}].toolType must be an integer`);
+      if (typeof r.previous !== "number") throw new Error(`durabilityData.records[${i}].previous must be a number`);
+      if (typeof r.current !== "number") throw new Error(`durabilityData.records[${i}].current must be a number`);
+      if (typeof r.max !== "number") throw new Error(`durabilityData.records[${i}].max must be a number`);
+      return { toolType: r.toolType, previous: r.previous, current: r.current, max: r.max };
+    });
+    newDurabilityData = {
+      header: { thrusterCharge: dd.thrusterCharge, field2: dd.field2, field3: dd.field3, opaque },
+      records,
+    };
+  }
+
   // Nothing thrown -- apply everything at once.
   save.generalData = newGeneralData;
   save.certification = newCertification;
@@ -285,4 +356,6 @@ export function fromAdvancedJson(save: LpwSave, keymap: AssetKeyMap, modes: Diff
   save.oxygenDrainData = newOxygenDrainData;
   save.foodChoiceData = newFoodChoiceData;
   save.habData = newHabData;
+  save.currencyData = newCurrencyData;
+  save.durabilityData = newDurabilityData;
 }
