@@ -223,11 +223,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .back-link {
   display: inline-block;
   margin-bottom: 16px;
-  color: var(--text-dim);
-  cursor: pointer;
+  padding: 6px 12px;
   font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
 }
-.back-link:hover { color: var(--amber); }
+.back-link:hover { color: var(--amber); border-color: var(--amber-dim); }
 
 .empty-state {
   text-align: center;
@@ -254,6 +255,158 @@ input[type="text"] {
   color: var(--text);
   font-family: monospace;
   font-size: 13px;
+}
+
+/* ---------------------------------------------------------------------
+   Advanced mode -- collapsible JSON tree editor.
+   --------------------------------------------------------------------- */
+
+.adv-search {
+  margin-bottom: 12px;
+}
+
+.adv-tree {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  padding: 10px 14px;
+  font-family: "Consolas", monospace;
+  font-size: 12.5px;
+}
+
+/* Top-level rows: the null-value fallback, and top-level SCALAR fields
+   (voiceData, oxygenDrainData, foodChoiceData -- not containers, so no
+   "{ N entries }" wrapper, just key + direct edit input on one line).
+   Containers at the top level render as a plain .adv-node instead (below). */
+.adv-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.adv-row-top:last-child { border-bottom: none; }
+.adv-row-top-leaf > .adv-key { flex: 1; }
+.adv-tree > .adv-node {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.adv-tree > .adv-node:last-child { border-bottom: none; }
+
+/* A container row (nested object/array): just wraps the child .adv-node --
+   no separate key span here anymore, since the key now lives INSIDE that
+   child's own <summary> line (key + arrow + entry count together, see
+   advancedContainerNode()). Spans the full leaf-grid row width. */
+.adv-row-container {
+  grid-column: 1 / -1;
+}
+.adv-row-container > .adv-node { width: 100%; }
+
+/* Leaf rows within one body share a grid, so their columns align -- but each
+   .adv-node-body is its OWN grid, so sibling sections (e.g. generalData vs.
+   difficultyMode) size their value column independently, to that section's
+   own widest value, rather than sharing one global width. Key column
+   flex-fills remaining space so the value+remove-button columns stay pinned
+   to the right edge; value column is content-sized (the input's own `size`
+   attribute, set in JS from the value's length) so it hugs the widest actual
+   value in that section; remove-button column is a fixed 22px. */
+.adv-node-body.adv-leaf-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content 22px;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+}
+.adv-node-body.adv-leaf-grid > .adv-row-leaf {
+  display: contents;
+}
+/* display:contents rows don't accept a background themselves, so the
+   zebra-stripe is painted on each grid cell instead -- the value cell's
+   background sits on the wrapping label (below), not the input itself, so
+   the input's own opaque background doesn't blank out the stripe. */
+.adv-row-leaf.adv-row-odd > .adv-key,
+.adv-row-leaf.adv-row-odd > .adv-value-cell {
+  background: rgba(255, 255, 255, 0.04);
+}
+.adv-row-leaf > .adv-key { padding: 2px 6px; }
+.adv-row-leaf > .adv-value-cell { padding: 1px 4px; }
+.adv-row-container.adv-row-odd { background: rgba(255, 255, 255, 0.025); }
+
+.adv-key {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.adv-key-match {
+  background: rgba(232, 149, 46, 0.25);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+/* The whole "▸ key { N entries }" line is one clickable <summary> --
+   key and count share a row, key styled distinctly (amber, matches the
+   original top-level look) so it reads clearly against the dimmer count. */
+.adv-node > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 2px 4px;
+}
+.adv-node > summary::-webkit-details-marker { display: none; }
+.adv-node > summary::before {
+  content: "▸ ";
+  color: var(--text-faint);
+}
+.adv-node[open] > summary::before {
+  content: "▾ ";
+}
+.adv-node > summary > .adv-key {
+  color: var(--amber);
+  font-weight: 700;
+}
+.adv-node-count {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+/* Small, FIXED indent per nesting level, directly under the arrow that
+   opened it -- not proportional to key text width, so deeply nested trees
+   don't march off to the right. */
+.adv-node-body {
+  margin: 2px 0 2px 14px;
+}
+.adv-node.adv-hidden { display: none; }
+
+.adv-value-cell {
+  display: flex;
+  align-items: center;
+}
+input.adv-leaf-input[type="text"] {
+  width: auto;
+  padding: 3px 8px;
+  font-size: 12.5px;
+}
+.adv-leaf-checkbox {
+  justify-self: start;
+}
+.adv-null {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.adv-remove-btn {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  line-height: 1;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff0ec;
+  background: var(--red-dim);
+  border: 1px solid var(--red-dim);
+  justify-self: end;
+}
+.adv-remove-btn:hover {
+  background: var(--red);
+  border-color: var(--red);
 }
 
 /* ---------------------------------------------------------------------

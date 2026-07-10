@@ -2,7 +2,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import express, { type Request, type Response } from "express";
 import { AssetKeyMap } from "./lpw/keymap";
-import { load, saveTo } from "./lpw/rebuild";
+import { load, saveTo, rebuild } from "./lpw/rebuild";
 import {
   loadMilestoneData,
   loadCertificationLevels,
@@ -16,6 +16,7 @@ import {
 import { loadDifficultyModes, resolveDifficultyMode, setDifficultyMode } from "./lpw/difficultyMode";
 import { scanProfiles, summarizeProfile, validateBrowsedPath } from "./services/profileDiscovery";
 import { createBackup, restoreLatestBackup, restoreSpecificBackup, listBackups } from "./services/backup";
+import { toAdvancedJson, fromAdvancedJson } from "./lpw/advancedJson";
 import type { LpwSave } from "./lpw/parse";
 
 const APP_ROOT = path.join(__dirname, "..");
@@ -202,6 +203,44 @@ app.post("/api/save/:id/set-difficulty-mode", (req: Request, res: Response) => {
         ? `Profile '${conflict.profileName}' (${conflict.fileName}) is already set to ${mode} mode -- the game only allows one active save per difficulty mode at a time.`
         : null,
     });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+app.get("/api/save/:id/advanced", (req: Request, res: Response) => {
+  try {
+    const { save } = loadSaveById(req.params.id);
+    res.json(toAdvancedJson(save, difficultyModes));
+  } catch (err) {
+    res.status(404).json({ error: (err as Error).message });
+  }
+});
+
+app.post("/api/save/:id/advanced", (req: Request, res: Response) => {
+  const { data } = req.body as { data?: unknown };
+  if (data === undefined) {
+    res.status(400).json({ error: "Missing 'data' in request body" });
+    return;
+  }
+  try {
+    const { save, filePath } = loadSaveById(req.params.id);
+
+    // Validate fully before touching anything on disk -- fromAdvancedJson
+    // throws (and mutates nothing) on any structural problem or unknown
+    // asset name, so an invalid edit never reaches the backup/write step.
+    fromAdvancedJson(save, keymap, difficultyModes, data);
+
+    // rebuild() itself is also exercised here (via saveTo) as a second,
+    // format-level check -- if re-encoding the edited fields somehow
+    // produces something rebuild() can't handle (e.g. an unknown section
+    // key), it throws before any backup is taken or file is written.
+    const rebuilt = rebuild(save, keymap);
+
+    createBackup(APP_ROOT, filePath, "advanced-edit");
+    fs.writeFileSync(filePath, rebuilt);
+
+    res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }

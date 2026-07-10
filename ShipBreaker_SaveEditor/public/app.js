@@ -40,7 +40,7 @@ function renderError(err) {
 }
 
 function backLink(label, onClick) {
-  return el("div", { className: "back-link", onClick }, `< ${label}`);
+  return el("button", { className: "back-link", onClick }, `< ${label}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -314,7 +314,10 @@ async function renderSaveDetail() {
           `Rank ${detail.rank ?? "?"} · XP ${detail.xp ?? "?"} · ${detail.difficultyMode ?? "Unknown mode"}`,
         ),
       ]),
-      el("button", { onClick: renderBackupList }, "View backups"),
+      el("div", { className: "btn-row", style: "margin-top:0" }, [
+        el("button", { onClick: renderBackupList }, "View backups"),
+        el("button", { onClick: renderAdvancedEditor }, "Advanced mode"),
+      ]),
     ]),
   ]);
 
@@ -589,6 +592,255 @@ function renderResultScreen(title, subtitle, bodyChildren) {
     el("div", { className: "card" }, [el("h2", { style: "margin-top:0" }, title), el("p", {}, subtitle), ...bodyChildren]),
     el("div", { className: "btn-row" }, [el("button", { className: "primary", onClick: renderSaveDetail }, "Back to save"), restoreBtn]),
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// Screen 5: advanced mode -- collapsible JSON tree editor over the same
+// decoded fields the rest of the UI edits (generalData/certification/
+// actionTracker/messageHistory/difficultyMode), plus a read-only view of
+// randomSceneHistory. Editing happens on a live in-memory copy of the parsed
+// JSON (not raw text re-parsed on every keystroke); Save sends the whole
+// object to the backend, which re-validates, backs up, and re-encodes.
+// ---------------------------------------------------------------------------
+
+// A node defaults open if it has FEWER THAN 8 direct children (its own
+// object keys / array entries, not counting anything nested further down),
+// collapsed otherwise.
+const ADVANCED_COLLAPSE_CHILD_THRESHOLD = 4;
+
+// Builds an editable tree node for `value` under `key` (its label as shown
+// in the parent), calling `onChange(newValue)` whenever a leaf edit should
+// be applied back onto the parent's copy of the data. `path` is the dotted
+// key path from the root, used for search matching and auto-expanding
+// ancestors of a search hit.
+//
+// A container's key + expand arrow + entry count are ALWAYS one single
+// clickable <summary> line ("▸ messageHistory { 2 entries }") -- used
+// uniformly for the top-level fields and every nested container, so there
+// is exactly one layout rule for "how a container renders" rather than a
+// separate special case for the root level.
+//
+// Only LEAF entries (scalar values -- no children) get a remove button.
+// Container entries (nested object/array, e.g. certification.tiers or one
+// message's own sub-fields) never get one on their own row: "remove this
+// scalar PAT/timestamp" is unambiguous, but "remove this whole sub-object"
+// is not a single well-defined action here -- to delete several fields at
+// once, remove each of that container's own leaf children individually.
+function advancedContainerNode(key, value, onChange, path, searchState) {
+  const isArray = Array.isArray(value);
+  const entries = isArray ? value.map((v, i) => [String(i), v]) : Object.entries(value);
+  const count = entries.length;
+
+  const details = el("details", { className: "adv-node" });
+  details.open = count < ADVANCED_COLLAPSE_CHILD_THRESHOLD;
+  searchState.nodes.push({ path, details });
+
+  const summary = el("summary", {}, [
+    el("span", { className: "adv-key", "data-search-key": path.toLowerCase() }, String(key)),
+    el("span", { className: "adv-node-count" }, ` ${isArray ? "[" : "{"} ${count} ${count === 1 ? "entry" : "entries"} ${isArray ? "]" : "}"}`),
+  ]);
+  details.append(summary);
+
+  // Scalar-valued children (regardless of whether a SIBLING key holds a
+  // nested object, e.g. certification.tiers next to rank/xp) are laid out as
+  // the body's own CSS grid (.adv-leaf-grid) so their value inputs align in
+  // one column, sized to THIS body's own widest scalar value only (not
+  // shared across sections, and not thrown off by the one non-scalar sibling).
+  const scalarEntries = entries.filter(([, v]) => v === null || typeof v !== "object");
+  const widestLen = scalarEntries.length > 0 ? Math.max(4, ...scalarEntries.map(([, v]) => String(v).length)) : 4;
+  const body = el("div", { className: "adv-node-body adv-leaf-grid" });
+
+  entries.forEach(([childKey, childValue], i) => {
+    const childPath = path ? `${path}.${childKey}` : childKey;
+    const isContainer = childValue !== null && typeof childValue === "object";
+    const childOnChange = (newChildValue) => {
+      if (isArray) value[Number(childKey)] = newChildValue;
+      else value[childKey] = newChildValue;
+      onChange(value);
+    };
+    const stripeClass = i % 2 === 1 ? " adv-row-odd" : "";
+    const displayKey = isArray ? `[${childKey}]` : childKey;
+
+    if (isContainer) {
+      // No remove button here -- see the function-level comment above.
+      const row = el("div", { className: `adv-row adv-row-container${stripeClass}` });
+      row.append(advancedContainerNode(displayKey, childValue, childOnChange, childPath, searchState));
+      body.append(row);
+    } else {
+      const childOnRemove = () => {
+        if (isArray) value.splice(Number(childKey), 1);
+        else delete value[childKey];
+        onChange(value);
+        searchState.onTreeChanged();
+      };
+      const row = el("div", { className: `adv-row adv-row-leaf${stripeClass}` }, [
+        el("span", { className: "adv-key", "data-search-key": childPath.toLowerCase() }, displayKey),
+        el("span", { className: "adv-value-cell" }, advancedLeafNode(childValue, childOnChange, widestLen)),
+        removeButton(childOnRemove),
+      ]);
+      body.append(row);
+    }
+  });
+  details.append(body);
+  return details;
+}
+
+function removeButton(onRemove) {
+  return el("button", { className: "adv-remove-btn", title: "Remove this entry", onClick: onRemove }, "×");
+}
+
+// `widestLen` sizes the input's `size` attribute so a whole leaf-grid body's
+// value column hugs its own widest value (e.g. an 8-digit hash vs. "No
+// Revives") instead of sharing one width across unrelated sections.
+function advancedLeafNode(value, onChange, widestLen) {
+  if (typeof value === "boolean") {
+    const input = el("input", { type: "checkbox", className: "adv-leaf-checkbox" });
+    input.checked = value;
+    input.addEventListener("change", () => onChange(input.checked));
+    return input;
+  }
+  if (typeof value === "number") {
+    const input = el("input", { type: "text", className: "adv-leaf-input mono", value: String(value), size: String(widestLen) });
+    input.addEventListener("change", () => {
+      const n = Number(input.value);
+      onChange(Number.isNaN(n) ? input.value : n);
+    });
+    return input;
+  }
+  // Strings (including bigint-as-string timestamps) and any other scalar.
+  const input = el("input", { type: "text", className: "adv-leaf-input mono", value: String(value), size: String(widestLen) });
+  input.addEventListener("change", () => onChange(input.value));
+  return input;
+}
+
+function advancedSearchFilter(searchState, query) {
+  const q = query.trim().toLowerCase();
+  for (const { path, details } of searchState.nodes) {
+    if (q === "") {
+      details.classList.remove("adv-hidden");
+      continue;
+    }
+    const matches = path.toLowerCase().includes(q);
+    details.classList.toggle("adv-hidden", false);
+    if (matches) details.open = true;
+  }
+  // Highlight matching key labels; expand ancestor chains of any match.
+  const keyEls = app.querySelectorAll(".adv-key");
+  let anyMatch = q === "";
+  keyEls.forEach((el) => {
+    const key = el.dataset.searchKey ?? "";
+    const isMatch = q !== "" && key.includes(q);
+    el.classList.toggle("adv-key-match", isMatch);
+    if (isMatch) {
+      anyMatch = true;
+      let node = el.closest(".adv-node");
+      while (node) {
+        node.open = true;
+        node = node.parentElement?.closest(".adv-node") ?? null;
+      }
+    }
+  });
+  return anyMatch;
+}
+
+async function renderAdvancedEditor() {
+  app.replaceChildren(el("div", {}, "Loading advanced editor..."));
+  let data;
+  try {
+    data = await api(`/save/${currentProfileId}/advanced`);
+  } catch (err) {
+    app.replaceChildren(renderError(err));
+    return;
+  }
+
+  // Working copy -- mutated in place by leaf edits, sent to the backend as-is
+  // on Save. Cancel simply discards this object and re-renders the save.
+  const working = JSON.parse(JSON.stringify(data));
+
+  const searchInput = el("input", { type: "text", placeholder: "Search field names...", className: "adv-search" });
+  const noMatchNotice = el("div", { className: "notice", style: "display:none" }, "No fields match your search.");
+  const treeRoot = el("div", { className: "adv-tree" });
+
+  const searchState = {
+    nodes: [],
+    onTreeChanged: () => {
+      const query = searchInput.value;
+      buildTree();
+      const anyMatch = advancedSearchFilter(searchState, query);
+      noMatchNotice.style.display = anyMatch ? "none" : "block";
+    },
+  };
+
+  function buildTree() {
+    searchState.nodes = [];
+    treeRoot.replaceChildren();
+    for (const [key, value] of Object.entries(working)) {
+      const onChange = (newValue) => { working[key] = newValue; };
+      if (value === null) {
+        treeRoot.append(
+          el("div", { className: "adv-row adv-row-top" }, [
+            el("span", { className: "adv-key", "data-search-key": key.toLowerCase() }, key),
+            el("span", { className: "adv-null" }, " null"),
+          ]),
+        );
+      } else if (typeof value !== "object") {
+        // A top-level scalar (voiceData, oxygenDrainData, foodChoiceData) --
+        // not a container, so no "{ N entries }" collapsible wrapper; just a
+        // labeled row with a direct edit input, same as any leaf row.
+        treeRoot.append(
+          el("div", { className: "adv-row adv-row-top adv-row-top-leaf" }, [
+            el("span", { className: "adv-key", "data-search-key": key.toLowerCase() }, key),
+            el("span", { className: "adv-value-cell" }, advancedLeafNode(value, onChange, String(value).length)),
+          ]),
+        );
+      } else {
+        treeRoot.append(advancedContainerNode(key, value, onChange, key, searchState));
+      }
+    }
+  }
+  buildTree();
+
+  searchInput.addEventListener("input", () => {
+    const anyMatch = advancedSearchFilter(searchState, searchInput.value);
+    noMatchNotice.style.display = anyMatch ? "none" : "block";
+  });
+
+  const errorSlot = el("div", {});
+  const saveBtn = el("button", { className: "primary" }, "Save");
+  saveBtn.addEventListener("click", async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Checking & saving...";
+    errorSlot.replaceChildren();
+    try {
+      await api(`/save/${currentProfileId}/advanced`, {
+        method: "POST",
+        body: JSON.stringify({ data: working }),
+      });
+      renderSaveDetail();
+    } catch (err) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save";
+      errorSlot.replaceChildren(renderError(err));
+    }
+  });
+  const cancelBtn = el("button", { onClick: renderSaveDetail }, "Cancel");
+
+  app.replaceChildren(
+    el("div", {}, [
+      backLink("Cancel", renderSaveDetail),
+      el("h2", { style: "margin-top:0" }, "Advanced mode"),
+      el(
+        "div",
+        { className: "notice warning" },
+        "Editing raw save fields directly. Invalid values are rejected before anything is written. A backup is still made automatically before saving. randomSceneHistory is read-only (shown for visibility only).",
+      ),
+      searchInput,
+      noMatchNotice,
+      treeRoot,
+      errorSlot,
+      el("div", { className: "btn-row" }, [saveBtn, cancelBtn]),
+    ]),
+  );
 }
 
 // ---------------------------------------------------------------------------

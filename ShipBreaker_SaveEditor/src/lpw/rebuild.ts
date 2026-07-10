@@ -12,10 +12,18 @@ import {
   decodeGeneralData,
   decodeCertification,
   decodeMessageData,
+  decodeVoiceData,
+  decodeOxygenDrainData,
+  decodeFoodChoiceData,
+  decodeHabData,
   encodeActionTracker,
   encodeCertification,
   encodeGeneralData,
   encodeMessageData,
+  encodeVoiceData,
+  encodeOxygenDrainData,
+  encodeFoodChoiceData,
+  encodeHabData,
 } from "./sections";
 
 /** Populate the decoded convenience fields on an LpwSave in place. */
@@ -42,6 +50,18 @@ export function decodeKnownSections(save: LpwSave, keymap: AssetKeyMap): void {
         // known constants" is unknown) -- exposed as a raw buffer for direct
         // byte-constant comparison/override, see difficultyMode.ts.
         save.difficultyModeBytes = Buffer.from(sec.payload);
+        break;
+      case "VoiceData":
+        save.voiceData = decodeVoiceData(sec.payload);
+        break;
+      case "OxygenDrainData":
+        save.oxygenDrainData = decodeOxygenDrainData(sec.payload);
+        break;
+      case "FoodChoiceData":
+        save.foodChoiceData = decodeFoodChoiceData(sec.payload);
+        break;
+      case "HabData":
+        save.habData = decodeHabData(sec.payload);
         break;
       default:
         break;
@@ -75,6 +95,14 @@ export function rebuild(save: LpwSave, keymap: AssetKeyMap): Buffer {
       payload = encodeMessageData(save.messageHistory, keymap);
     } else if (sec.key === "ProfileDifficultyData" && save.difficultyModeBytes !== null) {
       payload = save.difficultyModeBytes;
+    } else if (sec.key === "VoiceData" && save.voiceData !== null) {
+      payload = encodeVoiceData(save.voiceData);
+    } else if (sec.key === "OxygenDrainData" && save.oxygenDrainData !== null) {
+      payload = encodeOxygenDrainData(save.oxygenDrainData);
+    } else if (sec.key === "FoodChoiceData" && save.foodChoiceData !== null) {
+      payload = encodeFoodChoiceData(save.foodChoiceData);
+    } else if (sec.key === "HabData" && save.habData !== null) {
+      payload = encodeHabData(save.habData);
     } else {
       payload = sec.payload;
     }

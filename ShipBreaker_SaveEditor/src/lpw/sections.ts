@@ -208,3 +208,77 @@ export function encodeCertification(cert: CertificationTierData): Buffer {
   out.writeFloatLE(cert.xp, p);
   return out;
 }
+
+/**
+ * VoiceData: a single int32 (4 bytes total). Observed values 0 and 2 across
+ * 5 real saves -- consistent with a small enum (voice-option index), exact
+ * meaning of each value not confirmed against in-game labels.
+ */
+export function decodeVoiceData(payload: Buffer): number {
+  return payload.readInt32LE(0);
+}
+export function encodeVoiceData(value: number): Buffer {
+  const out = Buffer.alloc(4);
+  out.writeInt32LE(value, 0);
+  return out;
+}
+
+/**
+ * OxygenDrainData: a single byte (1 byte total). Always observed as 0 across
+ * 5 real saves -- no variance seen yet to confirm whether it's a boolean
+ * flag or something else; decoded as a raw byte value (0-255) rather than
+ * assumed-boolean, since the true meaning is unconfirmed.
+ */
+export function decodeOxygenDrainData(payload: Buffer): number {
+  return payload.readUInt8(0);
+}
+export function encodeOxygenDrainData(value: number): Buffer {
+  const out = Buffer.alloc(1);
+  out.writeUInt8(value, 0);
+  return out;
+}
+
+/**
+ * FoodChoiceData: a single int32 (4 bytes total). Observed values 1 and 2
+ * across 5 real saves -- consistent with a small enum (starting food
+ * choice), exact meaning of each value not confirmed against in-game labels.
+ */
+export function decodeFoodChoiceData(payload: Buffer): number {
+  return payload.readInt32LE(0);
+}
+export function encodeFoodChoiceData(value: number): Buffer {
+  const out = Buffer.alloc(4);
+  out.writeInt32LE(value, 0);
+  return out;
+}
+
+/**
+ * HabData: count(int32) + count * int32 -- same "count-prefixed int32 list"
+ * shape as several other sections. Always 7 entries across 5 real saves;
+ * values differ meaningfully between saves (e.g. one fixture: 18,20,14,15,
+ * 13,16,18; three others sharing: 1,2,3,5,2,3,4) -- likely per-slot indices
+ * for hab decoration/customization, exact per-slot meaning unconfirmed.
+ * Decoded as a plain number[] (not a Map) since there's no evidence the
+ * values are keyed by anything -- position IS the key.
+ */
+export function decodeHabData(payload: Buffer): number[] {
+  let p = 0;
+  const count = payload.readInt32LE(p);
+  p += 4;
+  const result: number[] = [];
+  for (let i = 0; i < count; i++) {
+    result.push(payload.readInt32LE(p));
+    p += 4;
+  }
+  return result;
+}
+export function encodeHabData(values: number[]): Buffer {
+  const out = Buffer.alloc(4 + values.length * 4);
+  out.writeInt32LE(values.length, 0);
+  let p = 4;
+  for (const v of values) {
+    out.writeInt32LE(v, p);
+    p += 4;
+  }
+  return out;
+}

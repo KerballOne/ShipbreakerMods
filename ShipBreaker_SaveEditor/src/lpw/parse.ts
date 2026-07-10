@@ -58,6 +58,14 @@ export interface LpwSave {
    * comparison/override (see difficultyMode.ts) -- not decoded into named fields
    * since the format beyond "4 raw bytes = one of 3 known constants" is unknown. */
   difficultyModeBytes: Buffer | null;
+  /** Single int32, meaning unconfirmed (observed values: 0, 2). */
+  voiceData: number | null;
+  /** Single byte, meaning unconfirmed (always observed as 0). */
+  oxygenDrainData: number | null;
+  /** Single int32, meaning unconfirmed (observed values: 1, 2). */
+  foodChoiceData: number | null;
+  /** 7-entry int32 list, per-slot meaning unconfirmed (see sections.ts decodeHabData). */
+  habData: number[] | null;
 }
 
 /**
@@ -121,5 +129,9 @@ export function parse(data: Buffer): LpwSave {
     certification: null,
     messageHistory: null,
     difficultyModeBytes: null,
+    voiceData: null,
+    oxygenDrainData: null,
+    foodChoiceData: null,
+    habData: null,
   };
 }
