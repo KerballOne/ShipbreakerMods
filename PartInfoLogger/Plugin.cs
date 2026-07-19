@@ -28,6 +28,9 @@ namespace PartInfoLogger
         internal static ConfigEntry<float> JointCensusDelay = null!;
         internal static ConfigEntry<bool> CampaignProgressEnabled = null!;
         internal static ConfigEntry<bool> SkipDiagnosticsEnabled = null!;
+        internal static ConfigEntry<bool> MeshDiagnosticsEnabled = null!;
+        internal static ConfigEntry<string> MeshDiagnosticsNamePrefixes = null!;
+        internal static ConfigEntry<bool> PositionDriftEnabled = null!;
         internal static Plugin Instance = null!;
 
         private void Awake()
@@ -71,6 +74,23 @@ namespace PartInfoLogger
                 "see project_industrial_action_investigation memory. Adds per-frame overhead while an after-shift " +
                 "scene or greeting is active; leave off otherwise.");
 
+            MeshDiagnosticsEnabled = Config.Bind(
+                "MeshDiagnostics", "Enabled", true,
+                "If true, dumps mesh_diagnostics.csv on gameplay start: vertex/triangle count, render bounds, " +
+                "and collider type/convexity/bounds for every StructurePart matching MeshDiagnosticsNamePrefixes. " +
+                "Built to isolate mesh-only differences (e.g. a degenerate collider hull) between otherwise-" +
+                "identical part instances where some joint in-game and others don't. Leave off for normal use.");
+            MeshDiagnosticsNamePrefixes = Config.Bind(
+                "MeshDiagnostics", "NamePrefixes", "Thermal_Couple,Thermal_Radiator",
+                "Comma-separated StructurePart name prefixes to include in mesh_diagnostics.csv.");
+
+            PositionDriftEnabled = Config.Bind(
+                "PositionDrift", "Enabled", true,
+                "If true, dumps position_drift.csv on gameplay start: world position at spawn vs. after " +
+                "JointCensusDelay, and the displacement, for every StructurePart matching MeshDiagnosticsNamePrefixes. " +
+                "Built to detect whether a part that fails to auto-joint was pushed away by a physics separation " +
+                "impulse from excess mesh-collider overlap at spawn. Leave off for normal use.");
+
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             harmony.PatchAll();
 
@@ -90,6 +110,15 @@ namespace PartInfoLogger
                     }
                     Instance.StartCoroutine(DumpMaterialProperties());
                     Instance.StartCoroutine(DumpJointCensus());
+                    if (MeshDiagnosticsEnabled.Value || PositionDriftEnabled.Value)
+                    {
+                        var prefixes = MeshDiagnosticsNamePrefixes.Value
+                            .Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
+                        if (MeshDiagnosticsEnabled.Value)
+                            Instance.StartCoroutine(DumpMeshDiagnostics(prefixes, JointCensusDelay.Value));
+                        if (PositionDriftEnabled.Value)
+                            Instance.StartCoroutine(DumpPositionDrift(prefixes, JointCensusDelay.Value));
+                    }
                 }
                 else if (ev.GameState == GameSession.GameState.Hab)
                 {
@@ -712,6 +741,111 @@ namespace PartInfoLogger
             if (s.Contains(',') || s.Contains('"') || s.Contains('\n'))
                 return "\"" + s.Replace("\"", "\"\"") + "\"";
             return s;
+        }
+
+        // Samples world position of every StructurePart matching namePrefixes at two points in
+        // time (as early as possible after spawn, then again after delaySeconds) and logs the
+        // displacement. Built to test whether parts that fail to auto-joint are being pushed
+        // apart by a physics separation impulse from excess mesh-collider overlap at spawn —
+        // a part that started out overlapping its intended joint partner but ends up drifted
+        // away confirms an impulse, distinct from a part that simply never had enough overlap
+        // to begin with (which would show near-zero displacement from its spawn position).
+        internal static IEnumerator DumpPositionDrift(string[] namePrefixes, float delaySeconds = 10f)
+        {
+            // Sample as early as possible — one frame after Gameplay state fires — so the first
+            // reading is as close to pre-physics-resolution spawn position as this hook allows.
+            yield return null;
+
+            var parts = Resources.FindObjectsOfTypeAll<StructurePart>()
+                .Where(p => p != null && p.gameObject.scene.IsValid())
+                .Where(p => namePrefixes.Any(prefix => p.gameObject.name.Replace("(Clone)", "").Trim()
+                    .StartsWith(prefix, StringComparison.Ordinal)))
+                .ToArray();
+            Plugin.Log.LogInfo($"[PosDrift] Sampling {parts.Length} matching StructurePart(s) at spawn...");
+
+            var startPositions = parts.ToDictionary(p => p, p => p.transform.position);
+
+            yield return new WaitForSeconds(delaySeconds);
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("PartName,SpawnPos,LaterPos,DisplacementMeters");
+            foreach (var part in parts.OrderBy(p => p.gameObject.name, StringComparer.Ordinal))
+            {
+                if (part == null) continue; // could have been destroyed/deposited in the meantime
+                var name = part.gameObject.name.Replace("(Clone)", "").Trim();
+                var startPos = startPositions[part];
+                var laterPos = part.transform.position;
+                var displacement = Vector3.Distance(startPos, laterPos);
+                sb.AppendLine($"{CsvEscape(name)},{CsvEscape(startPos.ToString("F4"))}," +
+                    $"{CsvEscape(laterPos.ToString("F4"))},{displacement:F4}");
+            }
+
+            try
+            {
+                var outDir = Path.GetDirectoryName(Plugin.OutputPath.Value)!;
+                var path = Path.Combine(outDir, "position_drift.csv");
+                File.WriteAllText(path, sb.ToString());
+                Plugin.Log.LogInfo($"[PosDrift] Wrote {parts.Length} part(s) to {path}");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[PosDrift] Write error: {ex.Message}");
+            }
+        }
+
+        // Dumps mesh-geometry stats (vertex count, render bounds vs. collider bounds, collider
+        // convexity/triangle count) for every StructurePart whose name matches namePrefixes.
+        // Built to isolate a mesh-only difference between two sets of otherwise componentwise-
+        // identical part instances (same prefab, same transforms, same MJC/ACL wiring) where one
+        // set fails to auto-joint in-game and the other doesn't — every non-mesh property has
+        // already been ruled out by static prefab comparison, so this checks the one thing that
+        // can't be read from YAML: the actual baked vertex/collider data per submesh.
+        internal static IEnumerator DumpMeshDiagnostics(string[] namePrefixes, float delaySeconds = 10f)
+        {
+            yield return new WaitForSeconds(delaySeconds);
+
+            var allParts = Resources.FindObjectsOfTypeAll<StructurePart>()
+                .Where(p => p != null && p.gameObject.scene.IsValid())
+                .Where(p => namePrefixes.Any(prefix => p.gameObject.name.Replace("(Clone)", "").Trim()
+                    .StartsWith(prefix, StringComparison.Ordinal)))
+                .ToArray();
+            Plugin.Log.LogInfo($"[MeshDiag] Scanning {allParts.Length} matching StructurePart(s)...");
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("PartName,MeshVertCount,MeshTriCount,RenderBoundsSize,ColliderType,ColliderConvex,ColliderIsTrigger,ColliderBoundsSize,ColliderSharedMesh");
+            foreach (var part in allParts.OrderBy(p => p.gameObject.name, StringComparer.Ordinal))
+            {
+                var name = part.gameObject.name.Replace("(Clone)", "").Trim();
+                var mf = part.GetComponent<MeshFilter>();
+                var mr = part.GetComponent<MeshRenderer>();
+                var col = part.GetComponent<Collider>();
+
+                int vertCount = mf != null && mf.sharedMesh != null ? mf.sharedMesh.vertexCount : -1;
+                int triCount = mf != null && mf.sharedMesh != null ? mf.sharedMesh.triangles.Length / 3 : -1;
+                string renderBounds = mr != null ? mr.bounds.size.ToString("F4") : "none";
+
+                string colliderType = col != null ? col.GetType().Name : "none";
+                string colliderConvex = col is MeshCollider meshCol ? meshCol.convex.ToString() : "n/a";
+                string colliderIsTrigger = col != null ? col.isTrigger.ToString() : "n/a";
+                string colliderBounds = col != null ? col.bounds.size.ToString("F4") : "none";
+                string colliderMesh = col is MeshCollider mc && mc.sharedMesh != null
+                    ? $"{mc.sharedMesh.name} (verts={mc.sharedMesh.vertexCount})" : "n/a";
+
+                sb.AppendLine($"{CsvEscape(name)},{vertCount},{triCount},{CsvEscape(renderBounds)}," +
+                    $"{colliderType},{colliderConvex},{colliderIsTrigger},{CsvEscape(colliderBounds)},{CsvEscape(colliderMesh)}");
+            }
+
+            try
+            {
+                var outDir = Path.GetDirectoryName(Plugin.OutputPath.Value)!;
+                var path = Path.Combine(outDir, "mesh_diagnostics.csv");
+                File.WriteAllText(path, sb.ToString());
+                Plugin.Log.LogInfo($"[MeshDiag] Wrote {allParts.Length} part(s) to {path}");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[MeshDiag] Write error: {ex.Message}");
+            }
         }
 
         // Dumps campaign_progress.json: every PlayerActionTrackerAsset recorded in the current save's
