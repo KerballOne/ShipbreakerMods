@@ -469,19 +469,43 @@ namespace PartInfoLogger
             // (native collections, primitive arrays) to avoid dumping raw buffers.
             if (val is System.Collections.IEnumerable seq && declaredType != typeof(string))
             {
-                if (!typeof(ScriptableObject).IsAssignableFrom(declaredType.IsArray ? declaredType.GetElementType() : null))
-                    return;
-                int i = 0;
-                foreach (var item in seq)
+                var elemType = declaredType.IsArray ? declaredType.GetElementType() : null;
+                if (elemType == null) return;
+
+                if (typeof(ScriptableObject).IsAssignableFrom(elemType))
                 {
-                    if (item is ScriptableObject itemSo)
+                    int i = 0;
+                    foreach (var item in seq)
                     {
-                        var elemKey = $"{key}[{i}]";
-                        dest[elemKey + "@type"] = itemSo.GetType().Name;
-                        dest[elemKey + "@ref"] = itemSo.name;
-                        DumpReflectedFields(itemSo, dest, elemKey + ".", depth + 1, visited);
+                        if (item is ScriptableObject itemSo)
+                        {
+                            var elemKey = $"{key}[{i}]";
+                            dest[elemKey + "@type"] = itemSo.GetType().Name;
+                            dest[elemKey + "@ref"] = itemSo.name;
+                            DumpReflectedFields(itemSo, dest, elemKey + ".", depth + 1, visited);
+                        }
+                        i++;
                     }
-                    i++;
+                    return;
+                }
+
+                // Arrays of plain [Serializable] structs/classes (e.g. SalvageableComponentAsset's
+                // SalvageableCurrencyBlock[] m_AwardedCurrencies) carry real per-element gameplay
+                // data too, but have no ScriptableObject identity to key off of — walk them by
+                // index the same way, just without the @type/@ref name lookup.
+                if (!IsSimpleType(elemType) && elemType.Namespace != null && !elemType.Namespace.StartsWith("System")
+                    && !elemType.Namespace.StartsWith("Unity.Collections") && !typeof(UnityEngine.Object).IsAssignableFrom(elemType))
+                {
+                    int i = 0;
+                    foreach (var item in seq)
+                    {
+                        if (item != null)
+                        {
+                            var elemKey = $"{key}[{i}]";
+                            DumpReflectedFields(item, dest, elemKey + ".", depth + 1, visited);
+                        }
+                        i++;
+                    }
                 }
                 return;
             }
