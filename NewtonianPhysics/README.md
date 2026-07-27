@@ -7,7 +7,7 @@ That means leaning on the tools you actually have for controlling your movement:
 - **Reverse-thrusting** - point yourself the other way and burn off your velocity the hard way, like real thrusters.
 - **The Grapple Gun** - pull yourself toward (or push off) parts to redirect your drift.
 - **Hand-grabbing** - grab something solid to stop dead or change direction.
-- **[MagBoots](https://github.com/KerballOne/ShipbreakerMods/tree/kb1/MagBoots)** - magnetically walk the hull instead of fighting momentum in the open. (Separate mod - link goes to its own page.)
+- **[MagBoots](https://www.nexusmods.com/hardspaceshipbreaker/mods/31)** - magnetically walk the hull instead of fighting momentum in the open. (Separate mod - link goes to its own page.)
 
 On top of that, this mod adds real recoil to the Cutter and Grapple Gun, so firing them has a consequence: cutting kicks you back, and pushing or throwing something shoves you the other way based on how heavy it is - just like it would in zero-g.
 
@@ -17,7 +17,7 @@ On top of that, this mod adds real recoil to the Cutter and Grapple Gun, so firi
 
 ## Recoil
 
-On by default. Adds real kickback to weapons that had none:
+On by default. Adds real kickback to tools that had none:
 
 - The saw Cutter kicks you back the instant you fire, instead of waiting for the cut to finish.
 - The Scalpel/single-laser gives a steady push for as long as the beam is firing.
@@ -46,4 +46,4 @@ Every setting has a plain-language description in the file itself - open it in a
 
 ## Compatibility
 
-Works entirely on your own client, via forces on your own player and weapons. It doesn't touch save data or ship data, so it's safe to add or remove mid-save. Fully standalone - MagBoots is not required, though the two are designed to complement each other.
+Works entirely on your own client, via forces on your own player and tools. It doesn't touch save data or ship data, so it's safe to add or remove mid-save. Fully standalone - MagBoots is not required, though the two are designed to complement each other.
