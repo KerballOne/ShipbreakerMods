@@ -24,12 +24,13 @@ namespace MagBoots
             sBrakeBreakUntil = Time.time + duration;
         }
 
-        private static bool IsBrakeBroken => Time.time < sBrakeBreakUntil;
+        private static bool IsBrakeBroken => Plugin.ConfigNoBrakes.Value || Time.time < sBrakeBreakUntil;
 
         // Vanilla reads the brake input directly via this extension method every FixedUpdate
         // (OrientationController has no cached/settable "is braking" field to flip instead) - Prefix
-        // forces it to report "not pressed" for the two brake actions while BrakeBreak is active, and
-        // lets every other action (and the brake itself once BrakeBreak expires) pass through untouched.
+        // forces it to report "not pressed" for the two brake actions while either NoBrakes or
+        // BrakeBreak is active, and lets every other action (and the brake itself otherwise) pass
+        // through untouched.
         [HarmonyPatch(typeof(LynxControlExtensions), nameof(LynxControlExtensions.GetInputIsPressed))]
         private static class LynxControlExtensions_GetInputIsPressed_BrakeBreak
         {

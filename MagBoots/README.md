@@ -13,6 +13,10 @@ Press the toggle key with a ship part below you. If the surface is flat enough a
 - Holding the thrust-down input crouches you closer to the surface, for squeezing under low obstacles; release to stand back up.
 - MagBoots only works during actual flight/salvage gameplay — it's fully inactive in the Hab, menus, loading screens, and cutscenes.
 
+## Newtonian movement (optional)
+
+On by default: your air brake is disabled entirely. Braking on demand is a bit overpowered for a zero-g game, so turning it off makes movement more realistically Newtonian — you keep drifting unless something actually stops you, like recoil, the Grapple Gun pulling you, grabbing something by hand, or MagBoots.
+
 ## Battery
 
 Mag boots draw a limited battery, in minutes, that only drains while you're locked to a surface. It recharges to full at the start of every shift.
@@ -33,7 +37,7 @@ Its position and size can both be tweaked in the config — position as a percen
 
 ## Recoil (optional)
 
-Off by default. Turn it on for extra kickback from the Cutter and the Grapple Gun:
+On by default. Gives extra kickback from the Cutter and the Grapple Gun:
 
 - The saw Cutter kicks you back the instant you fire, instead of waiting for the cut to finish.
 - The Scalpel/single-laser gives a steady push for as long as the beam is firing.

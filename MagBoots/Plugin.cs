@@ -46,6 +46,8 @@ namespace MagBoots
         internal static ConfigEntry<string> ConfigHudOffset = null!;
         internal static ConfigEntry<float> ConfigHudScale = null!;
 
+        internal static ConfigEntry<bool> ConfigNoBrakes = null!;
+
         internal static ConfigEntry<bool> ConfigRecoilEnabled = null!;
         internal static ConfigEntry<float> ConfigBrakeBreak = null!;
         internal static ConfigEntry<float> ConfigSawCutterRecoil = null!;
@@ -154,11 +156,14 @@ namespace MagBoots
             ConfigHudScale = Config.Bind("HUD", "Scale", 1f,
                 "Size of the on-screen hint. 1 is the default size, 2 is twice as big, 0.5 is half as big.");
 
-            ConfigRecoilEnabled = Config.Bind("Recoil", "Enabled", false,
-                "Turns on extra kickback for the Cutter and Grapple Gun. Off by default.");
+            ConfigNoBrakes = Config.Bind("Newtonian", "NoBrakes", true,
+                "Disables your air brake entirely. Braking on demand is a bit overpowered for a zero-g game - turning it off makes movement more realistically Newtonian: you keep drifting unless something (like recoil, the Grapple Gun pulling you, grabbing something by hand, or MagBoots) actually stops you.");
+
+            ConfigRecoilEnabled = Config.Bind("Recoil", "Enabled", true,
+                "Turns on extra kickback for the Cutter and Grapple Gun.");
 
             ConfigBrakeBreak = Config.Bind("Recoil", "BrakeBreak", 1f,
-                "Whenever recoil kicks you back, your air brake is disabled for this many seconds afterward, so the kick actually moves you instead of being cancelled out instantly. Set to 0 to disable.");
+                "Whenever recoil kicks you back, your air brake is disabled for this many seconds afterward, so the kick actually moves you instead of being cancelled out instantly. Set to 0 to disable. Has no extra effect if NoBrakes is already on.");
 
             ConfigSawCutterRecoil = Config.Bind("Recoil", "SawCutterRecoil", 0.25f,
                 "How hard the saw Cutter kicks you back when you fire it. 0 turns it off.");
