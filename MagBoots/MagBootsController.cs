@@ -235,6 +235,18 @@ namespace MagBoots
             Rigidbody rb = _playerRigidbody!;
             Transform playerTransform = rb.transform;
 
+            // A strong enough impact (e.g. recoil) should be able to knock the player free instead of
+            // the standoff spring always winning and snapping them back - the spring's restoring force
+            // scales unboundedly with displacement/velocity, so without this check nothing could ever
+            // pull the player away from an attached surface.
+            if (rb.velocity.magnitude > Plugin.ConfigBreakawayVelocity.Value)
+            {
+                if (Plugin.ConfigDebugPrint.Value)
+                    Plugin.Log.LogInfo($"MagBoots: breakaway - velocity={rb.velocity.magnitude} exceeded {Plugin.ConfigBreakawayVelocity.Value}, detaching.");
+                Detach();
+                return;
+            }
+
             // Re-orient roll/yaw so "down" stays aligned with -attachNormal, without touching pitch:
             // rebuild a target rotation from the player's own *flattened* forward (its pitch component
             // discarded) plus the attach normal as up, then re-apply the original pitch (clamped so the
@@ -244,6 +256,11 @@ namespace MagBoots
             // new face - gets corrected.
             Vector3 rawForward = playerTransform.forward;
             Vector3 flatForward = Vector3.ProjectOnPlane(rawForward, _attachNormal);
+            // Settle check compares against the *level* (pitch-free) orientation, not the player's full
+            // rotation - pitch alone also tilts playerTransform.up away from _attachNormal, so comparing
+            // raw up vectors falsely read "still reorienting" forever whenever the player looked up/down,
+            // blocking all forward movement even on a flat surface.
+            bool isReorienting = false;
             if (flatForward.sqrMagnitude > 0.0001f)
             {
                 flatForward.Normalize();
@@ -255,6 +272,7 @@ namespace MagBoots
                 Quaternion pitchRot = Quaternion.AngleAxis(clampedPitch, rightAxis);
                 Quaternion targetRot = pitchRot * levelRot;
 
+                isReorienting = Quaternion.Angle(playerTransform.rotation, targetRot) > Plugin.ConfigReorientSettledAngle.Value;
                 rb.MoveRotation(Quaternion.Slerp(playerTransform.rotation, targetRot, Time.fixedDeltaTime * 10f));
             }
 
@@ -266,7 +284,10 @@ namespace MagBoots
                                    + Plugin.ConfigDamper.Value * (Vector3.zero - rb.velocity);
             rb.AddForce(springForce, ForceMode.Acceleration);
 
-            if (tangentialMove.sqrMagnitude > 0.0001f)
+            // Pause looking for the next surface while still catching up to the last normal change -
+            // recasting mid-reorientation was casting at a still-rotating angle and could pick up a
+            // slightly different/adjacent face before settling, producing visible jitter.
+            if (!isReorienting && tangentialMove.sqrMagnitude > 0.0001f)
             {
                 Vector3 aheadOrigin = rb.position + tangentialMove.normalized * Plugin.ConfigAheadCastDistance.Value;
                 float aheadDistance = Plugin.ConfigStandoffDistance.Value * 1.5f;

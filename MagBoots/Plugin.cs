@@ -35,12 +35,22 @@ namespace MagBoots
         internal static ConfigEntry<float> ConfigSnapDuration = null!;
         internal static ConfigEntry<float> ConfigAheadCastDistance = null!;
         internal static ConfigEntry<float> ConfigMoveSpeed = null!;
+        internal static ConfigEntry<float> ConfigReorientSettledAngle = null!;
         internal static ConfigEntry<float> ConfigSpring = null!;
         internal static ConfigEntry<float> ConfigDamper = null!;
+        internal static ConfigEntry<float> ConfigBreakawayVelocity = null!;
         internal static ConfigEntry<float> ConfigMaxLookDownAngle = null!;
         internal static ConfigEntry<float> ConfigBatteryCapacityMinutes = null!;
         internal static ConfigEntry<BatteryDisplayMode> ConfigBatteryDisplayMode = null!;
         internal static ConfigEntry<string> ConfigHudOffset = null!;
+
+        internal static ConfigEntry<bool> ConfigRecoilEnabled = null!;
+        internal static ConfigEntry<float> ConfigSawCutterRecoil = null!;
+        internal static ConfigEntry<float> ConfigScalpelCutterRecoil = null!;
+        internal static ConfigEntry<float> ConfigGrappleThrowRecoilMultiplier = null!;
+        internal static ConfigEntry<float> ConfigGrappleReflectionRecoil = null!;
+        internal static ConfigEntry<float> ConfigGrappleReflectionDistance = null!;
+        internal static ConfigEntry<float> ConfigAssumedPlayerMassKg = null!;
 
         private MagBootsController? _controller;
 
@@ -89,7 +99,7 @@ namespace MagBoots
             ConfigDebugPrint = Config.Bind("General", "DebugPrint", false,
                 "Log verbose debug info.");
 
-            ConfigMaxAttachDistance = Config.Bind("Tuning", "MaxAttachDistance", 5f,
+            ConfigMaxAttachDistance = Config.Bind("Tuning", "MaxAttachDistance", 2f,
                 "Max downward raycast distance (meters) when attempting to attach.");
 
             ConfigMinFaceArea = Config.Bind("Tuning", "MinFaceArea", 1f,
@@ -110,11 +120,18 @@ namespace MagBoots
             ConfigMoveSpeed = Config.Bind("Tuning", "MoveSpeed", 4f,
                 "Tangential movement speed (meters/second) while attached.");
 
+            ConfigReorientSettledAngle = Config.Bind("Tuning", "ReorientSettledAngle", 2f,
+                "Angle (degrees) of remaining rotation drift below which mag boots considers itself settled onto the new surface and resumes looking for the next one. Lower is stricter (less jitter, more pause between steps); higher is looser.");
+
             ConfigSpring = Config.Bind("Tuning", "Spring", 200f,
                 "Spring constant holding the player at the standoff distance while attached.");
 
             ConfigDamper = Config.Bind("Tuning", "Damper", 30f,
                 "Damper constant for the standoff spring, to prevent oscillation.");
+
+            ConfigBreakawayVelocity = Config.Bind("Tuning", "BreakawayVelocity", 10f,
+                "Velocity (m/s) beyond which mag boots detach instead of spring-holding - lets a strong enough impact " +
+                "(e.g. recoil) knock you free rather than always snapping back. Set very high to effectively disable.");
 
             ConfigMaxLookDownAngle = Config.Bind("Tuning", "MaxLookDownAngle", 45f,
                 "Maximum angle (degrees) the player can pitch their view down toward the attached surface before it's clamped.");
@@ -128,6 +145,27 @@ namespace MagBoots
             ConfigHudOffset = Config.Bind("HUD", "Offset", "(-80, 0)",
                 "Offset of the MagBoots HUD hint as a percentage of screen size, from its default bottom-right position. " +
                 "Format: (x, y). e.g. (-15, 10) moves 15% left and 10% up. Negative y = down.");
+
+            ConfigRecoilEnabled = Config.Bind("Recoil", "Enabled", true,
+                "Master switch for all recoil tuning below.");
+
+            ConfigSawCutterRecoil = Config.Bind("Recoil", "SawCutterRecoil", 0.25f,
+                "Recoil strength for the saw Cutter mode. 0 = no recoil, higher = stronger kickback.");
+
+            ConfigScalpelCutterRecoil = Config.Bind("Recoil", "ScalpelCutterRecoil", 2f,
+                "Recoil strength for the Scalpel/single-laser mode, applied continuously while firing. 0 = no recoil, higher = stronger kickback.");
+
+            ConfigGrappleThrowRecoilMultiplier = Config.Bind("Recoil", "GrappleThrowRecoilMultiplier", 1f,
+                "Recoil strength when pushing a grappled object that's too heavy to throw. 0 = no recoil, higher = stronger kickback.");
+
+            ConfigGrappleReflectionRecoil = Config.Bind("Recoil", "GrappleReflectionRecoil", 0.25f,
+                "Recoil strength when pushing or throwing a nearby object, grappled or not. Stronger the closer and heavier the object is. 0 = no recoil, higher = stronger kickback.");
+
+            ConfigGrappleReflectionDistance = Config.Bind("Recoil", "GrappleReflectionDistance", 12f,
+                "Max distance (meters) an object can be for GrappleReflectionRecoil to apply.");
+
+            ConfigAssumedPlayerMassKg = Config.Bind("Recoil", "AssumedPlayerMassKg", 175f,
+                "Player mass (kg) used to figure out how much recoil the player takes vs. the object being pushed.");
 
             if (!ConfigEnabled.Value)
             {
@@ -174,10 +212,11 @@ namespace MagBoots
 
         private void FixedUpdate()
         {
-            if (_controller == null || !IsInFlightGameplay)
+            if (!IsInFlightGameplay)
                 return;
 
-            _controller.FixedUpdate();
+            _controller?.FixedUpdate();
+            RecoilTuning.ScalpelFixedUpdate();
         }
 
         private void OnGUI()

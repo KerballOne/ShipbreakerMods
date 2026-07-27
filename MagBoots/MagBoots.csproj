@@ -14,8 +14,10 @@
     <Reference Include="BepInEx"            HintPath="$(GameDir)\BepInEx\core\BepInEx.dll"                    Private="false" />
     <Reference Include="0Harmony"           HintPath="$(GameDir)\BepInEx\core\0Harmony.dll"                   Private="false" />
     <Reference Include="BBI.Unity.Game"     HintPath="$(GameDir)\Shipbreaker_Data\Managed\BBI.Unity.Game.dll" Private="false" />
+    <Reference Include="BBI.Unity.Core"     HintPath="$(GameDir)\Shipbreaker_Data\Managed\BBI.Unity.Core.dll" Private="false" />
     <Reference Include="Carbon.Core"        HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Core.dll"    Private="false" />
     <Reference Include="Unity.Entities"     HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Entities.dll" Private="false" />
+    <Reference Include="Unity.Collections"  HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Collections.dll" Private="false" />
     <Reference Include="UnityEngine"              HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.dll"              Private="false" />
     <Reference Include="UnityEngine.CoreModule"   HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.CoreModule.dll"   Private="false" />
     <Reference Include="UnityEngine.PhysicsModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.PhysicsModule.dll" Private="false" />
