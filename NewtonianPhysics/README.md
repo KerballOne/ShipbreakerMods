@@ -15,6 +15,12 @@ On top of that, this mod adds real recoil to the Cutter and Grapple Gun, so firi
 
 **NoBrakes** is on by default: it disables your air brake completely. Vanilla lets you cancel all your momentum instantly on demand, which trivializes movement in a way that doesn't feel like actual zero-g. With it off, you have to plan your stops.
 
+Vanilla also has a few quieter ways of slowing you back down over time, even with NoBrakes on - these are off by default too, so drifting and tumbling both behave like real Newtonian motion: constant until something actually stops you.
+
+- **PlayerLinearDrag** - vanilla quietly brakes you back down to a crawl over time whenever you're drifting and not actively thrusting, grabbing, or grappled. Off by default, so you keep drifting at a constant velocity instead.
+- **PlayerRotationDrag** - vanilla damps out any tumble/spin you pick up whenever you're not actively steering. Off by default, so spin persists indefinitely too - this automatically pauses while you're hand-grabbing something or locked in place with MagBoots, and picks back up right where vanilla would once you let go.
+- **ObjectDrag** - vanilla applies drag to loose parts and debris so they settle down over time. Off by default, so objects drift and spin forever once set in motion, same as the player.
+
 ## Recoil
 
 On by default. Adds real kickback to tools that had none:

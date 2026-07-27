@@ -15,6 +15,9 @@ namespace NewtonianPhysics
         internal static ConfigEntry<bool> ConfigDebugPrint = null!;
 
         internal static ConfigEntry<bool> ConfigNoBrakes = null!;
+        internal static ConfigEntry<bool> ConfigPlayerLinearDrag = null!;
+        internal static ConfigEntry<bool> ConfigPlayerRotationDrag = null!;
+        internal static ConfigEntry<bool> ConfigObjectDrag = null!;
 
         internal static ConfigEntry<bool> ConfigRecoilEnabled = null!;
         internal static ConfigEntry<float> ConfigBrakeBreak = null!;
@@ -37,6 +40,15 @@ namespace NewtonianPhysics
 
             ConfigNoBrakes = Config.Bind("Newtonian", "NoBrakes", true,
                 "Disables your air brake entirely. Braking on demand is a bit overpowered for a zero-g game - turning it off makes movement more realistically Newtonian: you keep drifting unless something (like recoil, the Grapple Gun pulling you, grabbing something by hand, or MagBoots) actually stops you.");
+
+            ConfigPlayerLinearDrag = Config.Bind("Newtonian", "PlayerLinearDrag", false,
+                "Vanilla quietly slows you back down to a crawl over time whenever you're drifting and not actively thrusting, grabbing, or grappled - even with NoBrakes on. Leave this off to remove that ambient drag entirely, so you keep drifting at a constant velocity like real Newtonian motion until something actually stops you. Turn it on to restore vanilla's automatic slowdown.");
+
+            ConfigPlayerRotationDrag = Config.Bind("Newtonian", "PlayerRotationDrag", false,
+                "Vanilla damps out any tumble/spin you pick up whenever you're not actively steering. Leave this off to let spin persist indefinitely, just like linear drift. Turn it on to restore vanilla's automatic tumble damping.");
+
+            ConfigObjectDrag = Config.Bind("Newtonian", "ObjectDrag", false,
+                "Vanilla applies drag to loose parts and debris so they settle down over time instead of drifting/spinning forever. Leave this off to remove that drag so objects behave the same as the player - once moving, they keep moving. Turn it on to restore vanilla's object drag.");
 
             ConfigRecoilEnabled = Config.Bind("Recoil", "Enabled", true,
                 "Turns on extra kickback for the Cutter and Grapple Gun.");
