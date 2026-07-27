@@ -42,6 +42,8 @@ namespace MagBoots
         internal static ConfigEntry<float> ConfigBreakawayVelocity = null!;
         internal static ConfigEntry<float> ConfigMaxLookDownAngle = null!;
         internal static ConfigEntry<float> ConfigBatteryCapacityMinutes = null!;
+        internal static ConfigEntry<float> ConfigIdlePowerMultiplier = null!;
+        internal static ConfigEntry<float> ConfigLockingPowerMultiplier = null!;
         internal static ConfigEntry<BatteryDisplayMode> ConfigBatteryDisplayMode = null!;
         internal static ConfigEntry<string> ConfigHudOffset = null!;
         internal static ConfigEntry<float> ConfigHudScale = null!;
@@ -134,6 +136,12 @@ namespace MagBoots
 
             ConfigBatteryCapacityMinutes = Config.Bind("Tuning", "BatteryCapacityMinutes", 5f,
                 "How many minutes of attached time you get per shift before the battery runs out. Refills at the start of every shift. Set to 0 for unlimited.");
+
+            ConfigIdlePowerMultiplier = Config.Bind("Tuning", "IdlePowerMultiplier", 0.1f,
+                "How much battery you use while standing still and attached, compared to walking. 0.1 means standing still uses a tenth as much power as moving. 1 means standing still costs the same as moving.");
+
+            ConfigLockingPowerMultiplier = Config.Bind("Tuning", "LockingPowerMultiplier", 10f,
+                "How much battery the initial snap-into-place takes, compared to normal attached use. At the default SnapDuration of 1 second and a multiplier of 10, snapping into place costs as much battery as 10 seconds of normal attached time.");
 
             ConfigBatteryDisplayMode = Config.Bind("HUD", "BatteryDisplayMode", BatteryDisplayMode.Gauge,
                 "How the battery is shown on screen: Gauge (bar), Percentage, Timer (minutes:seconds), or Off (hidden).");

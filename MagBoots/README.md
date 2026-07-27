@@ -15,9 +15,11 @@ Press the toggle key with a ship part below you. If the surface is flat enough a
 
 ## Battery
 
-Mag boots draw a limited battery, in minutes, that only drains while you're locked to a surface. It recharges to full at the start of every shift.
+Mag boots draw a limited battery, in minutes, that only drains while you're locking on or locked to a surface. It recharges to full at the start of every shift.
 
 Choose how it's shown on screen: a segmented gauge, a live percentage, a countdown timer, or turn it off entirely. Run it down to zero and the boots stop working (shown as NO POWER) until your next shift.
+
+Standing still while locked on costs much less power than actually walking, and the initial snap-into-place costs more than either - so quickly tapping the toggle on and off isn't a way to dodge the battery cost.
 
 ## HUD hint
 

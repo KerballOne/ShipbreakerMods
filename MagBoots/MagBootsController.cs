@@ -206,19 +206,29 @@ namespace MagBoots
             if (_state == MagBootsState.Locking)
             {
                 UpdateSnap();
+                DrainBattery(Plugin.ConfigLockingPowerMultiplier.Value);
                 return;
             }
 
+            bool wasStandingStill = !_lastTangentialMoveWasActive;
             UpdateAttached();
-            DrainBattery();
+            DrainBattery(wasStandingStill ? Plugin.ConfigIdlePowerMultiplier.Value : 1f);
         }
 
-        private void DrainBattery()
+        // The initial snap (Locking) drains at LockingPowerMultiplier - at the default SnapDuration of 1
+        // second and multiplier of 10, that's equivalent to 10 seconds of normal attached drain, so
+        // frequent attach/detach cycling isn't a free way to dodge battery cost. While actually attached,
+        // standing still (no tangential move input) drains at only IdlePowerMultiplier - captured from
+        // the previous tick's UpdateAttached rather than recomputed here, since tangential input is only
+        // read inside that method.
+        private bool _lastTangentialMoveWasActive;
+
+        private void DrainBattery(float multiplier)
         {
             if (Plugin.ConfigBatteryCapacityMinutes.Value <= 0f)
                 return; // 0 or negative = unlimited/disabled battery.
 
-            _batteryMinutesRemaining -= Time.fixedDeltaTime / 60f;
+            _batteryMinutesRemaining -= Time.fixedDeltaTime / 60f * multiplier;
             if (_batteryMinutesRemaining <= 0f)
             {
                 _batteryMinutesRemaining = 0f;
@@ -306,6 +316,7 @@ namespace MagBoots
             }
 
             Vector3 tangentialMove = ReadTangentialMoveInput(playerTransform, _smoothedNormal);
+            _lastTangentialMoveWasActive = tangentialMove.sqrMagnitude > 0.0001f;
 
             // Pause looking for the next surface while still catching up to the last normal change -
             // recasting mid-reorientation was casting at a still-rotating angle and could pick up a
