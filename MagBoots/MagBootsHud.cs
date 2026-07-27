@@ -9,12 +9,17 @@ namespace MagBoots
     // which our config-file-bound hotkey isn't part of.
     internal static class MagBootsHud
     {
+        // Base sizes at Scale = 1, which is twice the mod's original (pre-1.2) hint size.
+        private const float BaseScaleMultiplier = 2f;
         private const int PromptHeight = 34;
         private const int KeyChipMinWidth = 34;
         private const int Padding = 10;
         private const int RightMargin = 30;
         private const int BottomMargin = 30;
         private const int BatterySegments = 5;
+        private const int LabelFontSize = 16;
+        private const int KeyFontSize = 16;
+        private const int BatteryFontSize = 22;
 
         private static readonly Color OffColor = new Color(1f, 1f, 1f, 0.85f);
         private static readonly Color LockingColor = new Color(1f, 0.82f, 0.2f);
@@ -27,18 +32,22 @@ namespace MagBoots
         private static GUIStyle? _batteryStyle;
         private static Texture2D? _chipTexture;
         private static Texture2D? _keyBorderTexture;
+        private static float _builtStyleScale = -1f;
 
-        private static void EnsureStyles()
+        private static void EnsureStyles(float scale)
         {
-            if (_labelStyle != null)
+            if (_labelStyle != null && Mathf.Approximately(_builtStyleScale, scale))
                 return;
 
-            _chipTexture = MakeSolidTexture(new Color(0.05f, 0.05f, 0.05f, 0.72f));
-            _keyBorderTexture = MakeSolidTexture(new Color(1f, 1f, 1f, 0.9f));
+            _builtStyleScale = scale;
+            float mult = BaseScaleMultiplier * scale;
+
+            _chipTexture ??= MakeSolidTexture(new Color(0.05f, 0.05f, 0.05f, 0.72f));
+            _keyBorderTexture ??= MakeSolidTexture(new Color(1f, 1f, 1f, 0.9f));
 
             _labelStyle = new GUIStyle
             {
-                fontSize = 16,
+                fontSize = Mathf.RoundToInt(LabelFontSize * mult),
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleRight,
                 normal = { textColor = Color.white },
@@ -46,7 +55,7 @@ namespace MagBoots
 
             _keyStyle = new GUIStyle
             {
-                fontSize = 16,
+                fontSize = Mathf.RoundToInt(KeyFontSize * mult),
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter,
                 normal = { textColor = Color.white },
@@ -54,7 +63,7 @@ namespace MagBoots
 
             _batteryStyle = new GUIStyle
             {
-                fontSize = 22,
+                fontSize = Mathf.RoundToInt(BatteryFontSize * mult),
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleRight,
                 normal = { textColor = Color.white },
@@ -70,9 +79,10 @@ namespace MagBoots
         }
 
         public static void Draw(MagBootsState state, string keyLabel, Vector2 offsetPixels, bool showBattery,
-            BatteryDisplayMode batteryMode, float batteryFraction, float batteryMinutesRemaining)
+            BatteryDisplayMode batteryMode, float batteryFraction, float batteryMinutesRemaining, float scale)
         {
-            EnsureStyles();
+            EnsureStyles(scale);
+            float mult = BaseScaleMultiplier * scale;
 
             (string labelText, Color stateColor) = state switch
             {
@@ -86,30 +96,37 @@ namespace MagBoots
             string label = LetterSpace(labelText);
             string battery = showBattery ? BatteryText(batteryMode, batteryFraction, batteryMinutesRemaining) : string.Empty;
 
+            float promptHeight = PromptHeight * mult;
+            float padding = Padding * mult;
+
             float labelWidth = _labelStyle!.CalcSize(new GUIContent(label)).x;
-            float keyWidth = Mathf.Max(KeyChipMinWidth, _keyStyle!.CalcSize(new GUIContent(keyLabel)).x + 18);
+            float keyWidth = Mathf.Max(KeyChipMinWidth * mult, _keyStyle!.CalcSize(new GUIContent(keyLabel)).x + 18 * mult);
             float batteryWidth = showBattery ? _batteryStyle!.CalcSize(new GUIContent(battery)).x : 0f;
 
-            float totalWidth = labelWidth + Padding + (showBattery ? batteryWidth + Padding : 0f) + keyWidth;
+            float totalWidth = labelWidth + padding + (showBattery ? batteryWidth + padding : 0f) + keyWidth;
 
-            float baseX = Screen.width - RightMargin - totalWidth;
-            float baseY = Screen.height - BottomMargin - PromptHeight;
-            float x = baseX + offsetPixels.x;
-            float y = baseY + offsetPixels.y;
+            // offsetPixels is measured from screen center and positions the CENTER of the whole hint
+            // block (label + battery + key chip together), not any one piece's edge - so the numbers in
+            // the config read the same regardless of how wide the label/battery text happens to be.
+            float centerX = Screen.width * 0.5f + offsetPixels.x;
+            float centerY = Screen.height * 0.5f + offsetPixels.y;
+            float x = centerX - totalWidth * 0.5f;
+            float y = centerY - promptHeight * 0.5f;
 
-            var labelRect = new Rect(x, y, labelWidth, PromptHeight);
-            var batteryRect = new Rect(labelRect.xMax + Padding, y, batteryWidth, PromptHeight);
-            float keyX = showBattery ? batteryRect.xMax + Padding : labelRect.xMax + Padding;
-            var keyRect = new Rect(keyX, y + (PromptHeight - 26) * 0.5f, keyWidth, 26);
+            var labelRect = new Rect(x, y, labelWidth, promptHeight);
+            var batteryRect = new Rect(labelRect.xMax + padding, y, batteryWidth, promptHeight);
+            float keyX = showBattery ? batteryRect.xMax + padding : labelRect.xMax + padding;
+            float keyHeight = 26 * mult;
+            var keyRect = new Rect(keyX, y + (promptHeight - keyHeight) * 0.5f, keyWidth, keyHeight);
 
-            DrawShadowedLabel(labelRect, label, _labelStyle, stateColor);
+            DrawShadowedLabel(labelRect, label, _labelStyle, stateColor, mult);
 
             if (showBattery)
-                DrawShadowedLabel(batteryRect, battery, _batteryStyle!, BatteryColor(batteryFraction));
+                DrawShadowedLabel(batteryRect, battery, _batteryStyle!, BatteryColor(batteryFraction), mult);
 
             GUI.color = Color.white;
             GUI.DrawTexture(keyRect, _chipTexture);
-            DrawBorder(keyRect, _keyBorderTexture!, 1.5f);
+            DrawBorder(keyRect, _keyBorderTexture!, 1.5f * mult);
             GUI.Label(keyRect, keyLabel, _keyStyle); // sits on its own dark chip - no shadow needed.
 
             GUI.color = Color.white;
@@ -117,9 +134,9 @@ namespace MagBoots
 
         // OnGUI's GUIStyle has no built-in drop-shadow, so approximate one the same way QuickCutscene's
         // hint does: draw the text once offset in black, then again on top in the real color.
-        private static void DrawShadowedLabel(Rect rect, string text, GUIStyle style, Color color)
+        private static void DrawShadowedLabel(Rect rect, string text, GUIStyle style, Color color, float mult)
         {
-            const float shadowOffset = 2f;
+            float shadowOffset = 2f * mult;
             var shadowRect = new Rect(rect.x + shadowOffset, rect.y + shadowOffset, rect.width, rect.height);
 
             GUI.color = new Color(0f, 0f, 0f, 0.85f);

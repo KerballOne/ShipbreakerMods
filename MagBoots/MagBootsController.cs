@@ -21,9 +21,26 @@ namespace MagBoots
 
         private MagBootsState _state = MagBootsState.Off;
 
+        // _attachNormal is the raw target normal, updated instantly whenever the ahead-cast finds a new
+        // surface (e.g. crossing a sharp corner, where it can swing ~45 degrees in a single tick).
+        // _smoothedNormal eases toward it instead of being used directly, and is what every other
+        // calculation reads from - rotation, the standoff position offset, AND the ahead-cast's own
+        // direction/origin. Smoothing only the standoff offset while leaving rotation and the ahead-cast
+        // on the raw normal caused the two to fall out of sync for several ticks after a corner: the
+        // raycast would fire from a position/direction pair that no longer matched where the player
+        // physically was yet, intermittently failing or hitting inconsistently and producing jitter.
+        // Keeping everything derived from the same smoothed value keeps position, orientation, and the
+        // next raycast all transitioning through a corner together, at the same pace.
         private Vector3 _attachNormal;
+        private Vector3 _smoothedNormal;
         private Vector3 _attachPoint;
         private Transform? _attachHitTransform;
+
+        // Eases between 1.0 (standing) and 0.5 (crouched) while the thrust-down input is held, rather
+        // than snapping instantly, so crouching in/out of a low gap or under an obstacle feels like a
+        // deliberate crouch rather than a jarring pop.
+        private float _standoffFraction = 1f;
+        private const float CrouchTransitionDuration = 0.25f;
 
         private float _snapTimer;
         private Vector3 _snapStartPos;
@@ -111,7 +128,9 @@ namespace MagBoots
         {
             _attachPoint = point;
             _attachNormal = normal;
+            _smoothedNormal = normal;
             _attachHitTransform = hitTransform;
+            _standoffFraction = 1f;
 
             _snapStartPos = _playerRigidbody!.position;
             _snapStartRot = _playerRigidbody.rotation;
@@ -247,28 +266,38 @@ namespace MagBoots
                 return;
             }
 
-            // Re-orient roll/yaw so "down" stays aligned with -attachNormal, without touching pitch:
-            // rebuild a target rotation from the player's own *flattened* forward (its pitch component
-            // discarded) plus the attach normal as up, then re-apply the original pitch (clamped so the
-            // player can't tip past ConfigMaxLookDownAngle toward the surface) on top. This way pitch
-            // (torque already applied by the game's own OrientationController) is fully preserved except
-            // for the clamp, and only roll/yaw drift relative to the surface - e.g. from walking onto a
-            // new face - gets corrected.
+            // Ease _smoothedNormal toward the raw target (_attachNormal, updated by the ahead-cast below)
+            // rather than any of the rest of this method reading _attachNormal directly - rotation, the
+            // tangential move direction, the ahead-cast's own origin/direction, and the standoff offset
+            // all derive from _smoothedNormal instead, so they all transition through a sharp corner
+            // together at the same pace. Using the raw normal for some of these (e.g. the ahead-cast)
+            // while smoothing only the standoff offset let the raycast fire from a position/direction
+            // pair that no longer matched where the player physically was yet, causing it to intermittently
+            // fail or hit inconsistently around corners and produce jitter.
+            _smoothedNormal = Vector3.Slerp(_smoothedNormal, _attachNormal, Time.fixedDeltaTime * Plugin.ConfigCornerSmoothingSpeed.Value).normalized;
+
+            // Re-orient roll/yaw so "down" stays aligned with the smoothed normal, without touching
+            // pitch: rebuild a target rotation from the player's own *flattened* forward (its pitch
+            // component discarded) plus the smoothed normal as up, then re-apply the original pitch
+            // (clamped so the player can't tip past ConfigMaxLookDownAngle toward the surface) on top.
+            // This way pitch (torque already applied by the game's own OrientationController) is fully
+            // preserved except for the clamp, and only roll/yaw drift relative to the surface - e.g. from
+            // walking onto a new face - gets corrected.
             Vector3 rawForward = playerTransform.forward;
-            Vector3 flatForward = Vector3.ProjectOnPlane(rawForward, _attachNormal);
+            Vector3 flatForward = Vector3.ProjectOnPlane(rawForward, _smoothedNormal);
             // Settle check compares against the *level* (pitch-free) orientation, not the player's full
-            // rotation - pitch alone also tilts playerTransform.up away from _attachNormal, so comparing
-            // raw up vectors falsely read "still reorienting" forever whenever the player looked up/down,
-            // blocking all forward movement even on a flat surface.
+            // rotation - pitch alone also tilts playerTransform.up away from the smoothed normal, so
+            // comparing raw up vectors falsely read "still reorienting" forever whenever the player
+            // looked up/down, blocking all forward movement even on a flat surface.
             bool isReorienting = false;
             if (flatForward.sqrMagnitude > 0.0001f)
             {
                 flatForward.Normalize();
-                Vector3 rightAxis = Vector3.Cross(_attachNormal, flatForward).normalized;
+                Vector3 rightAxis = Vector3.Cross(_smoothedNormal, flatForward).normalized;
                 float pitchAngle = Vector3.SignedAngle(flatForward, rawForward, rightAxis);
                 float clampedPitch = Mathf.Min(pitchAngle, Plugin.ConfigMaxLookDownAngle.Value);
 
-                Quaternion levelRot = Quaternion.LookRotation(flatForward, _attachNormal);
+                Quaternion levelRot = Quaternion.LookRotation(flatForward, _smoothedNormal);
                 Quaternion pitchRot = Quaternion.AngleAxis(clampedPitch, rightAxis);
                 Quaternion targetRot = pitchRot * levelRot;
 
@@ -276,29 +305,98 @@ namespace MagBoots
                 rb.MoveRotation(Quaternion.Slerp(playerTransform.rotation, targetRot, Time.fixedDeltaTime * 10f));
             }
 
-            Vector3 tangentialMove = ReadTangentialMoveInput(playerTransform, _attachNormal);
-
-            Vector3 desiredPos = _attachPoint + _attachNormal * Plugin.ConfigStandoffDistance.Value + tangentialMove * Plugin.ConfigMoveSpeed.Value * Time.fixedDeltaTime;
-
-            Vector3 springForce = Plugin.ConfigSpring.Value * (desiredPos - rb.position)
-                                   + Plugin.ConfigDamper.Value * (Vector3.zero - rb.velocity);
-            rb.AddForce(springForce, ForceMode.Acceleration);
+            Vector3 tangentialMove = ReadTangentialMoveInput(playerTransform, _smoothedNormal);
 
             // Pause looking for the next surface while still catching up to the last normal change -
             // recasting mid-reorientation was casting at a still-rotating angle and could pick up a
             // slightly different/adjacent face before settling, producing visible jitter.
             if (!isReorienting && tangentialMove.sqrMagnitude > 0.0001f)
             {
-                Vector3 aheadOrigin = rb.position + tangentialMove.normalized * Plugin.ConfigAheadCastDistance.Value;
-                float aheadDistance = Plugin.ConfigStandoffDistance.Value * 1.5f;
-                if (TryFindValidSurface(aheadOrigin, -_attachNormal, aheadDistance, out RaycastHit aheadHit))
+                // Scale the max cast distance down for a gentle analog push (e.g. a controller stick
+                // barely tilted) rather than always probing the full AheadCastDistance regardless of how
+                // fast the player is actually moving - magnitude is clamped to 1 since a full diagonal
+                // push can exceed unit length (two unit axis vectors summed).
+                float moveIntensity = Mathf.Clamp01(tangentialMove.magnitude);
+                float maxCastDistance = Plugin.ConfigAheadCastDistance.Value * moveIntensity;
+
+                // Search depth reuses MaxAttachDistance rather than a StandoffDistance-derived value -
+                // the old (StandoffDistance * 1.5) depth only gave ~0.5x StandoffDistance of clearance
+                // below the current floor, so stepping down onto a surface deeper than that was
+                // completely missed (the ray never reached it) while stepping up the same height worked
+                // fine, since the new floor was closer to the player's current standoff height instead of
+                // farther. MaxAttachDistance is already the player's own tunable tolerance for "how far
+                // below me is a surface still reachable," so it's the right depth here too, unmodified.
+                float aheadDepth = Plugin.ConfigMaxAttachDistance.Value;
+
+                // Mimics an actual stride: try the full step first, and if that lands over a gap/narrow
+                // lip with nothing below it, reel the probe back in tenth-increments toward the player's
+                // current position instead of giving up outright. This means a narrow gap with solid
+                // ground just beyond it still gets crossed in one step (the far probe hits), while a real
+                // ledge lets the player creep forward with progressively shorter steps right up to the
+                // edge, rather than freezing dead the instant the full-length probe first comes up empty.
+                bool foundSurface = false;
+                RaycastHit aheadHit = default;
+                float hitCastDistance = 0f;
+                const int castSteps = 10;
+                for (int i = castSteps; i >= 1; i--)
                 {
-                    _attachPoint = aheadHit.point;
+                    float castDistance = maxCastDistance * i / castSteps;
+                    Vector3 aheadOrigin = rb.position + tangentialMove.normalized * castDistance;
+                    if (TryFindValidSurface(aheadOrigin, -_smoothedNormal, aheadDepth, out aheadHit))
+                    {
+                        foundSurface = true;
+                        hitCastDistance = castDistance;
+                        break;
+                    }
+                }
+
+                if (foundSurface)
+                {
+                    // Advance the anchor only as far as the successful probe's step distance, not the
+                    // full requested stride - so a shortened step (from reeling in near a ledge) actually
+                    // moves the player a correspondingly shorter distance this tick, rather than the full
+                    // MoveSpeed-paced amount regardless of how close the edge turned out to be. Scaled as
+                    // a fraction of the full stride (hitCastDistance / maxCastDistance) so a step reeled
+                    // in to e.g. half the max distance also only advances the anchor half as far.
+                    float strideFraction = maxCastDistance > 0.0001f ? hitCastDistance / maxCastDistance : 0f;
+                    Vector3 fullStride = tangentialMove * Plugin.ConfigMoveSpeed.Value * Time.fixedDeltaTime;
+                    Vector3 candidatePoint = _attachPoint + fullStride * strideFraction;
+
+                    // Re-snap the anchor onto the new surface's plane (height/orientation) rather than
+                    // forward along it - standard point-onto-plane projection: subtract out the component
+                    // of (candidatePoint - aheadHit.point) along the new normal, which keeps the anchor's
+                    // incrementally-advanced position but adopts the new surface's height, e.g. when
+                    // stepping onto a lower/higher/angled face.
+                    Vector3 offset = candidatePoint - aheadHit.point;
+                    _attachPoint = candidatePoint - Vector3.Dot(offset, aheadHit.normal) * aheadHit.normal;
                     _attachNormal = aheadHit.normal;
                     _attachHitTransform = aheadHit.transform;
+
+                    if (Plugin.ConfigDebugPrint.Value)
+                        Plugin.Log.LogInfo($"MagBoots: ahead-cast hit - moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}, normalAngle={Vector3.Angle(aheadHit.normal, _smoothedNormal)}");
                 }
-                // else: hold last valid attach point/normal (per design) - do nothing.
+                else if (Plugin.ConfigDebugPrint.Value)
+                {
+                    Plugin.Log.LogInfo($"MagBoots: ahead-cast MISSED at all step distances - moveIntensity={moveIntensity}, maxCastDistance={maxCastDistance}, position={rb.position}, dir={-_smoothedNormal}, maxDepth={aheadDepth}");
+                }
+                // else: no surface at any step distance, all the way down to the player's own position
+                // (e.g. a genuine full-width gap/edge) - hold the last valid attach point/normal entirely
+                // (per design), so the player doesn't keep sliding forward over open space.
             }
+
+            // Crouch: while thrust-down is held, ease the standoff distance toward half its configured
+            // value instead of snapping instantly, so ducking under a low obstacle feels deliberate
+            // rather than a jarring pop. Eases back to full the same way on release.
+            float verticalAxis = LynxControls.Instance.GetOneAxisInputControlValue(GameplayActions.GameplayActionSet.ThrustMoveUpDownComposite);
+            bool crouchHeld = verticalAxis < -0.0001f;
+            float targetStandoffFraction = crouchHeld ? 0.5f : 1f;
+            _standoffFraction = Mathf.MoveTowards(_standoffFraction, targetStandoffFraction, Time.fixedDeltaTime / CrouchTransitionDuration);
+
+            Vector3 desiredPos = _attachPoint + _smoothedNormal * (Plugin.ConfigStandoffDistance.Value * _standoffFraction);
+
+            Vector3 springForce = Plugin.ConfigSpring.Value * (desiredPos - rb.position)
+                                   + Plugin.ConfigDamper.Value * (Vector3.zero - rb.velocity);
+            rb.AddForce(springForce, ForceMode.Acceleration);
         }
 
         private static Vector3 ReadTangentialMoveInput(Transform playerTransform, Vector3 normal)

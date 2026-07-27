@@ -35,6 +35,7 @@ namespace MagBoots
         internal static ConfigEntry<float> ConfigSnapDuration = null!;
         internal static ConfigEntry<float> ConfigAheadCastDistance = null!;
         internal static ConfigEntry<float> ConfigMoveSpeed = null!;
+        internal static ConfigEntry<float> ConfigCornerSmoothingSpeed = null!;
         internal static ConfigEntry<float> ConfigReorientSettledAngle = null!;
         internal static ConfigEntry<float> ConfigSpring = null!;
         internal static ConfigEntry<float> ConfigDamper = null!;
@@ -43,6 +44,7 @@ namespace MagBoots
         internal static ConfigEntry<float> ConfigBatteryCapacityMinutes = null!;
         internal static ConfigEntry<BatteryDisplayMode> ConfigBatteryDisplayMode = null!;
         internal static ConfigEntry<string> ConfigHudOffset = null!;
+        internal static ConfigEntry<float> ConfigHudScale = null!;
 
         internal static ConfigEntry<bool> ConfigRecoilEnabled = null!;
         internal static ConfigEntry<float> ConfigSawCutterRecoil = null!;
@@ -88,84 +90,89 @@ namespace MagBoots
             Log = Logger;
 
             ConfigEnabled = Config.Bind("General", "Enabled", true,
-                "Enable or disable the plugin (requires restart).");
+                "Turns the mod on or off (requires a restart).");
 
             ConfigToggleKey = Config.Bind("General", "ToggleKey", new KeyboardShortcut(KeyCode.M),
-                "Keyboard shortcut to attach/detach mag boots.");
+                "Keyboard key to attach/detach mag boots.");
 
             ConfigToggleButton = Config.Bind("General", "ControllerToggleButton", InputControlType.DPadDown,
                 "Controller button to attach/detach mag boots.");
 
             ConfigDebugPrint = Config.Bind("General", "DebugPrint", false,
-                "Log verbose debug info.");
+                "Prints extra troubleshooting info to the log. Leave off unless asked to turn it on.");
 
-            ConfigMaxAttachDistance = Config.Bind("Tuning", "MaxAttachDistance", 2f,
-                "Max downward raycast distance (meters) when attempting to attach.");
+            ConfigMaxAttachDistance = Config.Bind("Tuning", "MaxAttachDistance", 3f,
+                "How far below your feet (in meters) mag boots will look for something to attach to.");
 
-            ConfigMinFaceArea = Config.Bind("Tuning", "MinFaceArea", 1f,
-                "Minimum estimated face area (square meters) required to attach.");
+            ConfigMinFaceArea = Config.Bind("Tuning", "MinFaceArea", 2f,
+                "How big a surface needs to be (in square meters) before you can attach to it. Keeps you from sticking to tiny brackets and pipes.");
 
             ConfigMaxNormalAngle = Config.Bind("Tuning", "MaxNormalAngle", 50f,
-                "Maximum angle (degrees) between the surface normal and the player's down vector to allow attaching.");
+                "How tilted a surface can be (in degrees) and still count as \"flat enough\" to attach to.");
 
             ConfigStandoffDistance = Config.Bind("Tuning", "StandoffDistance", 1.5f,
-                "Distance (meters) the player is held above the attached surface.");
+                "How far off the surface (in meters) you float once attached.");
 
             ConfigSnapDuration = Config.Bind("Tuning", "SnapDuration", 1f,
-                "Duration (seconds) of the initial snap-to-surface tween.");
+                "How long (in seconds) the initial snap into place takes.");
 
-            ConfigAheadCastDistance = Config.Bind("Tuning", "AheadCastDistance", 0.3f,
-                "Distance (meters) ahead of the player to cast the next downward raycast while walking.");
+            ConfigAheadCastDistance = Config.Bind("Tuning", "AheadCastDistance", 0.85f,
+                "Your stride length while walking (in meters) - how far ahead mag boots checks for the next foothold.");
 
-            ConfigMoveSpeed = Config.Bind("Tuning", "MoveSpeed", 4f,
-                "Tangential movement speed (meters/second) while attached.");
+            ConfigMoveSpeed = Config.Bind("Tuning", "MoveSpeed", 2f,
+                "Walking speed (in meters/second) while attached.");
 
-            ConfigReorientSettledAngle = Config.Bind("Tuning", "ReorientSettledAngle", 2f,
-                "Angle (degrees) of remaining rotation drift below which mag boots considers itself settled onto the new surface and resumes looking for the next one. Lower is stricter (less jitter, more pause between steps); higher is looser.");
+            ConfigCornerSmoothingSpeed = Config.Bind("Tuning", "CornerSmoothingSpeed", 3f,
+                "How quickly you lean into a sharp corner or step, instead of snapping right into the new angle. Lower is smoother/slower; higher is snappier.");
+
+            ConfigReorientSettledAngle = Config.Bind("Tuning", "ReorientSettledAngle", 1f,
+                "How closely you need to finish leaning into a new angle before taking the next step. Lower is stricter (smoother, but pauses more); higher is looser.");
 
             ConfigSpring = Config.Bind("Tuning", "Spring", 200f,
-                "Spring constant holding the player at the standoff distance while attached.");
+                "How firmly mag boots pull you back to the surface if you drift away. Higher is snappier.");
 
             ConfigDamper = Config.Bind("Tuning", "Damper", 30f,
-                "Damper constant for the standoff spring, to prevent oscillation.");
+                "Smooths out that pull-back so it doesn't bounce or overshoot. Higher is calmer.");
 
             ConfigBreakawayVelocity = Config.Bind("Tuning", "BreakawayVelocity", 10f,
-                "Velocity (m/s) beyond which mag boots detach instead of spring-holding - lets a strong enough impact " +
-                "(e.g. recoil) knock you free rather than always snapping back. Set very high to effectively disable.");
+                "How hard you need to be hit (in meters/second) before mag boots let go instead of holding on. Set very high to basically never let go.");
 
             ConfigMaxLookDownAngle = Config.Bind("Tuning", "MaxLookDownAngle", 45f,
-                "Maximum angle (degrees) the player can pitch their view down toward the attached surface before it's clamped.");
+                "How far you can look down toward the surface before your view is stopped, so you can't tip over and stare at your own feet.");
 
             ConfigBatteryCapacityMinutes = Config.Bind("Tuning", "BatteryCapacityMinutes", 5f,
-                "Minutes of battery available while attached before mag boots force-detach. Resets to full at the start of each shift. Set to 0 to disable the battery (unlimited).");
+                "How many minutes of attached time you get per shift before the battery runs out. Refills at the start of every shift. Set to 0 for unlimited.");
 
             ConfigBatteryDisplayMode = Config.Bind("HUD", "BatteryDisplayMode", BatteryDisplayMode.Gauge,
-                "How to display remaining battery in the HUD hint: Gauge (segmented bar), Percentage, Timer (MM:SS), or Off (hidden).");
+                "How the battery is shown on screen: Gauge (bar), Percentage, Timer (minutes:seconds), or Off (hidden).");
 
-            ConfigHudOffset = Config.Bind("HUD", "Offset", "(-80, 0)",
-                "Offset of the MagBoots HUD hint as a percentage of screen size, from its default bottom-right position. " +
-                "Format: (x, y). e.g. (-15, 10) moves 15% left and 10% up. Negative y = down.");
+            ConfigHudOffset = Config.Bind("HUD", "Offset", "(0, -48)",
+                "Moves the on-screen hint from the center of your screen, as a percent of your screen size. " +
+                "Format: (x, y). e.g. (0, -48) moves it to the bottom-center. Negative x moves it left, negative y moves it down.");
 
-            ConfigRecoilEnabled = Config.Bind("Recoil", "Enabled", true,
-                "Master switch for all recoil tuning below.");
+            ConfigHudScale = Config.Bind("HUD", "Scale", 1f,
+                "Size of the on-screen hint. 1 is the default size, 2 is twice as big, 0.5 is half as big.");
+
+            ConfigRecoilEnabled = Config.Bind("Recoil", "Enabled", false,
+                "Turns on extra kickback for the Cutter and Grapple Gun. Off by default.");
 
             ConfigSawCutterRecoil = Config.Bind("Recoil", "SawCutterRecoil", 0.25f,
-                "Recoil strength for the saw Cutter mode. 0 = no recoil, higher = stronger kickback.");
+                "How hard the saw Cutter kicks you back when you fire it. 0 turns it off.");
 
             ConfigScalpelCutterRecoil = Config.Bind("Recoil", "ScalpelCutterRecoil", 2f,
-                "Recoil strength for the Scalpel/single-laser mode, applied continuously while firing. 0 = no recoil, higher = stronger kickback.");
+                "How hard the Scalpel/single-laser pushes you back while it's firing. 0 turns it off.");
 
             ConfigGrappleThrowRecoilMultiplier = Config.Bind("Recoil", "GrappleThrowRecoilMultiplier", 1f,
-                "Recoil strength when pushing a grappled object that's too heavy to throw. 0 = no recoil, higher = stronger kickback.");
+                "How hard you get pushed back when trying to throw a grappled object that's too heavy to move. 1 is normal, 0 turns it off.");
 
             ConfigGrappleReflectionRecoil = Config.Bind("Recoil", "GrappleReflectionRecoil", 0.25f,
-                "Recoil strength when pushing or throwing a nearby object, grappled or not. Stronger the closer and heavier the object is. 0 = no recoil, higher = stronger kickback.");
+                "How hard pushing or throwing something with the Grapple Gun kicks you back - stronger the closer and heavier the object is. 0 turns it off.");
 
             ConfigGrappleReflectionDistance = Config.Bind("Recoil", "GrappleReflectionDistance", 12f,
-                "Max distance (meters) an object can be for GrappleReflectionRecoil to apply.");
+                "How far away (in meters) an object can be and still kick you back when pushed or thrown.");
 
             ConfigAssumedPlayerMassKg = Config.Bind("Recoil", "AssumedPlayerMassKg", 175f,
-                "Player mass (kg) used to figure out how much recoil the player takes vs. the object being pushed.");
+                "Your assumed weight (in kg), used to figure out how much of a push's force you feel versus the object.");
 
             if (!ConfigEnabled.Value)
             {
@@ -233,7 +240,7 @@ namespace MagBoots
 
             bool showBattery = ConfigBatteryCapacityMinutes.Value > 0f && ConfigBatteryDisplayMode.Value != BatteryDisplayMode.Off;
             MagBootsHud.Draw(_controller.State, keyLabel, offsetPixels, showBattery,
-                ConfigBatteryDisplayMode.Value, _controller.BatteryFraction, _controller.BatteryMinutesRemaining);
+                ConfigBatteryDisplayMode.Value, _controller.BatteryFraction, _controller.BatteryMinutesRemaining, ConfigHudScale.Value);
         }
 
         // Mirrors QuickCutscene's button-name switch, but keyed off the active device's DeviceStyle
