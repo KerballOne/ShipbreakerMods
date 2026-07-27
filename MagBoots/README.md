@@ -40,6 +40,7 @@ Off by default. Turn it on for extra kickback from the Cutter and the Grapple Gu
 - Pushing or throwing anything with the Grapple Gun kicks you back based on how close and how heavy it is — a light object barely reacts, a massive or immovable one kicks like pushing off a wall. Only within a limited range; anything farther away gives no kickback.
 - If you've grappled something too heavy to actually throw, the normal kickback you get from trying can also be scaled up or down.
 - If a hit is strong enough, mag boots will let go of the surface instead of always holding on.
+- Recoil also briefly disables your air brake (1 second by default) so a kick actually moves you instead of being cancelled out the instant it happens.
 
 ## Settings
 

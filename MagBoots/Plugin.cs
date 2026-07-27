@@ -47,6 +47,7 @@ namespace MagBoots
         internal static ConfigEntry<float> ConfigHudScale = null!;
 
         internal static ConfigEntry<bool> ConfigRecoilEnabled = null!;
+        internal static ConfigEntry<float> ConfigBrakeBreak = null!;
         internal static ConfigEntry<float> ConfigSawCutterRecoil = null!;
         internal static ConfigEntry<float> ConfigScalpelCutterRecoil = null!;
         internal static ConfigEntry<float> ConfigGrappleThrowRecoilMultiplier = null!;
@@ -155,6 +156,9 @@ namespace MagBoots
 
             ConfigRecoilEnabled = Config.Bind("Recoil", "Enabled", false,
                 "Turns on extra kickback for the Cutter and Grapple Gun. Off by default.");
+
+            ConfigBrakeBreak = Config.Bind("Recoil", "BrakeBreak", 1f,
+                "Whenever recoil kicks you back, your air brake is disabled for this many seconds afterward, so the kick actually moves you instead of being cancelled out instantly. Set to 0 to disable.");
 
             ConfigSawCutterRecoil = Config.Bind("Recoil", "SawCutterRecoil", 0.25f,
                 "How hard the saw Cutter kicks you back when you fire it. 0 turns it off.");

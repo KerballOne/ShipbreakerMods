@@ -9,6 +9,44 @@ namespace MagBoots
     // user's request rather than a separate mod.
     internal static class RecoilTuning
     {
+        // BrakeBreak: whenever any recoil above actually applies a force, briefly disable the air brake
+        // so the kick isn't instantly cancelled out by the player reflexively braking (or already holding
+        // the brake) the moment they get hit. sBrakeBreakUntil is compared against Time.time rather than
+        // using a countdown/coroutine, so it self-expires with no separate update tick needed.
+        private static float sBrakeBreakUntil = -1f;
+
+        private static void TriggerBrakeBreak()
+        {
+            float duration = Plugin.ConfigBrakeBreak.Value;
+            if (duration <= 0f)
+                return;
+
+            sBrakeBreakUntil = Time.time + duration;
+        }
+
+        private static bool IsBrakeBroken => Time.time < sBrakeBreakUntil;
+
+        // Vanilla reads the brake input directly via this extension method every FixedUpdate
+        // (OrientationController has no cached/settable "is braking" field to flip instead) - Prefix
+        // forces it to report "not pressed" for the two brake actions while BrakeBreak is active, and
+        // lets every other action (and the brake itself once BrakeBreak expires) pass through untouched.
+        [HarmonyPatch(typeof(LynxControlExtensions), nameof(LynxControlExtensions.GetInputIsPressed))]
+        private static class LynxControlExtensions_GetInputIsPressed_BrakeBreak
+        {
+            private static bool Prefix(LynxControls.ActionSetAndId actionSetAndId, ref bool __result)
+            {
+                if (!IsBrakeBroken)
+                    return true;
+
+                if (!actionSetAndId.Equals((LynxControls.ActionSetAndId)GameplayActions.GameplayActionSet.ThrustBrakeLeft) &&
+                    !actionSetAndId.Equals((LynxControls.ActionSetAndId)GameplayActions.GameplayActionSet.ThrustBrakeRight))
+                    return true;
+
+                __result = false;
+                return false;
+            }
+        }
+
         // Vanilla applies saw Cutter mode's recoil from TryPerformCut -> ApplyRecoilForce, which only
         // runs once a cut line's configured Delay has elapsed (HandleCutting checks each
         // BuffableCutLine's Delay every FixedUpdate). Note this ONLY covers saw/Cutter mode -
@@ -69,6 +107,7 @@ namespace MagBoots
 
                 Vector3 force = -playerRigidbody.transform.forward * totalRecoil;
                 playerRigidbody.AddForce(force, ForceMode.VelocityChange);
+                TriggerBrakeBreak();
             }
         }
 
@@ -129,6 +168,7 @@ namespace MagBoots
 
             Vector3 force = -playerRigidbody.transform.forward * acceleration;
             playerRigidbody.AddForce(force, ForceMode.Acceleration);
+            TriggerBrakeBreak();
         }
 
         // Shared by both GrapplePush (raycast, nothing grappled) and Throw (grappled + light enough to
@@ -212,6 +252,7 @@ namespace MagBoots
                 // nothing there ever divided by the player's ~50kg mass.
                 Vector3 recoil = -forward * appliedForce;
                 playerRigidbody.AddForce(recoil, ForceMode.Impulse);
+                TriggerBrakeBreak();
             }
         }
 
@@ -255,6 +296,10 @@ namespace MagBoots
                     if (Plugin.ConfigDebugPrint.Value)
                         Plugin.Log.LogInfo($"MagBoots: Throw (heavy) recoil - throwForce={throwForceForLog}, playerMass={playerRigidbody.mass}, objectMass={grappledRigidbody?.mass}, vanillaPushback={vanillaPushbackForLog}, multiplier={multiplier}");
 
+                    // Vanilla's own pushback fires here regardless of multiplier, so brake-break should
+                    // too - only the extra scaled delta below is gated on multiplier != 1.
+                    TriggerBrakeBreak();
+
                     if (multiplier == 1f)
                         return;
 
@@ -281,6 +326,7 @@ namespace MagBoots
                     // and vanilla's own PlayerPushbackScalar mechanism - not VelocityChange, which added
                     // the raw value with no mass division and produced far oversized kicks.
                     playerRigidbody.AddForce(-forward * appliedForce, ForceMode.Impulse);
+                    TriggerBrakeBreak();
                 }
             }
         }
