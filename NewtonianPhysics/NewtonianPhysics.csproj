@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
-    <AssemblyName>me.kerballone.MagBoots</AssemblyName>
-    <RootNamespace>MagBoots</RootNamespace>
-    <Version>1.3.0</Version>
+    <AssemblyName>me.kerballone.NewtonianPhysics</AssemblyName>
+    <RootNamespace>NewtonianPhysics</RootNamespace>
+    <Version>1.0.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <Optimize>true</Optimize>
@@ -16,19 +16,15 @@
     <Reference Include="BBI.Unity.Game"     HintPath="$(GameDir)\Shipbreaker_Data\Managed\BBI.Unity.Game.dll" Private="false" />
     <Reference Include="BBI.Unity.Core"     HintPath="$(GameDir)\Shipbreaker_Data\Managed\BBI.Unity.Core.dll" Private="false" />
     <Reference Include="Carbon.Core"        HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Core.dll"    Private="false" />
-    <Reference Include="Unity.Entities"     HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Entities.dll" Private="false" />
-    <Reference Include="Unity.Collections"  HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Collections.dll" Private="false" />
     <Reference Include="UnityEngine"              HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.dll"              Private="false" />
     <Reference Include="UnityEngine.CoreModule"   HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.CoreModule.dll"   Private="false" />
     <Reference Include="UnityEngine.PhysicsModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.PhysicsModule.dll" Private="false" />
-    <Reference Include="UnityEngine.IMGUIModule"  HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.IMGUIModule.dll" Private="false" />
-    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.TextRenderingModule.dll" Private="false" />
     <Reference Include="InControl"                HintPath="$(GameDir)\Shipbreaker_Data\Managed\InControl.dll"                Private="false" />
   </ItemGroup>
 
   <Target Name="DeployToBepInEx" AfterTargets="Build">
-    <MakeDir Directories="$(GameDir)\BepInEx\plugins\MagBoots\" />
+    <MakeDir Directories="$(GameDir)\BepInEx\plugins\NewtonianPhysics\" />
     <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
-          DestinationFolder="$(GameDir)\BepInEx\plugins\MagBoots\" />
+          DestinationFolder="$(GameDir)\BepInEx\plugins\NewtonianPhysics\" />
   </Target>
 </Project>

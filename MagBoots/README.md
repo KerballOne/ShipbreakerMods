@@ -13,10 +13,6 @@ Press the toggle key with a ship part below you. If the surface is flat enough a
 - Holding the thrust-down input crouches you closer to the surface, for squeezing under low obstacles; release to stand back up.
 - MagBoots only works during actual flight/salvage gameplay — it's fully inactive in the Hab, menus, loading screens, and cutscenes.
 
-## Newtonian movement (optional)
-
-On by default: your air brake is disabled entirely. Braking on demand is a bit overpowered for a zero-g game, so turning it off makes movement more realistically Newtonian — you keep drifting unless something actually stops you, like recoil, the Grapple Gun pulling you, grabbing something by hand, or MagBoots.
-
 ## Battery
 
 Mag boots draw a limited battery, in minutes, that only drains while you're locked to a surface. It recharges to full at the start of every shift.
@@ -34,17 +30,6 @@ A small on-screen hint in the corner shows your current status and toggle key, s
 - **Gray** — no power, battery depleted
 
 Its position and size can both be tweaked in the config — position as a percentage offset from the center of your screen, size as a scale multiplier (1 is default, 2 is twice as big).
-
-## Recoil (optional)
-
-On by default. Gives extra kickback from the Cutter and the Grapple Gun:
-
-- The saw Cutter kicks you back the instant you fire, instead of waiting for the cut to finish.
-- The Scalpel/single-laser gives a steady push for as long as the beam is firing.
-- Pushing or throwing anything with the Grapple Gun kicks you back based on how close and how heavy it is — a light object barely reacts, a massive or immovable one kicks like pushing off a wall. Only within a limited range; anything farther away gives no kickback.
-- If you've grappled something too heavy to actually throw, the normal kickback you get from trying can also be scaled up or down.
-- If a hit is strong enough, mag boots will let go of the surface instead of always holding on.
-- Recoil also briefly disables your air brake (1 second by default) so a kick actually moves you instead of being cancelled out the instant it happens.
 
 ## Settings
 
@@ -72,3 +57,7 @@ Every setting has a plain-language description in the file itself — open it in
 ## Compatibility
 
 MagBoots works entirely on your own client, via raycasts and forces on your own player. It doesn't touch save data or ship data, so it's safe to add or remove mid-save.
+
+## See also
+
+[NewtonianPhysics](https://github.com/KerballOne/ShipbreakerMods/tree/kb1/NewtonianPhysics) is a separate, optional companion mod that removes on-demand air braking and adds real recoil to the Cutter and Grapple Gun — it pairs well with MagBoots as an alternative way to stop and control your movement.

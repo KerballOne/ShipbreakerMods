@@ -2,11 +2,11 @@ using BBI.Unity.Game;
 using HarmonyLib;
 using UnityEngine;
 
-namespace MagBoots
+namespace NewtonianPhysics
 {
     // Scales the Cutter's existing recoil, and adds a single, target-transparent player recoil to the
-    // grapple's Push/Throw action - independent of MagBoots itself, bundled into this plugin at the
-    // user's request rather than a separate mod.
+    // grapple's Push/Throw action, plus a Newtonian-movement option (disabling the air brake entirely,
+    // or briefly after any recoil hit) - all independent of any other mod, standalone.
     internal static class RecoilTuning
     {
         // BrakeBreak: whenever any recoil above actually applies a force, briefly disable the air brake
@@ -79,7 +79,7 @@ namespace MagBoots
                 if (recoil <= 0f || data.BuffableCutLines.Count == 0)
                 {
                     if (Plugin.ConfigDebugPrint.Value)
-                        Plugin.Log.LogInfo($"MagBoots: StartCutting recoil skipped - recoil={recoil}, cutLines={data.BuffableCutLines.Count}");
+                        Plugin.Log.LogInfo($"NewtonianPhysics: StartCutting recoil skipped - recoil={recoil}, cutLines={data.BuffableCutLines.Count}");
                     return;
                 }
 
@@ -88,7 +88,7 @@ namespace MagBoots
                 if (playerRigidbody == null)
                 {
                     if (Plugin.ConfigDebugPrint.Value)
-                        Plugin.Log.LogInfo("MagBoots: StartCutting recoil skipped - m_PlayerRigidbody was null.");
+                        Plugin.Log.LogInfo("NewtonianPhysics: StartCutting recoil skipped - m_PlayerRigidbody was null.");
                     return;
                 }
 
@@ -104,7 +104,7 @@ namespace MagBoots
                 float totalRecoil = recoil * data.BuffableCutLines.Count;
 
                 if (Plugin.ConfigDebugPrint.Value)
-                    Plugin.Log.LogInfo($"MagBoots: StartCutting recoil - totalRecoil={totalRecoil}, applied={-playerRigidbody.transform.forward * totalRecoil}");
+                    Plugin.Log.LogInfo($"NewtonianPhysics: StartCutting recoil - totalRecoil={totalRecoil}, applied={-playerRigidbody.transform.forward * totalRecoil}");
 
                 Vector3 force = -playerRigidbody.transform.forward * totalRecoil;
                 playerRigidbody.AddForce(force, ForceMode.VelocityChange);
@@ -165,7 +165,7 @@ namespace MagBoots
                 return;
 
             if (Plugin.ConfigDebugPrint.Value)
-                Plugin.Log.LogInfo($"MagBoots: Scalpel recoil - acceleration={acceleration}");
+                Plugin.Log.LogInfo($"NewtonianPhysics: Scalpel recoil - acceleration={acceleration}");
 
             Vector3 force = -playerRigidbody.transform.forward * acceleration;
             playerRigidbody.AddForce(force, ForceMode.Acceleration);
@@ -230,7 +230,7 @@ namespace MagBoots
                 if (!Physics.Raycast(origin, forward, out RaycastHit hit, maxDistance, mask))
                 {
                     if (Plugin.ConfigDebugPrint.Value)
-                        Plugin.Log.LogInfo($"MagBoots: GrapplePush reflection recoil - no hit within {maxDistance}m, no recoil.");
+                        Plugin.Log.LogInfo($"NewtonianPhysics: GrapplePush reflection recoil - no hit within {maxDistance}m, no recoil.");
                     return;
                 }
 
@@ -241,7 +241,7 @@ namespace MagBoots
                 float appliedForce = ReflectionForce(baseForce, hit.distance, objectMass);
 
                 if (Plugin.ConfigDebugPrint.Value)
-                    Plugin.Log.LogInfo($"MagBoots: GrapplePush reflection recoil - distance={hit.distance}, baseForce={baseForce}, playerMass={playerRigidbody.mass}, objectMass={objectMass}, appliedForce={appliedForce}");
+                    Plugin.Log.LogInfo($"NewtonianPhysics: GrapplePush reflection recoil - distance={hit.distance}, baseForce={baseForce}, playerMass={playerRigidbody.mass}, objectMass={objectMass}, appliedForce={appliedForce}");
 
                 if (appliedForce <= 0f)
                     return;
@@ -295,7 +295,7 @@ namespace MagBoots
                     float vanillaPushbackForLog = -throwForceForLog * mData.PlayerPushbackScalar;
 
                     if (Plugin.ConfigDebugPrint.Value)
-                        Plugin.Log.LogInfo($"MagBoots: Throw (heavy) recoil - throwForce={throwForceForLog}, playerMass={playerRigidbody.mass}, objectMass={grappledRigidbody?.mass}, vanillaPushback={vanillaPushbackForLog}, multiplier={multiplier}");
+                        Plugin.Log.LogInfo($"NewtonianPhysics: Throw (heavy) recoil - throwForce={throwForceForLog}, playerMass={playerRigidbody.mass}, objectMass={grappledRigidbody?.mass}, vanillaPushback={vanillaPushbackForLog}, multiplier={multiplier}");
 
                     // Vanilla's own pushback fires here regardless of multiplier, so brake-break should
                     // too - only the extra scaled delta below is gated on multiplier != 1.
@@ -318,7 +318,7 @@ namespace MagBoots
                     float appliedForce = ReflectionForce(throwForce, distance, grappledRigidbody.mass);
 
                     if (Plugin.ConfigDebugPrint.Value)
-                        Plugin.Log.LogInfo($"MagBoots: Throw reflection recoil - distance={distance}, throwForce={throwForce}, playerMass={playerRigidbody.mass}, objectMass={grappledRigidbody.mass}, appliedForce={appliedForce}");
+                        Plugin.Log.LogInfo($"NewtonianPhysics: Throw reflection recoil - distance={distance}, throwForce={throwForce}, playerMass={playerRigidbody.mass}, objectMass={grappledRigidbody.mass}, appliedForce={appliedForce}");
 
                     if (appliedForce <= 0f)
                         return;
