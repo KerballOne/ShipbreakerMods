@@ -658,7 +658,7 @@ namespace PartInfoLogger
                 Plugin.Log.LogInfo($"[JointCensus] Found {ijEntities.Count} InvisibleJoint marker part(s), excluded from neighbor counts.");
             }
 
-            var rows = new List<(string Name, int NeighborCount, Entity Entity)>();
+            var rows = new List<(string Name, string JsaName, int NeighborCount, Entity Entity)>();
             var unionFind = new Dictionary<Entity, Entity>();
             using var connectedNodes = new NativeList<Entity>(Allocator.Temp);
 
@@ -666,12 +666,18 @@ namespace PartInfoLogger
             {
                 if (part == null) continue;
                 var name = part.gameObject.name.Replace("(Clone)", "").Trim();
+                // Real JSA per StructurePart.StructurePartAsset.Data.JointSetupAsset — the same
+                // live object reference JointabilityAsset.CanJoint reads at jointing time, not a
+                // name/GUID-based guess. See project_jsa_compat_isactive_bug memory for why this
+                // ground truth matters (jsa_compat.json's pairing table was found to be wrong for
+                // inactive pairings; this per-part JSA identity itself was never in question).
+                var jsaName = part.StructurePartAsset?.Data?.JointSetupAsset?.name ?? "";
                 if (ijEntities.Count > 0 && ijMarkerType != null && part.GetComponent(ijMarkerType) != null)
                     continue; // don't list IJ markers themselves as parts
 
                 if (!EntityBlueprintComponent.IsValid(part.EntityBlueprintComponent))
                 {
-                    rows.Add((name, 0, Entity.Null));
+                    rows.Add((name, jsaName, 0, Entity.Null));
                     continue;
                 }
 
@@ -692,7 +698,7 @@ namespace PartInfoLogger
                     UnionFind_Union(unionFind, entity, e);
                 }
 
-                rows.Add((name, neighborCount, entity));
+                rows.Add((name, jsaName, neighborCount, entity));
             }
 
             // Assign cluster IDs, ordered by ascending cluster size (smallest/most-isolated first).
@@ -720,7 +726,7 @@ namespace PartInfoLogger
                 var outDir = Path.GetDirectoryName(Plugin.OutputPath.Value)!;
                 var path = Path.Combine(outDir, "joint_census.csv");
                 var sb = new System.Text.StringBuilder();
-                sb.AppendLine("PartName,JointedNeighborCount,ClusterId,ClusterSize");
+                sb.AppendLine("PartName,JsaName,JointedNeighborCount,ClusterId,ClusterSize");
                 var indices = Enumerable.Range(0, rows.Count).OrderBy(i => rows[i].Name, StringComparer.Ordinal);
                 foreach (var i in indices)
                 {
@@ -728,7 +734,7 @@ namespace PartInfoLogger
                     var hasCluster = row.Entity != Entity.Null;
                     var clusterId = hasCluster ? rowToCluster[i].ToString() : "";
                     var size = hasCluster ? clusterSize[rowToCluster[i]].ToString() : "";
-                    sb.AppendLine($"{CsvEscape(row.Name)},{row.NeighborCount},{clusterId},{size}");
+                    sb.AppendLine($"{CsvEscape(row.Name)},{CsvEscape(row.JsaName)},{row.NeighborCount},{clusterId},{size}");
                 }
                 File.WriteAllText(path, sb.ToString());
                 Plugin.Log.LogInfo($"[JointCensus] Wrote {rows.Count} part(s) in {orderedClusters.Count} cluster(s) to {path}");
@@ -1398,7 +1404,7 @@ namespace PartInfoLogger
                 }
             }
             if (root == null || string.IsNullOrEmpty(guid)) return;
-            if (State.AlreadyCaptured(guid!) && State.HasJsaName(guid!)) return;
+            if (State.AlreadyCaptured(guid!) && State.HasJsaName(guid!) && State.HasSpName(guid!)) return;
 
             string? displayName = null;
             var rootSP = root.GetComponent<StructurePart>() ?? __instance;
@@ -1448,13 +1454,17 @@ namespace PartInfoLogger
                 if (jsa != null) { jsaName = jsa.name; spMatName = spa!.name; break; }
             }
 
-            // Log SP and BP asset names to confirm whether ACL has fired by the time Start() runs
+            // Authoritative SP/BP: read directly off __instance (the StructurePart whose Start()
+            // fired this postfix), not the child-walk above which can grab a Ghost Variant fallback
+            // panel's StructurePart instead of the real prop's. EntityBlueprintComponent is looked up
+            // on the same GameObject as __instance for the same reason.
             var spAsset = __instance.StructurePartAsset;
             var bpComp = go.GetComponent<EntityBlueprintComponent>();
             var bpAsset = bpComp != null ? (UnityEngine.Object)AccessTools.Field(typeof(EntityBlueprintComponent), "m_BlueprintAsset")?.GetValue(bpComp) : null;
             Plugin.Log.LogInfo($"[SP.Start] {go.name}: SP={spAsset?.name ?? "null"} BP={bpAsset?.name ?? "null"}");
 
-            State.Upsert(guid!, rootName, displayName, dims, volume, mass, jsaName, spMatName);
+            State.Upsert(guid!, rootName, displayName, dims, volume, mass, jsaName, spMatName,
+                spAsset?.name, bpAsset?.name);
         }
     }
 
@@ -1708,6 +1718,7 @@ namespace PartInfoLogger
 
         internal static bool AlreadyCaptured(string guid) => _data.ContainsKey(guid);
         internal static bool HasJsaName(string guid) => _data.TryGetValue(guid, out var e) && !string.IsNullOrEmpty(e.JsaName);
+        internal static bool HasSpName(string guid) => _data.TryGetValue(guid, out var e) && !string.IsNullOrEmpty(e.SpName);
 
         internal static void TrySetMass(string guid, float mass)
         {
@@ -1727,7 +1738,7 @@ namespace PartInfoLogger
             return g;
         }
 
-        internal static void Upsert(string guid, string partName, string? displayName, float[]? dims, float volume, float mass, string? jsaName = null, string? spMatName = null)
+        internal static void Upsert(string guid, string partName, string? displayName, float[]? dims, float volume, float mass, string? jsaName = null, string? spMatName = null, string? spName = null, string? bpName = null)
         {
             if (!_data.TryGetValue(guid, out var entry))
                 entry = new PartData();
@@ -1738,6 +1749,8 @@ namespace PartInfoLogger
             if (mass > 0f) entry.Mass = mass;
             if (!string.IsNullOrEmpty(jsaName)) entry.JsaName = jsaName!;
             if (!string.IsNullOrEmpty(spMatName)) entry.SpMatName = spMatName!;
+            if (!string.IsNullOrEmpty(spName)) entry.SpName = spName!;
+            if (!string.IsNullOrEmpty(bpName)) entry.BpName = bpName!;
 
             _data[guid] = entry;
             if (++_newSinceFlush >= FlushEvery)
@@ -1784,6 +1797,13 @@ namespace PartInfoLogger
                                       public string? JsaName;
         [JsonProperty("spMatName", NullValueHandling = NullValueHandling.Ignore)]
                                       public string? SpMatName;
+        // spName/bpName come straight off the StructurePart/EntityBlueprintComponent whose Start()
+        // fired the capture, unlike spMatName which can come from a child-walk that grabs a Ghost
+        // Variant fallback panel's StructurePart instead of the real prop's.
+        [JsonProperty("spName", NullValueHandling = NullValueHandling.Ignore)]
+                                      public string? SpName;
+        [JsonProperty("bpName", NullValueHandling = NullValueHandling.Ignore)]
+                                      public string? BpName;
     }
 
     public static class PluginInfo
