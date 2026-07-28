@@ -1586,10 +1586,23 @@ namespace PartInfoLogger
 
                         var a = jsaFields[0].GetValue(item);
                         var b = jsaFields[1].GetValue(item);
-                        // Assume all entries in the list are compatible pairs
+                        // A pairing entry only actually allows jointing if its own IsActive flag is
+                        // true — JointabilityAsset.CanJoint checks this (checkIsActive: true) in
+                        // addition to the A/B match. Read it via reflection (m_IsActive backing field,
+                        // matching JointPairingAsset's real serialized layout) rather than assuming
+                        // every reflected pairing entry is compatible — an inactive/excluded pairing
+                        // (e.g. JOINT_*_Exclude_* naming) must be recorded as false, not skipped or
+                        // defaulted to true, or JCC will report false "Will Auto-Joint" verdicts for
+                        // pairs the real game rejects.
+                        bool isActive = true;
+                        var activeField = fields.FirstOrDefault(ff => ff.Name.IndexOf("IsActive", StringComparison.OrdinalIgnoreCase) >= 0
+                            && ff.FieldType == typeof(bool));
+                        if (activeField != null)
+                            isActive = (bool)activeField.GetValue(item)!;
+
                         string nameA = JsaName(a), nameB = JsaName(b);
                         var key = string.Compare(nameA, nameB, StringComparison.Ordinal) <= 0 ? (nameA, nameB) : (nameB, nameA);
-                        _pairs[key] = true;
+                        _pairs[key] = isActive;
                     }
 
                     if (anyPair)
