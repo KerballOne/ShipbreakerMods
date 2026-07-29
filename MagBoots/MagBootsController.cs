@@ -52,6 +52,26 @@ namespace MagBoots
 
         private float _batteryMinutesRemaining;
 
+        // Run: Toggle mode flips _runToggledOn on each OnRunTogglePressed() call; Hold mode instead
+        // drives _runHeld directly every frame from Plugin.Update(). IsRunning reads whichever one is
+        // relevant for the configured mode, so UpdateAttached doesn't need to know which mode is active.
+        // Both setters are gated on IsAttached - without that, toggling/holding Run while detached would
+        // silently "arm" it with no visible feedback (the HUD chip only shows Run's state while attached
+        // too), and the player would start running the instant they attached with no separate action.
+        private bool _runToggledOn;
+        private bool _runHeld;
+        public bool IsRunning => IsAttached && (Plugin.ConfigRunActivationMode.Value == RunActivationMode.Toggle ? _runToggledOn : _runHeld);
+
+        public void OnRunTogglePressed()
+        {
+            if (!IsAttached)
+                return;
+
+            _runToggledOn = !_runToggledOn;
+        }
+
+        public void SetRunHeld(bool held) => _runHeld = IsAttached && held;
+
         public MagBootsState State => _state;
         public bool IsAttached => _state == MagBootsState.Locked;
         public float BatteryFraction => Plugin.ConfigBatteryCapacityMinutes.Value <= 0f
@@ -107,7 +127,13 @@ namespace MagBoots
             Vector3 origin = playerTransform.position;
             Vector3 castDir = -playerTransform.up;
 
-            if (!TryFindValidSurface(origin, castDir, Plugin.ConfigMaxAttachDistance.Value, out RaycastHit hit))
+            // "How far below your feet mag boots will look for something to attach to" is measured from
+            // the viewpoint down through the player's full standing height (PlayerHeight) plus the
+            // step-down allowance (StepDownHeight) - not just StepDownHeight alone, since the viewpoint
+            // itself sits PlayerHeight above where the feet would actually land.
+            float castDistance = Plugin.ConfigPlayerHeight.Value + Plugin.ConfigStepDownHeight.Value;
+
+            if (!TryFindValidSurface(origin, castDir, castDistance, Plugin.ConfigMaxNormalAngle.Value, out RaycastHit hit))
             {
                 EnterError();
                 if (Plugin.ConfigDebugPrint.Value)
@@ -134,7 +160,7 @@ namespace MagBoots
 
             _snapStartPos = _playerRigidbody!.position;
             _snapStartRot = _playerRigidbody.rotation;
-            _snapTargetPos = point + normal * Plugin.ConfigStandoffDistance.Value;
+            _snapTargetPos = point + normal * Plugin.ConfigPlayerHeight.Value;
             Vector3 currentUp = _snapStartRot * Vector3.up;
             _snapTargetRot = Quaternion.FromToRotation(currentUp, normal) * _snapStartRot;
 
@@ -144,6 +170,10 @@ namespace MagBoots
             _playerRigidbody.velocity = Vector3.zero;
             _playerRigidbody.angularVelocity = Vector3.zero;
 
+            // Suppress from the start of the snap tween, not just once fully Locked - thrust fighting the
+            // snap-in would be just as pointless as thrust fighting the standoff spring once attached.
+            ThrustSuppression.SetSuppressed(true);
+
             if (Plugin.ConfigDebugPrint.Value)
                 Plugin.Log.LogInfo($"MagBoots: attaching to surface at {point}, normal {normal}.");
         }
@@ -152,6 +182,12 @@ namespace MagBoots
         {
             _state = MagBootsState.Off;
             _attachHitTransform = null;
+            ThrustSuppression.SetSuppressed(false);
+
+            // Run never carries over to the next attach - it always starts back off, so running is
+            // always a deliberate action taken after attaching, never something left primed from before.
+            _runToggledOn = false;
+            _runHeld = false;
 
             if (Plugin.ConfigDebugPrint.Value)
                 Plugin.Log.LogInfo("MagBoots: detached.");
@@ -212,15 +248,20 @@ namespace MagBoots
 
             bool wasStandingStill = !_lastTangentialMoveWasActive;
             UpdateAttached();
-            DrainBattery(wasStandingStill ? Plugin.ConfigIdlePowerMultiplier.Value : 1f);
+
+            float movementMultiplier = wasStandingStill
+                ? Plugin.ConfigIdlePowerMultiplier.Value
+                : (IsRunning ? Plugin.ConfigRunSpeed.Value / Plugin.ConfigMoveSpeed.Value : 1f);
+            DrainBattery(movementMultiplier);
         }
 
         // The initial snap (Locking) drains at LockingPowerMultiplier - at the default SnapDuration of 1
         // second and multiplier of 10, that's equivalent to 10 seconds of normal attached drain, so
         // frequent attach/detach cycling isn't a free way to dodge battery cost. While actually attached,
-        // standing still (no tangential move input) drains at only IdlePowerMultiplier - captured from
-        // the previous tick's UpdateAttached rather than recomputed here, since tangential input is only
-        // read inside that method.
+        // standing still (no tangential move input) drains at only IdlePowerMultiplier; while running,
+        // drain scales proportionally with how much faster RunSpeed is than MoveSpeed. Both flags are
+        // captured from the previous tick's UpdateAttached rather than recomputed here, since tangential
+        // input is only read inside that method.
         private bool _lastTangentialMoveWasActive;
 
         private void DrainBattery(float multiplier)
@@ -330,14 +371,25 @@ namespace MagBoots
                 float moveIntensity = Mathf.Clamp01(tangentialMove.magnitude);
                 float maxCastDistance = Plugin.ConfigAheadCastDistance.Value * moveIntensity;
 
-                // Search depth reuses MaxAttachDistance rather than a StandoffDistance-derived value -
-                // the old (StandoffDistance * 1.5) depth only gave ~0.5x StandoffDistance of clearance
-                // below the current floor, so stepping down onto a surface deeper than that was
-                // completely missed (the ray never reached it) while stepping up the same height worked
-                // fine, since the new floor was closer to the player's current standoff height instead of
-                // farther. MaxAttachDistance is already the player's own tunable tolerance for "how far
-                // below me is a surface still reachable," so it's the right depth here too, unmodified.
-                float aheadDepth = Plugin.ConfigMaxAttachDistance.Value;
+                // The probe starts StepUpHeight above the current feet-plane (so a slightly higher step
+                // can still be found) and casts down through StepUpHeight + StepDownHeight total, reaching
+                // that far below the current feet-plane too - one raycast covers both a step up (within
+                // StepUpHeight) and a step down (within StepDownHeight) in a single pass.
+                Vector3 stepUpOffset = _smoothedNormal * Plugin.ConfigStepUpHeight.Value;
+                float aheadDepth = Plugin.ConfigStepUpHeight.Value + Plugin.ConfigStepDownHeight.Value;
+
+                // A foothold within a 60 degree sweep of where the player is facing gets the looser
+                // MaxNormalFwdAngle instead of MaxNormalAngle, so you can walk up a steeper ramp you're
+                // heading toward; anything off to the side or behind still needs the stricter
+                // MaxNormalAngle. Reuses flatForward (the player's own forward, already flattened onto
+                // the surface and pitch-free) rather than the camera's raw forward - the camera's forward
+                // collapses toward _smoothedNormal (and its plane-projection toward zero length) whenever
+                // the player pitches their view down at the ground, which made this sweep check
+                // incorrectly fail - and thus fall back to the strict angle - any time you looked down
+                // while walking.
+                bool inFwdSweep = flatForward.sqrMagnitude > 0.0001f &&
+                    Vector3.Angle(tangentialMove, flatForward) <= 30f; // 30 either side = 60 degree sweep.
+                float maxNormalAngle = inFwdSweep ? Plugin.ConfigMaxNormalFwdAngle.Value : Plugin.ConfigMaxNormalAngle.Value;
 
                 // Mimics an actual stride: try the full step first, and if that lands over a gap/narrow
                 // lip with nothing below it, reel the probe back in tenth-increments toward the player's
@@ -352,8 +404,14 @@ namespace MagBoots
                 for (int i = castSteps; i >= 1; i--)
                 {
                     float castDistance = maxCastDistance * i / castSteps;
-                    Vector3 aheadOrigin = rb.position + tangentialMove.normalized * castDistance;
-                    if (TryFindValidSurface(aheadOrigin, -_smoothedNormal, aheadDepth, out aheadHit))
+                    // Anchored to _attachPoint (the actual feet-plane on the surface), not rb.position -
+                    // the player's body floats PlayerHeight above _attachPoint, so building the origin from
+                    // rb.position stacked PlayerHeight on top of StepUpHeight (e.g. 1.5 + 0.75 = 2.25m above
+                    // the surface by default) while aheadDepth was only StepUpHeight + StepDownHeight
+                    // (2.25m) - the cast landed exactly AT surface height with zero clearance, so it missed
+                    // constantly from spring-settling jitter alone, even standing on a dead-flat floor.
+                    Vector3 aheadOrigin = _attachPoint + tangentialMove.normalized * castDistance + stepUpOffset;
+                    if (TryFindValidSurface(aheadOrigin, -_smoothedNormal, aheadDepth, maxNormalAngle, out aheadHit))
                     {
                         foundSurface = true;
                         hitCastDistance = castDistance;
@@ -370,7 +428,8 @@ namespace MagBoots
                     // a fraction of the full stride (hitCastDistance / maxCastDistance) so a step reeled
                     // in to e.g. half the max distance also only advances the anchor half as far.
                     float strideFraction = maxCastDistance > 0.0001f ? hitCastDistance / maxCastDistance : 0f;
-                    Vector3 fullStride = tangentialMove * Plugin.ConfigMoveSpeed.Value * Time.fixedDeltaTime;
+                    float moveSpeed = IsRunning ? Plugin.ConfigRunSpeed.Value : Plugin.ConfigMoveSpeed.Value;
+                    Vector3 fullStride = tangentialMove * moveSpeed * Time.fixedDeltaTime;
                     Vector3 candidatePoint = _attachPoint + fullStride * strideFraction;
 
                     // Re-snap the anchor onto the new surface's plane (height/orientation) rather than
@@ -403,7 +462,7 @@ namespace MagBoots
             float targetStandoffFraction = crouchHeld ? 0.5f : 1f;
             _standoffFraction = Mathf.MoveTowards(_standoffFraction, targetStandoffFraction, Time.fixedDeltaTime / CrouchTransitionDuration);
 
-            Vector3 desiredPos = _attachPoint + _smoothedNormal * (Plugin.ConfigStandoffDistance.Value * _standoffFraction);
+            Vector3 desiredPos = _attachPoint + _smoothedNormal * (Plugin.ConfigPlayerHeight.Value * _standoffFraction);
 
             Vector3 springForce = Plugin.ConfigSpring.Value * (desiredPos - rb.position)
                                    + Plugin.ConfigDamper.Value * (Vector3.zero - rb.velocity);
@@ -421,7 +480,7 @@ namespace MagBoots
             return right * rightAxis + forward * forwardAxis;
         }
 
-        private bool TryFindValidSurface(Vector3 origin, Vector3 direction, float maxDistance, out RaycastHit result)
+        private bool TryFindValidSurface(Vector3 origin, Vector3 direction, float maxDistance, float maxNormalAngle, out RaycastHit result)
         {
             LayerMask mask = Main.Instance.MainSettings.RaycastSettings.GrabValidLayerMask;
 
@@ -432,7 +491,7 @@ namespace MagBoots
             }
 
             float angle = Vector3.Angle(hit.normal, -direction);
-            if (angle > Plugin.ConfigMaxNormalAngle.Value)
+            if (angle > maxNormalAngle)
             {
                 result = default;
                 return false;

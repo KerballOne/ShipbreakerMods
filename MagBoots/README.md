@@ -8,6 +8,8 @@ Press the toggle key with a ship part below you. If the surface is flat enough a
 
 - Press the toggle key to attach. MagBoots checks straight down from you; if it finds a surface that's flat and big enough, you snap into place.
 - While attached, movement input walks you along the surface instead of free-thrusting. You're held at a fixed distance off the hull.
+- Hold or toggle the run key to move faster - battery drains faster while running too, proportional to the speed increase. Run only works while already attached; it can't be armed ahead of time and never carries over into your next attach.
+- Your thrusters are fully suppressed while attached, so they don't fight MagBoots' hold, waste fuel, or rumble the controller for no reason. Refueling still works normally.
 - Look up and down freely — you just can't tip all the way over and stare straight into the deck.
 - Press the toggle key again to detach and go back to normal zero-g movement at any time.
 - Holding the thrust-down input crouches you closer to the surface, for squeezing under low obstacles; release to stand back up.
@@ -23,7 +25,7 @@ Standing still while locked on costs much less power than actually walking, and 
 
 ## HUD hint
 
-A small on-screen hint in the corner shows your current status and toggle key, styled to match the game's own prompts and translated to your controller's real button name if you're on a gamepad.
+A small on-screen hint in the corner shows your current status, styled to match the game's own prompts. Below the status it shows two rows - POWER (attach/detach) and SPEED (run) - each with your key/button next to it, translated to your controller's real button name if you're on a gamepad. Each row's chip inverts to a solid white background when that action is currently active (attached, or running), so you can tell at a glance without reading the text.
 
 - **White** — off, ready to attach
 - **Yellow** — locking on (snapping into position)
@@ -44,8 +46,11 @@ Hardspace Shipbreaker\BepInEx\config\me.kerballone.MagBoots.cfg
 Every setting has a plain-language description in the file itself — open it in any text editor to see what each one does and tweak it to taste. A few highlights:
 
 - **AheadCastDistance** is your stride length — how far ahead MagBoots checks for the next foothold while walking.
-- **MoveSpeed** is your walking speed while attached.
-- **StandoffDistance** is how far off the surface you float.
+- **MoveSpeed** is your walking speed while attached; **RunSpeed** is how fast you go while running.
+- **PlayerHeight** is how far off the surface you float.
+- **StepDownHeight** is how far below your feet MagBoots will look for a surface to attach to or step down onto.
+- **StepUpHeight** is how far above your current footing MagBoots will look for a surface to step up onto while already attached.
+- **MaxNormalAngle** is how steep a surface can be for most footholds; **MaxNormalFwdAngle** is a looser limit that only applies to the direction you're actually facing, so you can walk up steeper ramps you're heading toward.
 - **BreakawayVelocity** is how hard you need to be hit before mag boots let go instead of holding on.
 
 ## Installation

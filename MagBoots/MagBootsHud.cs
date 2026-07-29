@@ -21,6 +21,14 @@ namespace MagBoots
         private const int KeyFontSize = 16;
         private const int BatteryFontSize = 22;
 
+        // Plain ASCII words rather than a symbol/emoji - Unity's legacy OnGUI/GUIStyle text reliably
+        // renders basic Latin text, but silently drops both color emoji (🥾/🏃) and non-Latin Unicode
+        // symbols (⏻) with the default font, so neither actually showed up in-game. Drawn as their own
+        // small label to the left of each chip, outside its border, rather than packed inside the chip
+        // alongside the hotkey name.
+        private const string ToggleRowLabel = "POWER";
+        private const string RunRowLabel = "SPEED";
+
         private static readonly Color OffColor = new Color(1f, 1f, 1f, 0.85f);
         private static readonly Color LockingColor = new Color(1f, 0.82f, 0.2f);
         private static readonly Color LockedColor = new Color(0.55f, 1f, 0.6f);
@@ -28,9 +36,12 @@ namespace MagBoots
         private static readonly Color NoPowerColor = new Color(0.55f, 0.55f, 0.55f);
 
         private static GUIStyle? _labelStyle;
+        private static GUIStyle? _rowLabelStyle;
         private static GUIStyle? _keyStyle;
+        private static GUIStyle? _keyStyleActive;
         private static GUIStyle? _batteryStyle;
         private static Texture2D? _chipTexture;
+        private static Texture2D? _activeChipTexture;
         private static Texture2D? _keyBorderTexture;
         private static float _builtStyleScale = -1f;
 
@@ -43,6 +54,7 @@ namespace MagBoots
             float mult = BaseScaleMultiplier * scale;
 
             _chipTexture ??= MakeSolidTexture(new Color(0.05f, 0.05f, 0.05f, 0.72f));
+            _activeChipTexture ??= MakeSolidTexture(new Color(1f, 1f, 1f, 0.95f));
             _keyBorderTexture ??= MakeSolidTexture(new Color(1f, 1f, 1f, 0.9f));
 
             _labelStyle = new GUIStyle
@@ -53,12 +65,31 @@ namespace MagBoots
                 normal = { textColor = Color.white },
             };
 
+            // Key chips are now half their old height (two stacked in the same space one used to take),
+            // so the font shrinks to match - the old KeyFontSize was sized for the full-height chip.
+            int keyFontSize = Mathf.RoundToInt(KeyFontSize * mult * 0.6f);
+
+            _rowLabelStyle = new GUIStyle
+            {
+                fontSize = keyFontSize,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleRight,
+                normal = { textColor = new Color(1f, 1f, 1f, 0.85f) },
+            };
+
             _keyStyle = new GUIStyle
             {
-                fontSize = Mathf.RoundToInt(KeyFontSize * mult),
+                fontSize = keyFontSize,
                 fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
+                alignment = TextAnchor.MiddleLeft,
                 normal = { textColor = Color.white },
+            };
+
+            // Same style but black-on-white, swapped in whenever a chip's action is active (Locked /
+            // Running) instead of restyling text color per-draw.
+            _keyStyleActive = new GUIStyle(_keyStyle)
+            {
+                normal = { textColor = Color.black },
             };
 
             _batteryStyle = new GUIStyle
@@ -78,7 +109,7 @@ namespace MagBoots
             return tex;
         }
 
-        public static void Draw(MagBootsState state, string keyLabel, Vector2 offsetPixels, bool showBattery,
+        public static void Draw(MagBootsState state, string keyLabel, string runKeyLabel, bool isRunning, Vector2 offsetPixels, bool showBattery,
             BatteryDisplayMode batteryMode, float batteryFraction, float batteryMinutesRemaining, float scale)
         {
             EnsureStyles(scale);
@@ -92,22 +123,35 @@ namespace MagBoots
                 MagBootsState.NoPower  => ("MAG BOOTS: NO POWER", NoPowerColor),
                 _                      => ("MAG BOOTS", OffColor),
             };
+            bool isLocked = state == MagBootsState.Locked;
 
             string label = LetterSpace(labelText);
             string battery = showBattery ? BatteryText(batteryMode, batteryFraction, batteryMinutesRemaining) : string.Empty;
 
             float promptHeight = PromptHeight * mult;
             float padding = Padding * mult;
+            float rowLabelGap = 6f * mult;
 
             float labelWidth = _labelStyle!.CalcSize(new GUIContent(label)).x;
-            float keyWidth = Mathf.Max(KeyChipMinWidth * mult, _keyStyle!.CalcSize(new GUIContent(keyLabel)).x + 18 * mult);
+            // Row labels ("Boots"/"Run") sit to the left of, and outside, their chip - sized to fit
+            // whichever of the two words is wider so both line up on the same left edge.
+            float rowLabelWidth = Mathf.Max(
+                _rowLabelStyle!.CalcSize(new GUIContent(ToggleRowLabel)).x,
+                _rowLabelStyle.CalcSize(new GUIContent(RunRowLabel)).x);
+            // Measures each chip's own hotkey text so the chip is always sized to fit whatever the
+            // configured hotkey turns out to be (a single letter, or a long rebind like "LeftShift"),
+            // rather than a fixed guess that could clip on an unusually long key name.
+            float toggleContentWidth = _keyStyle!.CalcSize(new GUIContent(keyLabel)).x;
+            float runContentWidth = _keyStyle.CalcSize(new GUIContent(runKeyLabel)).x;
+            float keyWidth = Mathf.Max(KeyChipMinWidth * mult, Mathf.Max(toggleContentWidth, runContentWidth) + 18 * mult);
             float batteryWidth = showBattery ? _batteryStyle!.CalcSize(new GUIContent(battery)).x : 0f;
 
-            float totalWidth = labelWidth + padding + (showBattery ? batteryWidth + padding : 0f) + keyWidth;
+            float totalWidth = labelWidth + padding + (showBattery ? batteryWidth + padding : 0f)
+                + rowLabelWidth + rowLabelGap + keyWidth;
 
             // offsetPixels is measured from screen center and positions the CENTER of the whole hint
-            // block (label + battery + key chip together), not any one piece's edge - so the numbers in
-            // the config read the same regardless of how wide the label/battery text happens to be.
+            // block (label + battery + row labels + key chip together), not any one piece's edge - so
+            // the numbers in the config read the same regardless of how wide the text happens to be.
             float centerX = Screen.width * 0.5f + offsetPixels.x;
             float centerY = Screen.height * 0.5f + offsetPixels.y;
             float x = centerX - totalWidth * 0.5f;
@@ -115,19 +159,46 @@ namespace MagBoots
 
             var labelRect = new Rect(x, y, labelWidth, promptHeight);
             var batteryRect = new Rect(labelRect.xMax + padding, y, batteryWidth, promptHeight);
-            float keyX = showBattery ? batteryRect.xMax + padding : labelRect.xMax + padding;
+            float rowLabelX = showBattery ? batteryRect.xMax + padding : labelRect.xMax + padding;
+            float keyX = rowLabelX + rowLabelWidth + rowLabelGap;
+
+            // Two half-height chips stacked to fill the same vertical space the single full-height chip
+            // used to occupy: attach/detach on top, run below it, each independently inverting to a solid
+            // white chip with black text when its own action is currently active. The row label for each
+            // sits in the same row, just outside the chip's left edge.
             float keyHeight = 26 * mult;
-            var keyRect = new Rect(keyX, y + (promptHeight - keyHeight) * 0.5f, keyWidth, keyHeight);
+            float chipHeight = keyHeight * 0.5f;
+            float stackY = y + (promptHeight - keyHeight) * 0.5f;
+            var toggleRowLabelRect = new Rect(rowLabelX, stackY, rowLabelWidth, chipHeight);
+            var runRowLabelRect = new Rect(rowLabelX, stackY + chipHeight, rowLabelWidth, chipHeight);
+            var toggleKeyRect = new Rect(keyX, stackY, keyWidth, chipHeight);
+            var runKeyRect = new Rect(keyX, stackY + chipHeight, keyWidth, chipHeight);
 
             DrawShadowedLabel(labelRect, label, _labelStyle, stateColor, mult);
 
             if (showBattery)
                 DrawShadowedLabel(batteryRect, battery, _batteryStyle!, BatteryColor(batteryFraction), mult);
 
+            GUI.Label(toggleRowLabelRect, ToggleRowLabel, _rowLabelStyle);
+            GUI.Label(runRowLabelRect, RunRowLabel, _rowLabelStyle);
+
+            DrawKeyChip(toggleKeyRect, keyLabel, isLocked, mult);
+            DrawKeyChip(runKeyRect, runKeyLabel, isRunning, mult);
+        }
+
+        // Inverts to a solid white chip with black text while active (Locked / Running), instead of the
+        // normal dark chip with white text - a quick, unmistakable at-a-glance "this is on" signal that
+        // doesn't rely on reading the label text itself.
+        private static void DrawKeyChip(Rect rect, string label, bool active, float mult)
+        {
             GUI.color = Color.white;
-            GUI.DrawTexture(keyRect, _chipTexture);
-            DrawBorder(keyRect, _keyBorderTexture!, 1.5f * mult);
-            GUI.Label(keyRect, keyLabel, _keyStyle); // sits on its own dark chip - no shadow needed.
+            GUI.DrawTexture(rect, active ? _activeChipTexture : _chipTexture);
+            DrawBorder(rect, _keyBorderTexture!, 1.5f * mult);
+
+            GUIStyle style = active ? _keyStyleActive! : _keyStyle!;
+            float inset = 6f * mult;
+            var contentRect = new Rect(rect.x + inset, rect.y, rect.width - inset, rect.height);
+            GUI.Label(contentRect, label, style);
 
             GUI.color = Color.white;
         }
