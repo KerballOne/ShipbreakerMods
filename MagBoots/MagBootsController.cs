@@ -346,7 +346,14 @@ namespace MagBoots
                 flatForward.Normalize();
                 Vector3 rightAxis = Vector3.Cross(_smoothedNormal, flatForward).normalized;
                 float pitchAngle = Vector3.SignedAngle(flatForward, rawForward, rightAxis);
-                float clampedPitch = Mathf.Min(pitchAngle, Plugin.ConfigMaxLookDownAngle.Value);
+                // Only the look-down side was ever clamped (ConfigMaxLookDownAngle) - looking up had no
+                // limit at all, and as pitch approaches +/-90 degrees rawForward becomes nearly parallel
+                // to _smoothedNormal, degenerating flatForward's direction (and therefore rightAxis) into
+                // near-arbitrary noise. That instability could spin the player out when looking straight
+                // up. MaxLookUpAngle isn't exposed as a tunable since it exists purely to keep this
+                // degenerate case out of reach, not as something players would want to adjust.
+                const float MaxLookUpAngle = 85f;
+                float clampedPitch = Mathf.Clamp(pitchAngle, -MaxLookUpAngle, Plugin.ConfigMaxLookDownAngle.Value);
 
                 Quaternion levelRot = Quaternion.LookRotation(flatForward, _smoothedNormal);
                 Quaternion pitchRot = Quaternion.AngleAxis(clampedPitch, rightAxis);
@@ -371,25 +378,30 @@ namespace MagBoots
                 float moveIntensity = Mathf.Clamp01(tangentialMove.magnitude);
                 float maxCastDistance = Plugin.ConfigAheadCastDistance.Value * moveIntensity;
 
-                // The probe starts StepUpHeight above the current feet-plane (so a slightly higher step
-                // can still be found) and casts down through StepUpHeight + StepDownHeight total, reaching
-                // that far below the current feet-plane too - one raycast covers both a step up (within
-                // StepUpHeight) and a step down (within StepDownHeight) in a single pass.
-                Vector3 stepUpOffset = _smoothedNormal * Plugin.ConfigStepUpHeight.Value;
-                float aheadDepth = Plugin.ConfigStepUpHeight.Value + Plugin.ConfigStepDownHeight.Value;
-
-                // A foothold within a 60 degree sweep of where the player is facing gets the looser
-                // MaxNormalFwdAngle instead of MaxNormalAngle, so you can walk up a steeper ramp you're
-                // heading toward; anything off to the side or behind still needs the stricter
-                // MaxNormalAngle. Reuses flatForward (the player's own forward, already flattened onto
-                // the surface and pitch-free) rather than the camera's raw forward - the camera's forward
-                // collapses toward _smoothedNormal (and its plane-projection toward zero length) whenever
-                // the player pitches their view down at the ground, which made this sweep check
-                // incorrectly fail - and thus fall back to the strict angle - any time you looked down
-                // while walking.
+                // A foothold within FwdSweepAngle of where the player is facing gets the looser
+                // MaxNormalFwdAngle/StepUpFwdHeight instead of MaxNormalAngle/StepUpHeight, so you can
+                // walk up a steeper ramp or step up onto a taller ledge you're actually heading toward;
+                // anything off to the side or behind still needs the stricter values, which makes it
+                // harder to accidentally step up onto something you didn't mean to. Reuses flatForward
+                // (the player's own forward, already flattened onto the surface and pitch-free) rather
+                // than the camera's raw forward - the camera's forward collapses toward _smoothedNormal
+                // (and its plane-projection toward zero length) whenever the player pitches their view
+                // down at the ground, which made this sweep check incorrectly fail - and thus fall back
+                // to the strict values - any time you looked down while walking.
+                float halfSweep = Plugin.ConfigFwdSweepAngle.Value * 0.5f;
                 bool inFwdSweep = flatForward.sqrMagnitude > 0.0001f &&
-                    Vector3.Angle(tangentialMove, flatForward) <= 30f; // 30 either side = 60 degree sweep.
+                    Vector3.Angle(tangentialMove, flatForward) <= halfSweep;
                 float maxNormalAngle = inFwdSweep ? Plugin.ConfigMaxNormalFwdAngle.Value : Plugin.ConfigMaxNormalAngle.Value;
+                float stepUpHeight = inFwdSweep ? Plugin.ConfigStepUpFwdHeight.Value : Plugin.ConfigStepUpHeight.Value;
+
+                // The probe starts stepUpHeight above the current feet-plane (so a slightly higher step
+                // can still be found) and casts down through stepUpHeight + StepDownHeight total, reaching
+                // that far below the current feet-plane too - one raycast covers both a step up (within
+                // stepUpHeight) and a step down (within StepDownHeight) in a single pass. Stepping down
+                // always uses the same StepDownHeight regardless of direction - only the step-up side
+                // splits by forward vs. non-forward.
+                Vector3 stepUpOffset = _smoothedNormal * stepUpHeight;
+                float aheadDepth = stepUpHeight + Plugin.ConfigStepDownHeight.Value;
 
                 // Mimics an actual stride: try the full step first, and if that lands over a gap/narrow
                 // lip with nothing below it, reel the probe back in tenth-increments toward the player's

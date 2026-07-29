@@ -40,6 +40,8 @@ namespace MagBoots
 
         internal static ConfigEntry<float> ConfigStepDownHeight = null!;
         internal static ConfigEntry<float> ConfigStepUpHeight = null!;
+        internal static ConfigEntry<float> ConfigStepUpFwdHeight = null!;
+        internal static ConfigEntry<float> ConfigFwdSweepAngle = null!;
         internal static ConfigEntry<float> ConfigMinFaceArea = null!;
         internal static ConfigEntry<float> ConfigMaxNormalAngle = null!;
         internal static ConfigEntry<float> ConfigMaxNormalFwdAngle = null!;
@@ -158,17 +160,23 @@ namespace MagBoots
             ConfigStepDownHeight = Config.Bind("2 - Attach", "StepDownHeight", 1.5f,
                 "How far below your feet (in meters) mag boots will look for something to attach to.");
 
-            ConfigStepUpHeight = Config.Bind("2 - Attach", "StepUpHeight", 0.75f,
-                "How far above your feet (in meters) and ahead of you mag boots will look for something to attach to when already attached, so you can step up onto a slightly higher surface.");
+            ConfigStepUpHeight = Config.Bind("2 - Attach", "StepUpHeight", 0.25f,
+                "How far above your feet (in meters) mag boots will look for something to step up onto while already attached, for footholds off to the side or behind you. Lower makes it harder to accidentally step up onto something you didn't mean to.");
 
-            ConfigMinFaceArea = Config.Bind("2 - Attach", "MinFaceArea", 2f,
+            ConfigStepUpFwdHeight = Config.Bind("2 - Attach", "StepUpFwdHeight", 0.95f,
+                "A taller version of StepUpHeight that only applies to footholds within FwdSweepAngle in front of you - lets you step up onto taller ledges and obstacles you're actually walking toward, while things off to the side or behind you still use the shorter StepUpHeight.");
+
+            ConfigMinFaceArea = Config.Bind("2 - Attach", "MinFaceArea", 3f,
                 "How big a surface needs to be (in square meters) before you can attach to it. Keeps you from sticking to tiny brackets and pipes.");
 
             ConfigMaxNormalAngle = Config.Bind("2 - Attach", "MaxNormalAngle", 20f,
                 "How tilted a surface can be (in degrees) and still count as \"flat enough\" to attach to.");
 
             ConfigMaxNormalFwdAngle = Config.Bind("2 - Attach", "MaxNormalFwdAngle", 50f,
-                "A looser version of MaxNormalAngle that only applies to the next foothold while walking, and only within a 60 degree sweep in front of you - lets you walk up steeper ramps and inclines you're facing, while footholds off to the side or behind you still use the stricter MaxNormalAngle.");
+                "A looser version of MaxNormalAngle that only applies to footholds within FwdSweepAngle in front of you - lets you walk up steeper ramps and inclines you're facing, while footholds off to the side or behind you still use the stricter MaxNormalAngle.");
+
+            ConfigFwdSweepAngle = Config.Bind("2 - Attach", "FwdSweepAngle", 60f,
+                "How wide a cone in front of you (in degrees) counts as \"forward\" for MaxNormalFwdAngle and StepUpFwdHeight. 60 means 30 degrees to either side of dead ahead.");
 
             ConfigPlayerHeight = Config.Bind("2 - Attach", "PlayerHeight", 1.5f,
                 "How far off the surface (in meters) you float once attached.");
@@ -186,7 +194,7 @@ namespace MagBoots
                 "Running speed (in meters/second) while attached. Battery drains proportionally faster while running.");
 
             ConfigCornerSmoothingSpeed = Config.Bind("3 - Movement", "CornerSmoothingSpeed", 3f,
-                "How quickly you lean into a sharp corner or step, instead of snapping right into the new angle. Lower is smoother/slower; higher is snappier.");
+                "How quickly you lean into a sharp corner, instead of snapping right into the new angle. Lower is smoother/slower; higher is snappier.");
 
             ConfigReorientSettledAngle = Config.Bind("3 - Movement", "ReorientSettledAngle", 1f,
                 "How closely you need to finish leaning into a new angle before taking the next step. Lower is stricter (smoother, but pauses more); higher is looser.");
