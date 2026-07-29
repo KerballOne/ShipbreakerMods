@@ -36,6 +36,23 @@ namespace MagBoots
         private Vector3 _attachPoint;
         private Transform? _attachHitTransform;
 
+        // Splits a detected step into two phases instead of one combined diagonal move: _attachPoint holds
+        // still (no further lateral advance, no new ahead-cast) the instant a real step is detected, and
+        // the vertical/normal correction only applies once the player's ACTUAL position has physically
+        // caught up to that held point (via the standoff spring), or StepTimeout elapses, whichever comes
+        // first - rather than applying the lateral move and a large vertical drop in the same tick.
+        // Without this split, a steep staircase combined a full lateral stride with a large vertical drop
+        // every tick, compounding downward velocity until it exceeded BreakawayVelocity - the fixed
+        // horizontal AheadCastDistance stride translates into a much bigger vertical change per tick on
+        // steep stairs than on shallow ones, since it doesn't account for slope. Holding the anchor fixed
+        // (rather than continuing to advance it every tick with no raycast validation at all) also avoids
+        // it silently racing ahead of the player and skipping over an intermediate step or ledge.
+        private bool _pendingStepCorrection;
+        private float _pendingStepTimer;
+        private Vector3 _pendingStepPoint;
+        private Vector3 _pendingStepNormal;
+        private Transform? _pendingStepHitTransform;
+
         // Eases between 1.0 (standing) and 0.5 (crouched) while the thrust-down input is held, rather
         // than snapping instantly, so crouching in/out of a low gap or under an obstacle feels like a
         // deliberate crouch rather than a jarring pop.
@@ -157,6 +174,7 @@ namespace MagBoots
             _smoothedNormal = normal;
             _attachHitTransform = hitTransform;
             _standoffFraction = 1f;
+            _pendingStepCorrection = false;
 
             _snapStartPos = _playerRigidbody!.position;
             _snapStartRot = _playerRigidbody.rotation;
@@ -366,16 +384,49 @@ namespace MagBoots
             Vector3 tangentialMove = ReadTangentialMoveInput(playerTransform, _smoothedNormal);
             _lastTangentialMoveWasActive = tangentialMove.sqrMagnitude > 0.0001f;
 
+            float moveIntensity = Mathf.Clamp01(tangentialMove.magnitude);
+
+            // While a step's vertical correction is pending, _attachPoint holds still (no further lateral
+            // advance, no new ahead-cast) - the queued height/normal snap applies once the player's ACTUAL
+            // position has physically caught up to that held point (the standoff spring pulling them
+            // there), or once StepTimeout elapses, whichever happens first. The timeout exists because the
+            // catch-up distance is measured as a fraction of AheadCastDistance (not a fixed meters value,
+            // so it scales with stride length), and continuous movement can keep that fraction from ever
+            // fully closing - the timeout guarantees the player is never stuck waiting indefinitely.
+            if (_pendingStepCorrection)
+            {
+                _pendingStepTimer += Time.fixedDeltaTime;
+
+                // Lateral-only distance between the player's actual position and the held anchor, ignoring
+                // any difference along the (still old, pre-step) normal - that along-normal gap is expected
+                // and irrelevant here; only the tangential component tells us whether the spring has
+                // actually caught the player up to where the step was detected.
+                Vector3 lateralError = Vector3.ProjectOnPlane(_attachPoint - rb.position, _attachNormal);
+                float settleDistance = Plugin.ConfigAheadCastDistance.Value * Plugin.ConfigStepLateralSettled.Value;
+                bool lateralSettled = lateralError.magnitude <= settleDistance;
+                bool timedOut = _pendingStepTimer >= Plugin.ConfigStepTimeout.Value;
+
+                if (lateralSettled || timedOut)
+                {
+                    Vector3 offset = _attachPoint - _pendingStepPoint;
+                    _attachPoint -= Vector3.Dot(offset, _pendingStepNormal) * _pendingStepNormal;
+                    _attachNormal = _pendingStepNormal;
+                    _attachHitTransform = _pendingStepHitTransform;
+                    _pendingStepCorrection = false;
+
+                    if (Plugin.ConfigDebugPrint.Value)
+                        Plugin.Log.LogInfo($"MagBoots: deferred step correction applied - lateralError={lateralError.magnitude}, timedOut={timedOut}");
+                }
+            }
             // Pause looking for the next surface while still catching up to the last normal change -
             // recasting mid-reorientation was casting at a still-rotating angle and could pick up a
             // slightly different/adjacent face before settling, producing visible jitter.
-            if (!isReorienting && tangentialMove.sqrMagnitude > 0.0001f)
+            else if (!isReorienting && tangentialMove.sqrMagnitude > 0.0001f)
             {
                 // Scale the max cast distance down for a gentle analog push (e.g. a controller stick
                 // barely tilted) rather than always probing the full AheadCastDistance regardless of how
                 // fast the player is actually moving - magnitude is clamped to 1 since a full diagonal
                 // push can exceed unit length (two unit axis vectors summed).
-                float moveIntensity = Mathf.Clamp01(tangentialMove.magnitude);
                 float maxCastDistance = Plugin.ConfigAheadCastDistance.Value * moveIntensity;
 
                 // A foothold within FwdSweepAngle of where the player is facing gets the looser
@@ -444,18 +495,47 @@ namespace MagBoots
                     Vector3 fullStride = tangentialMove * moveSpeed * Time.fixedDeltaTime;
                     Vector3 candidatePoint = _attachPoint + fullStride * strideFraction;
 
-                    // Re-snap the anchor onto the new surface's plane (height/orientation) rather than
-                    // forward along it - standard point-onto-plane projection: subtract out the component
-                    // of (candidatePoint - aheadHit.point) along the new normal, which keeps the anchor's
-                    // incrementally-advanced position but adopts the new surface's height, e.g. when
-                    // stepping onto a lower/higher/angled face.
-                    Vector3 offset = candidatePoint - aheadHit.point;
-                    _attachPoint = candidatePoint - Vector3.Dot(offset, aheadHit.normal) * aheadHit.normal;
-                    _attachNormal = aheadHit.normal;
-                    _attachHitTransform = aheadHit.transform;
+                    // How far the new hit deviates vertically (along the CURRENT normal) from the plane
+                    // the player is already standing on - a small value means "still basically the same
+                    // tread/floor" (walking on a flat or gently uneven surface), a large value means "this
+                    // is a real step up or down" (e.g. a stair riser). Only steps past StepSignificantHeight
+                    // get the lateral/vertical split below; minor floor variance still snaps immediately,
+                    // same as before, so ordinary flat-ground walking isn't affected.
+                    float heightDeviation = Mathf.Abs(Vector3.Dot(aheadHit.point - _attachPoint, _attachNormal));
 
-                    if (Plugin.ConfigDebugPrint.Value)
-                        Plugin.Log.LogInfo($"MagBoots: ahead-cast hit - moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}, normalAngle={Vector3.Angle(aheadHit.normal, _smoothedNormal)}");
+                    if (heightDeviation > Plugin.ConfigStepSignificantHeight.Value)
+                    {
+                        // Real step: advance the anchor laterally only this tick (project the stride onto
+                        // the CURRENT plane, so height doesn't change yet), and queue the vertical/normal
+                        // correction to apply once the player's input eases off, instead of in the same
+                        // tick as the lateral move. This is what keeps a steep staircase from combining a
+                        // full lateral stride with a large vertical drop every single tick, which compounded
+                        // downward velocity past BreakawayVelocity - the two now happen on separate ticks.
+                        _attachPoint = candidatePoint - Vector3.Dot(candidatePoint - _attachPoint, _attachNormal) * _attachNormal;
+
+                        _pendingStepCorrection = true;
+                        _pendingStepTimer = 0f;
+                        _pendingStepPoint = aheadHit.point;
+                        _pendingStepNormal = aheadHit.normal;
+                        _pendingStepHitTransform = aheadHit.transform;
+
+                        if (Plugin.ConfigDebugPrint.Value)
+                            Plugin.Log.LogInfo($"MagBoots: step detected, deferring vertical correction - heightDeviation={heightDeviation}, moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}");
+                    }
+                    else
+                    {
+                        // Re-snap the anchor onto the new surface's plane (height/orientation) rather than
+                        // forward along it - standard point-onto-plane projection: subtract out the
+                        // component of (candidatePoint - aheadHit.point) along the new normal, which keeps
+                        // the anchor's incrementally-advanced position but adopts the new surface's height.
+                        Vector3 offset = candidatePoint - aheadHit.point;
+                        _attachPoint = candidatePoint - Vector3.Dot(offset, aheadHit.normal) * aheadHit.normal;
+                        _attachNormal = aheadHit.normal;
+                        _attachHitTransform = aheadHit.transform;
+
+                        if (Plugin.ConfigDebugPrint.Value)
+                            Plugin.Log.LogInfo($"MagBoots: ahead-cast hit - moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}, normalAngle={Vector3.Angle(aheadHit.normal, _smoothedNormal)}");
+                    }
                 }
                 else if (Plugin.ConfigDebugPrint.Value)
                 {
