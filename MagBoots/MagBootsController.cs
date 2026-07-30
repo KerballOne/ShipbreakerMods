@@ -207,6 +207,7 @@ namespace MagBoots
             _state = MagBootsState.Off;
             _attachHitTransform = null;
             ThrustSuppression.SetSuppressed(false);
+            PreciseRotation.SetActive(false);
 
             // Run never carries over to the next attach - it always starts back off, so running is
             // always a deliberate action taken after attaching, never something left primed from before.
@@ -319,6 +320,12 @@ namespace MagBoots
             if (t >= 1f)
             {
                 _state = MagBootsState.Locked;
+
+                // Only once fully Locked, not from the start of the snap tween (unlike ThrustSuppression) -
+                // UpdateSnap itself is still driving rotation via MoveRotation toward _snapTargetRot above,
+                // which precise rotation would otherwise immediately fight or override mid-tween.
+                PreciseRotation.SetActive(true);
+
                 if (Plugin.ConfigDebugPrint.Value)
                     Plugin.Log.LogInfo("MagBoots: snap complete, now attached.");
             }
