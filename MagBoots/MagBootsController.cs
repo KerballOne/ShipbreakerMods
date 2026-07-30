@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BBI.Unity.Game;
 using HarmonyLib;
 using UnityEngine;
@@ -462,34 +463,51 @@ namespace MagBoots
                 Vector3 stepUpOffset = _smoothedNormal * stepUpHeight;
                 float aheadDepth = stepUpHeight + Plugin.ConfigStepDownHeight.Value;
 
-                // Mimics an actual stride: try the full step first, and if that lands over a gap/narrow
-                // lip with nothing below it, reel the probe back in tenth-increments toward the player's
-                // current position instead of giving up outright. This means a narrow gap with solid
-                // ground just beyond it still gets crossed in one step (the far probe hits), while a real
-                // ledge lets the player creep forward with progressively shorter steps right up to the
-                // edge, rather than freezing dead the instant the full-length probe first comes up empty.
-                bool foundSurface = false;
+                // Try the full stride first - this is the cheap, common case (one raycast) and stays
+                // correct on its own for flat ground and for a narrow gap/ledge (the ranked search below
+                // still applies if it misses). Only if the far probe itself reveals a significant height
+                // change (up or down), or misses outright, do we widen into the full near-to-far ranked
+                // candidate search - that ranking is only needed to pick out the correct step among several
+                // candidates on a staircase, so there's no reason to pay for 10 raycasts a tick on ordinary
+                // flat ground where the far probe alone already answers it.
+                bool foundSurface;
                 RaycastHit aheadHit = default;
                 float hitCastDistance = 0f;
-                const int castSteps = 10;
-                for (int i = castSteps; i >= 1; i--)
+
+                // Anchored to feetPosition (the player's real current feet-plane), not _attachPoint -
+                // _attachPoint can already sit ahead of where the player's body actually is (advanced by
+                // a prior tick's committed step), which would otherwise measure this distance from a stale
+                // point instead of from the player. Also not rb.position directly - the player's body
+                // floats PlayerHeight above the feet-plane, so building the origin from rb.position stacked
+                // PlayerHeight on top of StepUpHeight (e.g. 1.5 + 0.75 = 2.25m above the surface by default)
+                // while aheadDepth was only StepUpHeight + StepDownHeight (2.25m) - the cast landed exactly
+                // AT surface height with zero clearance, so it missed constantly from spring-settling
+                // jitter alone, even standing on a dead-flat floor.
+                Vector3 farOrigin = feetPosition + tangentialMove.normalized * maxCastDistance + stepUpOffset;
+                bool farHitValid = TryFindValidSurface(farOrigin, -_smoothedNormal, aheadDepth, maxNormalAngle, out RaycastHit farHit);
+                float farHeight = farHitValid ? Vector3.Dot(farHit.point - feetPosition, _attachNormal) : 0f;
+                bool farIsSignificant = !farHitValid || Mathf.Abs(farHeight) > Plugin.ConfigStepSignificantHeight.Value;
+
+                if (farHitValid && !farIsSignificant)
                 {
-                    float castDistance = maxCastDistance * i / castSteps;
-                    // Anchored to feetPosition (the player's real current feet-plane), not _attachPoint -
-                    // _attachPoint can already sit ahead of where the player's body actually is (advanced by
-                    // a prior tick's committed step), which silently measured every distance in this search
-                    // from a stale point instead of from the player. Also not rb.position directly - the
-                    // player's body floats PlayerHeight above the feet-plane, so building the origin from
-                    // rb.position stacked PlayerHeight on top of StepUpHeight (e.g. 1.5 + 0.75 = 2.25m above
-                    // the surface by default) while aheadDepth was only StepUpHeight + StepDownHeight
-                    // (2.25m) - the cast landed exactly AT surface height with zero clearance, so it missed
-                    // constantly from spring-settling jitter alone, even standing on a dead-flat floor.
-                    Vector3 aheadOrigin = feetPosition + tangentialMove.normalized * castDistance + stepUpOffset;
-                    if (TryFindValidSurface(aheadOrigin, -_smoothedNormal, aheadDepth, maxNormalAngle, out aheadHit))
+                    // Ordinary flat-ground case: the far hit is fine as-is, identical to before.
+                    foundSurface = true;
+                    aheadHit = farHit;
+                    hitCastDistance = maxCastDistance;
+                }
+                else
+                {
+                    // Either the far probe missed outright, or it found a real step (up or down) - either
+                    // way, widen to the full candidate list so we land on the correct tread rather than
+                    // whatever the far probe alone happened to hit (or miss).
+                    List<StepCandidate> candidates = FindStepCandidates(feetPosition, tangentialMove, stepUpOffset, aheadDepth, maxNormalAngle, maxCastDistance);
+                    foundSurface = candidates.Count > 0;
+
+                    if (foundSurface)
                     {
-                        foundSurface = true;
-                        hitCastDistance = castDistance;
-                        break;
+                        StepCandidate winner = candidates[0];
+                        aheadHit = winner.Hit;
+                        hitCastDistance = winner.CastDistance;
                     }
                 }
 
@@ -607,6 +625,63 @@ namespace MagBoots
             Vector3 forward = Vector3.ProjectOnPlane(playerTransform.forward, normal).normalized;
 
             return right * rightAxis + forward * forwardAxis;
+        }
+
+        private readonly struct StepCandidate
+        {
+            public readonly RaycastHit Hit;
+            public readonly float CastDistance;
+            public readonly float RoundedHeight;
+
+            public StepCandidate(RaycastHit hit, float castDistance, float roundedHeight)
+            {
+                Hit = hit;
+                CastDistance = castDistance;
+                RoundedHeight = roundedHeight;
+            }
+        }
+
+        // Casts at every stride increment and builds the full list of every surface that actually
+        // registered as valid (not just a running best), then sorts it - rather than whichever hit a
+        // single far-probe/reel-in search happened to find first. On steep stairs, "first hit searching
+        // from the far end" could land on a tread two or three steps down instead of the very next one, if
+        // the nearer treads' horizontal extent was shorter than the probe's forward offset - silently
+        // skipping steps the player never actually walked onto. Each candidate's height deviation is
+        // rounded to the nearest 0.1m so near-equal heights (ordinary floor noise, a small threshold/bump)
+        // sort as "the same tread" rather than distinct candidates. Sorted HIGHEST (physically:
+        // smallest/most-negative rounded deviation, since positive means up) first, farthest-distance
+        // second: stepping up, the highest reachable tread is also the nearest one, so it naturally sorts
+        // first; stepping down, the highest candidate among the down-hits is the near edge of the current
+        // landing - the very next step down, never a lower one skipped ahead of it. Only called when the
+        // cheap single far-probe already found (or missed looking for) a significant height change, so
+        // this cost is paid only on actual steps, not every tick of ordinary flat-ground walking.
+        private List<StepCandidate> FindStepCandidates(Vector3 feetPosition, Vector3 tangentialMove, Vector3 stepUpOffset,
+            float aheadDepth, float maxNormalAngle, float maxCastDistance)
+        {
+            var candidates = new List<StepCandidate>();
+            Vector3 moveDir = tangentialMove.normalized;
+
+            const int castSteps = 10;
+            for (int i = 1; i <= castSteps; i++)
+            {
+                float castDistance = maxCastDistance * i / castSteps;
+                Vector3 aheadOrigin = feetPosition + moveDir * castDistance + stepUpOffset;
+                if (!TryFindValidSurface(aheadOrigin, -_smoothedNormal, aheadDepth, maxNormalAngle, out RaycastHit candidateHit))
+                    continue;
+
+                float candidateHeight = Vector3.Dot(candidateHit.point - feetPosition, _attachNormal);
+                float roundedHeight = Mathf.Round(candidateHeight * 10f) / 10f;
+                candidates.Add(new StepCandidate(candidateHit, castDistance, roundedHeight));
+            }
+
+            // Highest (least-down/most-up) first; farthest distance breaks ties.
+            candidates.Sort((a, b) =>
+            {
+                int heightCompare = a.RoundedHeight.CompareTo(b.RoundedHeight);
+                return heightCompare != 0 ? heightCompare : b.CastDistance.CompareTo(a.CastDistance);
+            });
+
+            return candidates;
         }
 
         private bool TryFindValidSurface(Vector3 origin, Vector3 direction, float maxDistance, float maxNormalAngle, out RaycastHit result)
