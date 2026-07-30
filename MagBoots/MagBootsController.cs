@@ -536,13 +536,18 @@ namespace MagBoots
                     // How far the new hit deviates vertically (along the CURRENT normal) from the plane the
                     // player is already standing on - positive means the hit is further along +normal, i.e.
                     // a step UP (hit.point sits higher, in the outward-normal direction, than feetPosition);
-                    // negative means a step DOWN. Kept signed (rather than Mathf.Abs) so up/down can be told
-                    // apart in logging and, later, in any direction-specific handling - the significance
-                    // check below still only cares about magnitude, same as before.
+                    // negative means a step DOWN.
                     float signedHeightDeviation = Vector3.Dot(aheadHit.point - feetPosition, _attachNormal);
                     float heightDeviation = Mathf.Abs(signedHeightDeviation);
 
-                    if (heightDeviation > Plugin.ConfigStepSignificantHeight.Value)
+                    // Only a step DOWN goes through the hold-then-snap pending path - that's what prevents
+                    // a full lateral stride and a large vertical drop compounding downward velocity past
+                    // BreakawayVelocity on steep descending stairs, and it works well. A step UP has no such
+                    // risk (no downward velocity to compound) and instead always falls through to the
+                    // ordinary eased branch below, so the anchor's height rises gradually via
+                    // AttachHeightFollowSpeed regardless of how large the step is, rather than holding
+                    // laterally and then instant-snapping upward once settled/timed out.
+                    if (signedHeightDeviation < -Plugin.ConfigStepSignificantHeight.Value)
                     {
                         // Real step: advance the anchor laterally only this tick (project the stride onto
                         // the CURRENT plane - i.e. feetPosition's height, not yet the new step's - so height
@@ -590,7 +595,10 @@ namespace MagBoots
                         _attachHitTransform = aheadHit.transform;
 
                         if (Plugin.ConfigDebugPrint.Value)
+                        {
                             Plugin.Log.LogInfo($"MagBoots: ahead-cast hit - moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}, normalAngle={Vector3.Angle(aheadHit.normal, _smoothedNormal)}");
+                            Plugin.Log.LogInfo($"MagBoots: attach height eased - currentHeight={currentHeight}, targetHeight={targetHeight}, easedHeight={easedHeight}");
+                        }
                     }
                 }
                 else if (Plugin.ConfigDebugPrint.Value)
@@ -600,6 +608,12 @@ namespace MagBoots
                 // else: no surface at any step distance, all the way down to the player's own position
                 // (e.g. a genuine full-width gap/edge) - hold the last valid attach point/normal entirely
                 // (per design), so the player doesn't keep sliding forward over open space.
+            }
+
+            if (Plugin.ConfigDebugPrint.Value)
+            {
+                float attachHeight = Vector3.Dot(_attachPoint, _attachNormal);
+                Plugin.Log.LogInfo($"MagBoots: chart - feetPosition={feetPosition}, rbPosition={rb.position}, attachHeight={attachHeight}");
             }
 
             // Crouch: while thrust-down is held, ease the standoff distance toward half its configured
@@ -675,6 +689,7 @@ namespace MagBoots
             float aheadDepth, float maxNormalAngle, float maxCastDistance)
         {
             var candidates = new List<StepCandidate>();
+            var missLog = Plugin.ConfigDebugPrint.Value ? new List<string>() : null;
             Vector3 moveDir = tangentialMove.normalized;
 
             const int castSteps = 10;
@@ -682,31 +697,88 @@ namespace MagBoots
             {
                 float castDistance = maxCastDistance * i / castSteps;
                 Vector3 aheadOrigin = feetPosition + moveDir * castDistance + stepUpOffset;
-                if (!TryFindValidSurface(aheadOrigin, -_smoothedNormal, aheadDepth, maxNormalAngle, out RaycastHit candidateHit))
+                if (!TryFindValidSurface(aheadOrigin, -_smoothedNormal, aheadDepth, maxNormalAngle, out RaycastHit candidateHit, out string missReason))
+                {
+                    missLog?.Add($"({castDistance:F3}, {missReason})");
                     continue;
+                }
 
                 float candidateHeight = Vector3.Dot(candidateHit.point - feetPosition, _attachNormal);
                 float roundedHeight = Mathf.Round(candidateHeight * 10f) / 10f;
                 candidates.Add(new StepCandidate(candidateHit, castDistance, roundedHeight));
             }
 
-            // Highest (least-down/most-up) first; farthest distance breaks ties.
-            candidates.Sort((a, b) =>
+            if (missLog != null && missLog.Count > 0)
+                Plugin.Log.LogInfo("MagBoots: candidate misses (aheadDist, reason): " + string.Join(", ", missLog));
+
+            // If most candidates in this group are a step UP, a single far outlier that overshoots past
+            // the real next tread (e.g. into the gap/underside beyond it, on steep overlapping stairs)
+            // would otherwise win outright under the normal ascending sort - ascending always favors the
+            // lowest/most-negative value, and one stray negative reading beats nine genuine step-up
+            // candidates. Stepping down never has this problem: a real step-down group is never mixed
+            // with step-up candidates, so this flip can't fire there and that working behavior (lowest/
+            // nearest-down wins) is untouched.
+            int positiveCount = 0;
+            foreach (StepCandidate c in candidates)
+                if (c.RoundedHeight > 0f)
+                    positiveCount++;
+            bool isStepUpGroup = positiveCount * 2 > candidates.Count;
+
+            if (isStepUpGroup)
             {
-                int heightCompare = a.RoundedHeight.CompareTo(b.RoundedHeight);
-                return heightCompare != 0 ? heightCompare : b.CastDistance.CompareTo(a.CastDistance);
-            });
+                // Highest (most-up) first; farthest distance breaks ties.
+                candidates.Sort((a, b) =>
+                {
+                    int heightCompare = b.RoundedHeight.CompareTo(a.RoundedHeight);
+                    return heightCompare != 0 ? heightCompare : b.CastDistance.CompareTo(a.CastDistance);
+                });
+            }
+            else
+            {
+                // Highest (least-down/most-up) first; farthest distance breaks ties.
+                candidates.Sort((a, b) =>
+                {
+                    int heightCompare = a.RoundedHeight.CompareTo(b.RoundedHeight);
+                    return heightCompare != 0 ? heightCompare : b.CastDistance.CompareTo(a.CastDistance);
+                });
+            }
+
+            if (Plugin.ConfigDebugPrint.Value && candidates.Count > 0 && candidates[0].RoundedHeight != 0f)
+            {
+                var rows = new List<StepCandidate>(candidates);
+                rows.Sort((a, b) => a.CastDistance.CompareTo(b.CastDistance));
+
+                var sb = new System.Text.StringBuilder();
+                sb.Append("MagBoots: candidate table (aheadDist, heightAboveFeet): ");
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    bool isWinner = rows[i].CastDistance == candidates[0].CastDistance && rows[i].RoundedHeight == candidates[0].RoundedHeight;
+                    string entry = $"({rows[i].CastDistance:F3}, {rows[i].RoundedHeight:F1})";
+                    if (isWinner)
+                        entry = $"**{entry}**";
+                    sb.Append(entry);
+                    if (i < rows.Count - 1)
+                        sb.Append(", ");
+                }
+                Plugin.Log.LogInfo(sb.ToString());
+            }
 
             return candidates;
         }
 
         private bool TryFindValidSurface(Vector3 origin, Vector3 direction, float maxDistance, float maxNormalAngle, out RaycastHit result)
         {
+            return TryFindValidSurface(origin, direction, maxDistance, maxNormalAngle, out result, out _);
+        }
+
+        private bool TryFindValidSurface(Vector3 origin, Vector3 direction, float maxDistance, float maxNormalAngle, out RaycastHit result, out string missReason)
+        {
             LayerMask mask = Main.Instance.MainSettings.RaycastSettings.GrabValidLayerMask;
 
             if (!Physics.Raycast(origin, direction, out RaycastHit hit, maxDistance, mask))
             {
                 result = default;
+                missReason = "no hit";
                 return false;
             }
 
@@ -714,16 +786,19 @@ namespace MagBoots
             if (angle > maxNormalAngle)
             {
                 result = default;
+                missReason = $"angle {angle:F1} > {maxNormalAngle:F1}";
                 return false;
             }
 
             if (!SurfaceGeometry.HasMinimumFaceArea(hit, Plugin.ConfigMinFaceArea.Value))
             {
                 result = default;
+                missReason = "face area too small";
                 return false;
             }
 
             result = hit;
+            missReason = null;
             return true;
         }
     }
