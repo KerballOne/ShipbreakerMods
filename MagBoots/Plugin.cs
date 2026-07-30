@@ -56,6 +56,8 @@ namespace MagBoots
         internal static ConfigEntry<float> ConfigRunSpeed = null!;
         internal static ConfigEntry<float> ConfigCornerSmoothingSpeed = null!;
         internal static ConfigEntry<float> ConfigReorientSettledAngle = null!;
+        internal static ConfigEntry<float> ConfigMaxStridePitch = null!;
+        internal static ConfigEntry<float> ConfigMinStridePitch = null!;
         internal static ConfigEntry<float> ConfigSpring = null!;
         internal static ConfigEntry<float> ConfigDamper = null!;
         internal static ConfigEntry<float> ConfigBreakawayVelocity = null!;
@@ -66,6 +68,7 @@ namespace MagBoots
         internal static ConfigEntry<BatteryDisplayMode> ConfigBatteryDisplayMode = null!;
         internal static ConfigEntry<string> ConfigHudOffset = null!;
         internal static ConfigEntry<float> ConfigHudScale = null!;
+        internal static ConfigEntry<bool> ConfigShowStride = null!;
 
         private MagBootsController? _controller;
 
@@ -219,6 +222,12 @@ namespace MagBoots
             ConfigMaxLookDownAngle = Config.Bind("3 - Movement", "MaxLookDownAngle", 45f,
                 "How far you can look down toward the surface before your view is stopped, so you can't tip over and stare at your own feet.");
 
+            ConfigMaxStridePitch = Config.Bind("3 - Movement", "MaxStridePitch", 10f,
+                "How far you can pitch your view up or down (in degrees) before your stride starts shortening. Below this, looking around doesn't affect your stride at all.");
+
+            ConfigMinStridePitch = Config.Bind("3 - Movement", "MinStridePitch", 60f,
+                "The pitch angle (in degrees, up or down) at which your stride shrinks all the way to 0m. Between MaxStridePitch and this, stride shortens gradually - pitching your view lets you take smaller, more careful steps on steep stairs.");
+
             ConfigSpring = Config.Bind("4 - Physics", "Spring", 200f,
                 "How firmly mag boots pull you back to the surface if you drift away. Higher is snappier.");
 
@@ -246,6 +255,9 @@ namespace MagBoots
 
             ConfigHudScale = Config.Bind("6 - HUD", "Scale", 1f,
                 "Size of the on-screen hint. 1 is the default size, 2 is twice as big, 0.5 is half as big.");
+
+            ConfigShowStride = Config.Bind("6 - HUD", "ShowStride", false,
+                "Shows your current stride distance (in meters) next to the hint, which shortens as you pitch your view up or down (see MaxStridePitch/MinStridePitch).");
 
             if (!ConfigEnabled.Value)
             {
@@ -329,7 +341,8 @@ namespace MagBoots
             // (or after) attaching, only while it's actually doing something.
             bool showRunActive = _controller.IsAttached && _controller.IsRunning;
             MagBootsHud.Draw(_controller.State, keyLabel, runKeyLabel, showRunActive, offsetPixels, showBattery,
-                ConfigBatteryDisplayMode.Value, _controller.BatteryFraction, _controller.BatteryMinutesRemaining, ConfigHudScale.Value);
+                ConfigBatteryDisplayMode.Value, _controller.BatteryFraction, _controller.BatteryMinutesRemaining, ConfigHudScale.Value,
+                ConfigShowStride.Value && _controller.IsAttached, _controller.CurrentStrideDistance);
         }
 
         private static string GetRunKeyLabel()

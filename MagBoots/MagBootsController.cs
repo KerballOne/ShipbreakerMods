@@ -97,6 +97,11 @@ namespace MagBoots
             : Mathf.Clamp01(_batteryMinutesRemaining / Plugin.ConfigBatteryCapacityMinutes.Value);
         public float BatteryMinutesRemaining => _batteryMinutesRemaining;
 
+        // The stride distance actually used this tick, after both the analog-push and pitch scaling are
+        // applied - shown in the HUD so the player can see their stride shrink as they pitch their view,
+        // making the head-tilt control's effect on movement immediately legible rather than a hidden feel.
+        public float CurrentStrideDistance { get; private set; }
+
         private bool TryCacheReferences()
         {
             if (_playerRigidbody != null)
@@ -360,6 +365,7 @@ namespace MagBoots
             // comparing raw up vectors falsely read "still reorienting" forever whenever the player
             // looked up/down, blocking all forward movement even on a flat surface.
             bool isReorienting = false;
+            float clampedPitch = 0f;
             if (flatForward.sqrMagnitude > 0.0001f)
             {
                 flatForward.Normalize();
@@ -372,7 +378,7 @@ namespace MagBoots
                 // up. MaxLookUpAngle isn't exposed as a tunable since it exists purely to keep this
                 // degenerate case out of reach, not as something players would want to adjust.
                 const float MaxLookUpAngle = 85f;
-                float clampedPitch = Mathf.Clamp(pitchAngle, -MaxLookUpAngle, Plugin.ConfigMaxLookDownAngle.Value);
+                clampedPitch = Mathf.Clamp(pitchAngle, -MaxLookUpAngle, Plugin.ConfigMaxLookDownAngle.Value);
 
                 Quaternion levelRot = Quaternion.LookRotation(flatForward, _smoothedNormal);
                 Quaternion pitchRot = Quaternion.AngleAxis(clampedPitch, rightAxis);
@@ -386,6 +392,27 @@ namespace MagBoots
             _lastTangentialMoveWasActive = tangentialMove.sqrMagnitude > 0.0001f;
 
             float moveIntensity = Mathf.Clamp01(tangentialMove.magnitude);
+
+            // Let the player intuitively shorten their stride by pitching their view up or down, rather
+            // than always using the full configured distance regardless of where they're looking - pitching
+            // down toward steep stairs (or up, symmetrically) naturally slows/shortens the stride, similar
+            // to how a person takes smaller, more careful steps while looking down at uneven ground. No
+            // change within +/-MaxStridePitch degrees of level (ordinary head movement while walking
+            // shouldn't affect anything); falls off linearly toward a 0.01m floor at +/-MinStridePitch
+            // degrees - never all the way to a literal 0m stride, since there's no real benefit to a search
+            // distance that short and it would just stall the search entirely. The floor is an absolute
+            // distance (not a fraction of AheadCastDistance), so it stays meaningful even if that's
+            // reconfigured away from its default.
+            const float MinPitchStrideDistance = 0.01f;
+            float pitchMagnitude = Mathf.Abs(clampedPitch);
+            float pitchLerpAmount = Mathf.InverseLerp(Plugin.ConfigMaxStridePitch.Value, Plugin.ConfigMinStridePitch.Value, pitchMagnitude);
+            float pitchAdjustedCastDistance = Mathf.Lerp(Plugin.ConfigAheadCastDistance.Value, MinPitchStrideDistance, pitchLerpAmount);
+
+            // Preview value only - reflects pitch alone so it's meaningful even while standing still
+            // (moveIntensity would otherwise be 0 and always show a 0m stride regardless of pitch). While
+            // actually moving, this gets overwritten below with the real value the search used, which also
+            // factors in moveIntensity (a gentle analog push shortens the search too).
+            CurrentStrideDistance = pitchAdjustedCastDistance;
 
             // The player's actual current feet-plane position - rb.position (the helmet/POV) undoes the
             // standoff offset. The ahead-cast search (stride offset base, height-deviation reference)
@@ -435,8 +462,16 @@ namespace MagBoots
                 // Scale the max cast distance down for a gentle analog push (e.g. a controller stick
                 // barely tilted) rather than always probing the full AheadCastDistance regardless of how
                 // fast the player is actually moving - magnitude is clamped to 1 since a full diagonal
-                // push can exceed unit length (two unit axis vectors summed).
-                float maxCastDistance = Plugin.ConfigAheadCastDistance.Value * moveIntensity;
+                // push can exceed unit length (two unit axis vectors summed). Also applies the same
+                // pitch-based distance computed above (pitchAdjustedCastDistance), so a shortened-by-pitch
+                // stride combines with a gentle analog push rather than either one overriding the other.
+                float maxCastDistance = pitchAdjustedCastDistance * moveIntensity;
+                // Reflects the REAL distance the search is about to use this tick (not just the pitch-only
+                // preview set above), since the player is actually moving now.
+                CurrentStrideDistance = maxCastDistance;
+
+                if (Plugin.ConfigDebugPrint.Value)
+                    Plugin.Log.LogInfo($"MagBoots: pitch stride scale - clampedPitch={clampedPitch}, pitchAdjustedCastDistance={pitchAdjustedCastDistance}, maxCastDistance={maxCastDistance}");
 
                 // A foothold within FwdSweepAngle of where the player is facing gets the looser
                 // MaxNormalFwdAngle/StepUpFwdHeight instead of MaxNormalAngle/StepUpHeight, so you can

@@ -20,6 +20,8 @@ namespace MagBoots
         private const int LabelFontSize = 16;
         private const int KeyFontSize = 16;
         private const int BatteryFontSize = 22;
+        private const int StrideFontSize = 12;
+        private const int StrideWidth = 90;
 
         // Plain ASCII words rather than a symbol/emoji - Unity's legacy OnGUI/GUIStyle text reliably
         // renders basic Latin text, but silently drops both color emoji (🥾/🏃) and non-Latin Unicode
@@ -40,6 +42,7 @@ namespace MagBoots
         private static GUIStyle? _keyStyle;
         private static GUIStyle? _keyStyleActive;
         private static GUIStyle? _batteryStyle;
+        private static GUIStyle? _strideStyle;
         private static Texture2D? _chipTexture;
         private static Texture2D? _activeChipTexture;
         private static Texture2D? _keyBorderTexture;
@@ -92,6 +95,14 @@ namespace MagBoots
                 normal = { textColor = Color.black },
             };
 
+            _strideStyle = new GUIStyle
+            {
+                fontSize = Mathf.RoundToInt(StrideFontSize * mult),
+                fontStyle = FontStyle.Normal,
+                alignment = TextAnchor.MiddleLeft,
+                normal = { textColor = new Color(1f, 1f, 1f, 0.75f) },
+            };
+
             _batteryStyle = new GUIStyle
             {
                 fontSize = Mathf.RoundToInt(BatteryFontSize * mult),
@@ -110,7 +121,8 @@ namespace MagBoots
         }
 
         public static void Draw(MagBootsState state, string keyLabel, string runKeyLabel, bool isRunning, Vector2 offsetPixels, bool showBattery,
-            BatteryDisplayMode batteryMode, float batteryFraction, float batteryMinutesRemaining, float scale)
+            BatteryDisplayMode batteryMode, float batteryFraction, float batteryMinutesRemaining, float scale,
+            bool showStride, float strideDistance)
         {
             EnsureStyles(scale);
             float mult = BaseScaleMultiplier * scale;
@@ -184,6 +196,18 @@ namespace MagBoots
 
             DrawKeyChip(toggleKeyRect, keyLabel, isLocked, mult);
             DrawKeyChip(runKeyRect, runKeyLabel, isRunning, mult);
+
+            // Small, quiet readout of the stride distance just right of the key chips - lets the player
+            // see their stride shrink in real time as they pitch their view up/down, so the head-tilt
+            // stride control (see ConfigMaxStridePitch/MinStridePitch) is immediately legible rather than
+            // a hidden feel they'd have to infer from movement alone.
+            if (showStride)
+            {
+                string strideText = $"STRIDE {strideDistance:F2}m";
+                float strideGap = 12f * mult;
+                var strideRect = new Rect(keyX + keyWidth + strideGap, y, StrideWidth * mult, promptHeight);
+                DrawShadowedLabel(strideRect, strideText, _strideStyle!, _strideStyle!.normal.textColor, mult);
+            }
         }
 
         // Inverts to a solid white chip with black text while active (Locked / Running), instead of the
