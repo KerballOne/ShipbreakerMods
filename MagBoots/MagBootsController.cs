@@ -522,15 +522,16 @@ namespace MagBoots
                     float strideFraction = maxCastDistance > 0.0001f ? hitCastDistance / maxCastDistance : 0f;
                     float moveSpeed = IsRunning ? Plugin.ConfigRunSpeed.Value : Plugin.ConfigMoveSpeed.Value;
                     Vector3 fullStride = tangentialMove * moveSpeed * Time.fixedDeltaTime;
-                    // Advance from _attachPoint's own previous position, not feetPosition - _attachPoint is
-                    // allowed to run up to one stride ahead of the player's real body every tick (the spring
-                    // then pulls the body along at whatever speed the spring constants allow); restarting
-                    // from feetPosition instead capped effective walking speed at however fast the spring
-                    // could physically catch the body up each tick, which was far slower than MoveSpeed/
-                    // RunSpeed alone (~13% of configured speed observed). feetPosition remains the reference
-                    // for the SEARCH itself (raycast origin, height-deviation check) - only how far the
-                    // anchor is allowed to advance uses _attachPoint.
-                    Vector3 candidatePoint = _attachPoint + fullStride * strideFraction;
+                    // Advance from feetPosition (the player's real current position), not _attachPoint -
+                    // _attachPoint never leads the player laterally at all now; it's always within one
+                    // tick's stride of where the body actually is. This used to cap effective walking speed
+                    // well below MoveSpeed/RunSpeed (~13% observed), because the spring/damper could only
+                    // sustain nonzero velocity by maintaining a standing lag between desiredPos and the
+                    // real position - zero lead meant zero lag, which meant no sustained speed. That's fixed
+                    // separately now: the damper's target velocity is fed forward from _attachPoint's own
+                    // per-tick motion (see attachVelocity below, at the spring), so it no longer needs a
+                    // standing lag to sustain speed - it only corrects the residual error.
+                    Vector3 candidatePoint = feetPosition + fullStride * strideFraction;
 
                     // How far the new hit deviates vertically (along the CURRENT normal) from the plane the
                     // player is already standing on - positive means the hit is further along +normal, i.e.
@@ -611,8 +612,23 @@ namespace MagBoots
 
             Vector3 desiredPos = _attachPoint + _smoothedNormal * (Plugin.ConfigPlayerHeight.Value * _standoffFraction);
 
+            // Feed-forward: target the damper at the INTENDED walking velocity (tangentialMove * moveSpeed)
+            // rather than always at a standstill, so sustaining speed doesn't require a permanent lag
+            // between desiredPos and the real position just to out-fight the damper's own braking.
+            // Deliberately NOT derived from _attachPoint's own tick-to-tick delta - since _attachPoint now
+            // rebuilds from feetPosition (= rb.position) every tick with zero lead, differencing it would
+            // bake in any overshoot in the player's ALREADY-ACTUAL velocity, feeding an inflated target
+            // back into the damper and pushing velocity even higher next tick - an unbounded runaway with
+            // no ceiling (confirmed: this is exactly what let the player accelerate straight past
+            // BreakawayVelocity). tangentialMove*moveSpeed is a fixed target independent of the player's
+            // current motion, so it can't bootstrap a runaway - the damper is always correcting toward the
+            // same bounded value, never toward "whatever the anchor happened to do because the player was
+            // already moving."
+            float desiredSpeed = IsRunning ? Plugin.ConfigRunSpeed.Value : Plugin.ConfigMoveSpeed.Value;
+            Vector3 desiredVelocity = tangentialMove * desiredSpeed;
+
             Vector3 springForce = Plugin.ConfigSpring.Value * (desiredPos - rb.position)
-                                   + Plugin.ConfigDamper.Value * (Vector3.zero - rb.velocity);
+                                   + Plugin.ConfigDamper.Value * (desiredVelocity - rb.velocity);
             rb.AddForce(springForce, ForceMode.Acceleration);
         }
 
