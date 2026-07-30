@@ -8,9 +8,11 @@ Press the toggle key with a ship part below you. If the surface is flat enough a
 
 - Press the toggle key to attach. MagBoots checks straight down from you; if it finds a surface that's flat and big enough, you snap into place.
 - While attached, movement input walks you along the surface instead of free-thrusting. You're held at a fixed distance off the hull.
+- MagBoots checks a stride ahead of you as you walk, so you can climb and descend stairs, ramps, and ledges without losing your footing - stepping down eases you onto the lower surface once you've caught up to it, and stepping up eases your height up gradually rather than yanking you.
+- Look up and down freely — you just can't tip all the way over and stare straight into the deck. Pitching your view further (up or down) also shortens your stride, so tilting your view takes you into smaller, more careful steps; leveling back out returns you to full stride.
+- While attached, looking around is instant and precise instead of the normal zero-g drift - turning your head doesn't keep spinning after you stop moving the mouse/stick, the way it does while free-floating. Goes back to normal zero-g drift the instant you detach.
 - Hold or toggle the run key to move faster - battery drains faster while running too, proportional to the speed increase. Run only works while already attached; it can't be armed ahead of time and never carries over into your next attach.
 - Your thrusters are fully suppressed while attached, so they don't fight MagBoots' hold, waste fuel, or rumble the controller for no reason. Refueling still works normally.
-- Look up and down freely — you just can't tip all the way over and stare straight into the deck.
 - Press the toggle key again to detach and go back to normal zero-g movement at any time.
 - Holding the thrust-down input crouches you closer to the surface, for squeezing under low obstacles; release to stand back up.
 - MagBoots only works during actual flight/salvage gameplay — it's fully inactive in the Hab, menus, loading screens, and cutscenes.
@@ -33,7 +35,7 @@ A small on-screen hint in the corner shows your current status, styled to match 
 - **Red** — error, no valid surface found below you
 - **Gray** — no power, battery depleted
 
-Its position and size can both be tweaked in the config — position as a percentage offset from the center of your screen, size as a scale multiplier (1 is default, 2 is twice as big).
+Its position and size can both be tweaked in the config — position as a percentage offset from the center of your screen, size as a scale multiplier (1 is default, 2 is twice as big). Turning on `ShowStride` in the config adds a small readout right of the hint showing your current stride distance, which shrinks in real time as you pitch your view.
 
 ## Settings
 
@@ -43,11 +45,23 @@ The config file is generated on first run at:
 Hardspace Shipbreaker\BepInEx\config\me.kerballone.MagBoots.cfg
 ```
 
-Every setting has a plain-language description in the file itself — open it in any text editor to see what each one does and tweak it to taste. A few highlights:
+Every setting has a plain-language description in the file itself — open it in any text editor to see what each one does and tweak it to taste. Settings are grouped into sections:
+
+- **1 - General** — toggle key/button, run key/button, debug logging.
+- **2 - Attach** — only the initial attach itself: surface size/angle requirements, standoff height, snap duration.
+- **3 - Movement** — ordinary walking and looking around: stride length, move/run speed, corner smoothing, look-down limit, the pitch-based stride control, and PreciseRotation.
+- **4 - Steps** — detecting and handling an actual step up or down while walking: step height thresholds, how fast height eases in, how a step-down waits for you to catch up, forward-facing allowances for taller/steeper footholds you're heading toward.
+- **5 - Physics** — the spring/damper holding you to the surface, and how hard an impact has to be before you're knocked loose.
+- **6 - Battery** — capacity and drain rates.
+- **7 - HUD** — on-screen hint appearance.
+
+A few highlights:
 
 - **AheadCastDistance** is your stride length — how far ahead MagBoots checks for the next foothold while walking.
 - **MoveSpeed** is your walking speed while attached; **RunSpeed** is how fast you go while running.
 - **PlayerHeight** is how far off the surface you float.
+- **MaxStridePitch**/**MinStridePitch** control the pitch-based stride shortening: no effect within MaxStridePitch degrees of level, shrinking to a near-zero stride by MinStridePitch degrees, in either direction (looking up or down).
+- **PreciseRotation** turns on instant, drift-free looking while attached (on by default); **PreciseRotationSensitivity** is a separate multiplier just for that mode, since instant look can feel faster or slower than the drifting version at the same sensitivity.
 - **StepDownHeight** is how far below your feet MagBoots will look for a surface to attach to or step down onto.
 - **StepUpHeight** is how far above your current footing MagBoots will look for a surface to step up onto while already attached.
 - **MaxNormalAngle** is how steep a surface can be for most footholds; **MaxNormalFwdAngle** is a looser limit that only applies to the direction you're actually facing, so you can walk up steeper ramps you're heading toward.

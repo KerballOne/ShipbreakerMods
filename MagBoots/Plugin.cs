@@ -206,7 +206,7 @@ namespace MagBoots
                 "How far you can pitch your view up or down (in degrees) before your stride starts shortening. Below this, looking around doesn't affect your stride at all.");
 
             ConfigMinStridePitch = Config.Bind("3 - Movement", "MinStridePitch", 60f,
-                "The pitch angle (in degrees, up or down) at which your stride shrinks all the way to 0m. Between MaxStridePitch and this, stride shortens gradually - pitching your view lets you take smaller, more careful steps on steep stairs.");
+                "The pitch angle (in degrees, up or down) at which your stride shrinks to its minimum (~0.01m, effectively stopped). Between MaxStridePitch and this, stride shortens gradually - pitching your view lets you take smaller, more careful steps on steep stairs.");
 
             ConfigPreciseRotation = Config.Bind("3 - Movement", "PreciseRotation", true,
                 "While attached, look/turn instantly instead of using the game's normal zero-g drift/momentum - only affects yaw and pitch (roll doesn't apply while grounded). Turns off automatically the moment you detach.");
@@ -219,16 +219,16 @@ namespace MagBoots
                 "How far below your feet (in meters) mag boots will look for something to attach to.");
 
             ConfigStepSignificantHeight = Config.Bind("4 - Steps", "StepSignificantHeight", 0.15f,
-                "How big a height change (in meters) counts as a real step up or down versus just uneven flat ground. Real steps wait for StepLateralSettled before adjusting your height, which keeps steep stairs from building up speed and knocking you loose.");
+                "How big a height change (in meters) counts as a real step up or down versus just uneven flat ground. A real step DOWN past this waits for StepLateralSettled before adjusting your height, which keeps steep stairs from building up speed and knocking you loose. A real step UP past this instead eases in smoothly at AttachHeightFollowSpeed right away - going up doesn't have the same runaway-speed risk going down does.");
 
             ConfigAttachHeightFollowSpeed = Config.Bind("4 - Steps", "AttachHeightFollowSpeed", 2f,
                 "How fast (in meters/second) mag boots eases your anchor's height toward a new surface for ordinary (non-significant) height changes, instead of snapping to it instantly. Keeps small floor seams/ledges or a change in surface angle from yanking you via the standoff spring. Lower is gentler; higher is snappier.");
 
             ConfigStepLateralSettled = Config.Bind("4 - Steps", "StepLateralSettled", 0.3f,
-                "How closely you need to catch up to a detected step before mag boots adjusts your height to match it, as a fraction of your stride length (AheadCastDistance). 0.3 means within 30% of a stride. Moving forward isn't held up, only the up/down adjustment - this keeps steep stairs from feeling like a fast slide. Lower is stricter (closer catch-up needed); higher is looser.");
+                "Only applies to stepping DOWN. How closely you need to catch up to a detected step before mag boots adjusts your height to match it, as a fraction of your stride length (AheadCastDistance). 0.3 means within 30% of a stride. Moving forward isn't held up, only the up/down adjustment - this keeps steep stairs from feeling like a fast slide. Lower is stricter (closer catch-up needed); higher is looser.");
 
             ConfigStepTimeout = Config.Bind("4 - Steps", "StepTimeout", 0.5f,
-                "Maximum time (in seconds) mag boots will wait for you to catch up to a detected step before adjusting your height anyway. Prevents ever getting stuck waiting, even if StepLateralSettled is never reached (e.g. while continuously running).");
+                "Only applies to stepping DOWN. Maximum time (in seconds) mag boots will wait for you to catch up to a detected step before adjusting your height anyway. Prevents ever getting stuck waiting, even if StepLateralSettled is never reached (e.g. while continuously running).");
 
             ConfigStepUpHeight = Config.Bind("4 - Steps", "StepUpHeight", 0.25f,
                 "How far above your feet (in meters) mag boots will look for something to step up onto while already attached, for footholds off to the side or behind you. Lower makes it harder to accidentally step up onto something you didn't mean to.");
