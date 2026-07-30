@@ -386,6 +386,14 @@ namespace MagBoots
 
             float moveIntensity = Mathf.Clamp01(tangentialMove.magnitude);
 
+            // The player's actual current feet-plane position - rb.position (the helmet/POV) undoes the
+            // standoff offset. The ahead-cast search (stride offset base, height-deviation reference)
+            // reads from THIS, never from _attachPoint - _attachPoint could otherwise already be ahead of
+            // where the player's real body was (advanced by a prior tick's committed step), so distances
+            // and heights in the search would silently be measured from a stale point instead of from
+            // where the player actually stands right now.
+            Vector3 feetPosition = rb.position - _smoothedNormal * (Plugin.ConfigPlayerHeight.Value * _standoffFraction);
+
             // While a step's vertical correction is pending, _attachPoint holds still (no further lateral
             // advance, no new ahead-cast) - the queued height/normal snap applies once the player's ACTUAL
             // position has physically caught up to that held point (the standoff spring pulling them
@@ -467,13 +475,16 @@ namespace MagBoots
                 for (int i = castSteps; i >= 1; i--)
                 {
                     float castDistance = maxCastDistance * i / castSteps;
-                    // Anchored to _attachPoint (the actual feet-plane on the surface), not rb.position -
-                    // the player's body floats PlayerHeight above _attachPoint, so building the origin from
+                    // Anchored to feetPosition (the player's real current feet-plane), not _attachPoint -
+                    // _attachPoint can already sit ahead of where the player's body actually is (advanced by
+                    // a prior tick's committed step), which silently measured every distance in this search
+                    // from a stale point instead of from the player. Also not rb.position directly - the
+                    // player's body floats PlayerHeight above the feet-plane, so building the origin from
                     // rb.position stacked PlayerHeight on top of StepUpHeight (e.g. 1.5 + 0.75 = 2.25m above
                     // the surface by default) while aheadDepth was only StepUpHeight + StepDownHeight
                     // (2.25m) - the cast landed exactly AT surface height with zero clearance, so it missed
                     // constantly from spring-settling jitter alone, even standing on a dead-flat floor.
-                    Vector3 aheadOrigin = _attachPoint + tangentialMove.normalized * castDistance + stepUpOffset;
+                    Vector3 aheadOrigin = feetPosition + tangentialMove.normalized * castDistance + stepUpOffset;
                     if (TryFindValidSurface(aheadOrigin, -_smoothedNormal, aheadDepth, maxNormalAngle, out aheadHit))
                     {
                         foundSurface = true;
@@ -493,25 +504,35 @@ namespace MagBoots
                     float strideFraction = maxCastDistance > 0.0001f ? hitCastDistance / maxCastDistance : 0f;
                     float moveSpeed = IsRunning ? Plugin.ConfigRunSpeed.Value : Plugin.ConfigMoveSpeed.Value;
                     Vector3 fullStride = tangentialMove * moveSpeed * Time.fixedDeltaTime;
+                    // Advance from _attachPoint's own previous position, not feetPosition - _attachPoint is
+                    // allowed to run up to one stride ahead of the player's real body every tick (the spring
+                    // then pulls the body along at whatever speed the spring constants allow); restarting
+                    // from feetPosition instead capped effective walking speed at however fast the spring
+                    // could physically catch the body up each tick, which was far slower than MoveSpeed/
+                    // RunSpeed alone (~13% of configured speed observed). feetPosition remains the reference
+                    // for the SEARCH itself (raycast origin, height-deviation check) - only how far the
+                    // anchor is allowed to advance uses _attachPoint.
                     Vector3 candidatePoint = _attachPoint + fullStride * strideFraction;
 
-                    // How far the new hit deviates vertically (along the CURRENT normal) from the plane
-                    // the player is already standing on - a small value means "still basically the same
-                    // tread/floor" (walking on a flat or gently uneven surface), a large value means "this
-                    // is a real step up or down" (e.g. a stair riser). Only steps past StepSignificantHeight
-                    // get the lateral/vertical split below; minor floor variance still snaps immediately,
-                    // same as before, so ordinary flat-ground walking isn't affected.
-                    float heightDeviation = Mathf.Abs(Vector3.Dot(aheadHit.point - _attachPoint, _attachNormal));
+                    // How far the new hit deviates vertically (along the CURRENT normal) from the plane the
+                    // player is already standing on - positive means the hit is further along +normal, i.e.
+                    // a step UP (hit.point sits higher, in the outward-normal direction, than feetPosition);
+                    // negative means a step DOWN. Kept signed (rather than Mathf.Abs) so up/down can be told
+                    // apart in logging and, later, in any direction-specific handling - the significance
+                    // check below still only cares about magnitude, same as before.
+                    float signedHeightDeviation = Vector3.Dot(aheadHit.point - feetPosition, _attachNormal);
+                    float heightDeviation = Mathf.Abs(signedHeightDeviation);
 
                     if (heightDeviation > Plugin.ConfigStepSignificantHeight.Value)
                     {
                         // Real step: advance the anchor laterally only this tick (project the stride onto
-                        // the CURRENT plane, so height doesn't change yet), and queue the vertical/normal
-                        // correction to apply once the player's input eases off, instead of in the same
-                        // tick as the lateral move. This is what keeps a steep staircase from combining a
-                        // full lateral stride with a large vertical drop every single tick, which compounded
-                        // downward velocity past BreakawayVelocity - the two now happen on separate ticks.
-                        _attachPoint = candidatePoint - Vector3.Dot(candidatePoint - _attachPoint, _attachNormal) * _attachNormal;
+                        // the CURRENT plane - i.e. feetPosition's height, not yet the new step's - so height
+                        // doesn't change yet), and queue the vertical/normal correction to apply once the
+                        // player's input eases off, instead of in the same tick as the lateral move. This is
+                        // what keeps a steep staircase from combining a full lateral stride with a large
+                        // vertical drop every single tick, which compounded downward velocity past
+                        // BreakawayVelocity - the two now happen on separate ticks.
+                        _attachPoint = candidatePoint - Vector3.Dot(candidatePoint - feetPosition, _attachNormal) * _attachNormal;
 
                         _pendingStepCorrection = true;
                         _pendingStepTimer = 0f;
@@ -520,7 +541,7 @@ namespace MagBoots
                         _pendingStepHitTransform = aheadHit.transform;
 
                         if (Plugin.ConfigDebugPrint.Value)
-                            Plugin.Log.LogInfo($"MagBoots: step detected, deferring vertical correction - heightDeviation={heightDeviation}, moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}");
+                            Plugin.Log.LogInfo($"MagBoots: step detected, deferring vertical correction - signedHeightDeviation={signedHeightDeviation}, moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}");
                     }
                     else
                     {
@@ -529,7 +550,23 @@ namespace MagBoots
                         // component of (candidatePoint - aheadHit.point) along the new normal, which keeps
                         // the anchor's incrementally-advanced position but adopts the new surface's height.
                         Vector3 offset = candidatePoint - aheadHit.point;
-                        _attachPoint = candidatePoint - Vector3.Dot(offset, aheadHit.normal) * aheadHit.normal;
+                        Vector3 targetAttachPoint = candidatePoint - Vector3.Dot(offset, aheadHit.normal) * aheadHit.normal;
+
+                        // Ease the along-normal (height) component toward the new plane at a bounded rate,
+                        // rather than snapping to it in the same tick - this is what actually moves gradually
+                        // now, not a separate desiredPos layer. _attachPoint is still what the spring's
+                        // desiredPos reads from every tick, so a large one-tick jump here (e.g. a floor
+                        // seam/small ledge just under StepSignificantHeight, or transitioning onto a
+                        // differently-angled surface) still yanked the spring hard even though it wasn't
+                        // "significant" enough to defer through the step-down path. Lateral position (already
+                        // eased via the bounded fullStride advance above) is applied immediately, same as
+                        // always - only the height/plane transition is rate-limited here.
+                        Vector3 targetLateral = targetAttachPoint - Vector3.Dot(targetAttachPoint, aheadHit.normal) * aheadHit.normal;
+                        float currentHeight = Vector3.Dot(_attachPoint, aheadHit.normal);
+                        float targetHeight = Vector3.Dot(targetAttachPoint, aheadHit.normal);
+                        float easedHeight = Mathf.MoveTowards(currentHeight, targetHeight,
+                            Plugin.ConfigAttachHeightFollowSpeed.Value * Time.fixedDeltaTime);
+                        _attachPoint = targetLateral + easedHeight * aheadHit.normal;
                         _attachNormal = aheadHit.normal;
                         _attachHitTransform = aheadHit.transform;
 

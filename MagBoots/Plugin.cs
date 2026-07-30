@@ -40,6 +40,7 @@ namespace MagBoots
 
         internal static ConfigEntry<float> ConfigStepDownHeight = null!;
         internal static ConfigEntry<float> ConfigStepSignificantHeight = null!;
+        internal static ConfigEntry<float> ConfigAttachHeightFollowSpeed = null!;
         internal static ConfigEntry<float> ConfigStepLateralSettled = null!;
         internal static ConfigEntry<float> ConfigStepTimeout = null!;
         internal static ConfigEntry<float> ConfigStepUpHeight = null!;
@@ -166,6 +167,9 @@ namespace MagBoots
             ConfigStepSignificantHeight = Config.Bind("2 - Attach", "StepSignificantHeight", 0.15f,
                 "How big a height change (in meters) counts as a real step up or down versus just uneven flat ground. Real steps wait for StepLateralSettled before adjusting your height, which keeps steep stairs from building up speed and knocking you loose.");
 
+            ConfigAttachHeightFollowSpeed = Config.Bind("2 - Attach", "AttachHeightFollowSpeed", 2f,
+                "How fast (in meters/second) mag boots eases your anchor's height toward a new surface for ordinary (non-significant) height changes, instead of snapping to it instantly. Keeps small floor seams/ledges or a change in surface angle from yanking you via the standoff spring. Lower is gentler; higher is snappier.");
+
             ConfigStepLateralSettled = Config.Bind("2 - Attach", "StepLateralSettled", 0.3f,
                 "How closely you need to catch up to a detected step before mag boots adjusts your height to match it, as a fraction of your stride length (AheadCastDistance). 0.3 means within 30% of a stride. Moving forward isn't held up, only the up/down adjustment - this keeps steep stairs from feeling like a fast slide. Lower is stricter (closer catch-up needed); higher is looser.");
 
@@ -204,6 +208,7 @@ namespace MagBoots
 
             ConfigRunSpeed = Config.Bind("3 - Movement", "RunSpeed", 4f,
                 "Running speed (in meters/second) while attached. Battery drains proportionally faster while running.");
+
 
             ConfigCornerSmoothingSpeed = Config.Bind("3 - Movement", "CornerSmoothingSpeed", 3f,
                 "How quickly you lean into a sharp corner, instead of snapping right into the new angle. Lower is smoother/slower; higher is snappier.");
