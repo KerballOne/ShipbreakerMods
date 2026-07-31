@@ -4,6 +4,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
+using UnityEngine;
 
 namespace NewtonianPhysics
 {
@@ -32,6 +33,8 @@ namespace NewtonianPhysics
         internal static ConfigEntry<float> ConfigAssumedPlayerMassKg = null!;
 
         internal static ConfigEntry<float> ConfigFarClipPlane = null!;
+        internal static ConfigEntry<bool> ConfigFlatEarthMode = null!;
+        internal static ConfigEntry<KeyboardShortcut> ConfigSceneDumpKey = null!;
 
         private void Awake()
         {
@@ -85,8 +88,14 @@ namespace NewtonianPhysics
             ConfigAssumedPlayerMassKg = Config.Bind("Recoil", "AssumedPlayerMassKg", 175f,
                 "Your assumed weight (in kg), used to figure out how much of a push's force you feel versus the object.");
 
-            ConfigFarClipPlane = Config.Bind("Rendering", "FarClipPlane", 99999f,
+            ConfigFarClipPlane = Config.Bind("Rendering_Fixes", "FarClipPlane", 99999f,
                 "Vanilla's camera stops drawing anything past 2700m - normally you'd never get far enough for that to matter, but this mod's own MaxVelocityMps/WorkAreaRadiusMultiplier settings make it easy to range past it, so distant structures can flatly vanish once you're beyond that distance. This raises the camera's draw distance so structures stay visible much farther out. Set to 0 to leave vanilla's 2700m as-is.");
+
+            ConfigFlatEarthMode = Config.Bind("Rendering_Fixes", "FlatEarthMode", false,
+                "Earth and Moon are ordinary scene objects placed at a fixed position, meant to look distant/unmoving - vanilla movement never got far enough for that illusion to break, but this mod's own MaxVelocityMps/WorkAreaRadiusMultiplier let you drift far enough that they visibly recede or approach, which doesn't match how something that far away should look. Turn this on to disable the fix and let them recede/approach like vanilla (once you're more than 250m from the work bay). Leave off to keep them pinned at a constant offset from you instead, like real astronomical bodies, while everything else keeps shrinking/growing normally with real distance.");
+
+            ConfigSceneDumpKey = Config.Bind("Debug", "SceneDumpKey", new KeyboardShortcut(KeyCode.F9),
+                "Diagnostic only, unrelated to normal play: press to dump scene info (cameras, background renderers, Earth/Moon candidates) to the BepInEx log, to help figure out how to patch the background objects correctly.");
 
             if (!ConfigEnabled.Value)
             {
@@ -162,6 +171,16 @@ namespace NewtonianPhysics
             }
 
             FarClipTuning.Tick();
+            SceneDiagnostics.Tick();
+        }
+
+        // Runs after Update/animation/physics-interpolation have all applied this frame's final
+        // camera position - BackgroundParallaxTuning reads that position to re-anchor the planets,
+        // so doing it here (rather than in Update) avoids a frame of lag against the camera's
+        // actual rendered position, which was visible as stutter/jitter at high Newtonian speeds.
+        private void LateUpdate()
+        {
+            BackgroundParallaxTuning.Tick();
         }
 
         private void FixedUpdate()
