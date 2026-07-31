@@ -505,52 +505,23 @@ namespace MagBoots
                 Vector3 stepUpOffset = _smoothedNormal * stepUpHeight;
                 float aheadDepth = stepUpHeight + Plugin.ConfigStepDownHeight.Value;
 
-                // Try the full stride first - this is the cheap, common case (one raycast) and stays
-                // correct on its own for flat ground and for a narrow gap/ledge (the ranked search below
-                // still applies if it misses). Only if the far probe itself reveals a significant height
-                // change (up or down), or misses outright, do we widen into the full near-to-far ranked
-                // candidate search - that ranking is only needed to pick out the correct step among several
-                // candidates on a staircase, so there's no reason to pay for 10 raycasts a tick on ordinary
-                // flat ground where the far probe alone already answers it.
                 bool foundSurface;
                 RaycastHit aheadHit = default;
                 float hitCastDistance = 0f;
 
-                // Anchored to feetPosition (the player's real current feet-plane), not _attachPoint -
-                // _attachPoint can already sit ahead of where the player's body actually is (advanced by
-                // a prior tick's committed step), which would otherwise measure this distance from a stale
-                // point instead of from the player. Also not rb.position directly - the player's body
-                // floats PlayerHeight above the feet-plane, so building the origin from rb.position stacked
-                // PlayerHeight on top of StepUpHeight (e.g. 1.5 + 0.75 = 2.25m above the surface by default)
-                // while aheadDepth was only StepUpHeight + StepDownHeight (2.25m) - the cast landed exactly
-                // AT surface height with zero clearance, so it missed constantly from spring-settling
-                // jitter alone, even standing on a dead-flat floor.
-                Vector3 farOrigin = feetPosition + tangentialMove.normalized * maxCastDistance + stepUpOffset;
-                bool farHitValid = TryFindValidSurface(farOrigin, -_smoothedNormal, aheadDepth, maxNormalAngle, out RaycastHit farHit);
-                float farHeight = farHitValid ? Vector3.Dot(farHit.point - feetPosition, _attachNormal) : 0f;
-                bool farIsSignificant = !farHitValid || Mathf.Abs(farHeight) > Plugin.ConfigStepSignificantHeight.Value;
+                // Always run the full near-to-far ranked candidate search, every tick - the single
+                // far-probe fast path (try just the far distance, only widen if it missed or was
+                // significant) was cheaper but meant a tick that happened to land on a misleading nearby
+                // surface never got the benefit of the full ranked comparison against farther candidates.
+                // Paying for the extra raycasts every tick is worth it for the more reliable pick.
+                List<StepCandidate> candidates = FindStepCandidates(feetPosition, tangentialMove, stepUpOffset, aheadDepth, maxNormalAngle, maxCastDistance, clampedPitch);
+                foundSurface = candidates.Count > 0;
 
-                if (farHitValid && !farIsSignificant)
+                if (foundSurface)
                 {
-                    // Ordinary flat-ground case: the far hit is fine as-is, identical to before.
-                    foundSurface = true;
-                    aheadHit = farHit;
-                    hitCastDistance = maxCastDistance;
-                }
-                else
-                {
-                    // Either the far probe missed outright, or it found a real step (up or down) - either
-                    // way, widen to the full candidate list so we land on the correct tread rather than
-                    // whatever the far probe alone happened to hit (or miss).
-                    List<StepCandidate> candidates = FindStepCandidates(feetPosition, tangentialMove, stepUpOffset, aheadDepth, maxNormalAngle, maxCastDistance);
-                    foundSurface = candidates.Count > 0;
-
-                    if (foundSurface)
-                    {
-                        StepCandidate winner = candidates[0];
-                        aheadHit = winner.Hit;
-                        hitCastDistance = winner.CastDistance;
-                    }
+                    StepCandidate winner = candidates[0];
+                    aheadHit = winner.Hit;
+                    hitCastDistance = winner.CastDistance;
                 }
 
                 if (foundSurface)
@@ -638,24 +609,55 @@ namespace MagBoots
 
                         if (Plugin.ConfigDebugPrint.Value)
                         {
-                            Plugin.Log.LogInfo($"MagBoots: ahead-cast hit - moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}, normalAngle={Vector3.Angle(aheadHit.normal, _smoothedNormal)}");
+                            Plugin.Log.LogInfo($"MagBoots: ahead-cast hit - moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}, normalAngle={Vector3.Angle(aheadHit.normal, _smoothedNormal)}, collider={(aheadHit.collider != null ? aheadHit.collider.name : "null")}, hitPoint={aheadHit.point}");
                             Plugin.Log.LogInfo($"MagBoots: attach height eased - currentHeight={currentHeight}, targetHeight={targetHeight}, easedHeight={easedHeight}");
                         }
                     }
                 }
-                else if (Plugin.ConfigDebugPrint.Value)
+                else
                 {
-                    Plugin.Log.LogInfo($"MagBoots: ahead-cast MISSED at all step distances - moveIntensity={moveIntensity}, maxCastDistance={maxCastDistance}, position={rb.position}, dir={-_smoothedNormal}, maxDepth={aheadDepth}");
+                    if (Plugin.ConfigDebugPrint.Value)
+                        Plugin.Log.LogInfo($"MagBoots: ahead-cast MISSED at all step distances - moveIntensity={moveIntensity}, maxCastDistance={maxCastDistance}, position={rb.position}, dir={-_smoothedNormal}, maxDepth={aheadDepth}, moveDir={tangentialMove.normalized}, rawForward={rawForward}, feetPosition={feetPosition}, attachPoint={_attachPoint}, attachNormal={_attachNormal}, velocity={rb.velocity}, speed={rb.velocity.magnitude}");
+
+                    // Recovery fallback: a total miss otherwise leaves _attachPoint (and therefore the
+                    // spring's desiredPos) frozen forever, with no way for it to ever update again - the
+                    // ordinary search above only updates _attachPoint on its own success, so once it starts
+                    // missing, the spring keeps holding rb.position near the OLD surface's height/position
+                    // indefinitely. Since feetPosition is built fresh from rb.position every tick (by
+                    // design, see feetPosition's own comment), a body pinned at the old height means next
+                    // tick's search is cast from that same wrong height too - a closed loop with no exit,
+                    // confirmed from real stuck sessions (see project_magboots memory). This cast is
+                    // deliberately anchored to rb.position directly (not feetPosition/stepUpOffset) and
+                    // uses a generous depth, independent of the normal search's StepUp/StepDown window, so
+                    // it can find literally whatever the player is currently resting on or near - it isn't
+                    // trying to find the NEXT step, only to re-anchor to something real so the ordinary
+                    // search gets a fresh, correct height to search from next tick.
+                    float fallbackDepth = Plugin.ConfigPlayerHeight.Value + Plugin.ConfigStepDownHeight.Value;
+                    bool fallbackHit = TryFindValidSurface(rb.position, -_smoothedNormal, fallbackDepth, maxNormalAngle, out RaycastHit recoveryHit, out string fallbackMissReason);
+
+                    if (Plugin.ConfigDebugPrint.Value)
+                    {
+                        if (fallbackHit)
+                            Plugin.Log.LogInfo($"MagBoots: stuck recovery - re-anchored to collider={(recoveryHit.collider != null ? recoveryHit.collider.name : "null")}, hitPoint={recoveryHit.point}, normal={recoveryHit.normal}, oldAttachPoint={_attachPoint}, oldAttachNormal={_attachNormal}");
+                        else
+                            Plugin.Log.LogInfo($"MagBoots: stuck recovery FAILED - no surface within {fallbackDepth}m straight below rb.position={rb.position}, reason={fallbackMissReason}");
+                    }
+
+                    if (fallbackHit)
+                    {
+                        _attachPoint = recoveryHit.point;
+                        _attachNormal = recoveryHit.normal;
+                        _attachHitTransform = recoveryHit.transform;
+                    }
+                    // else: truly nothing below the player at all even at this generous depth - hold last
+                    // valid attach point/normal, same as before (a genuine full-width gap/edge).
                 }
-                // else: no surface at any step distance, all the way down to the player's own position
-                // (e.g. a genuine full-width gap/edge) - hold the last valid attach point/normal entirely
-                // (per design), so the player doesn't keep sliding forward over open space.
             }
 
             if (Plugin.ConfigDebugPrint.Value)
             {
                 float attachHeight = Vector3.Dot(_attachPoint, _attachNormal);
-                Plugin.Log.LogInfo($"MagBoots: chart - feetPosition={feetPosition}, rbPosition={rb.position}, attachHeight={attachHeight}");
+                Plugin.Log.LogInfo($"MagBoots: chart - feetPosition={feetPosition}, rbPosition={rb.position}, attachHeight={attachHeight}, tangentialMove={tangentialMove}, rawForward={rawForward}, attachPoint={_attachPoint}, attachNormal={_attachNormal}, velocity={rb.velocity}, speed={rb.velocity.magnitude}");
             }
 
             // Crouch: while thrust-down is held, ease the standoff distance toward half its configured
@@ -686,6 +688,11 @@ namespace MagBoots
             Vector3 springForce = Plugin.ConfigSpring.Value * (desiredPos - rb.position)
                                    + Plugin.ConfigDamper.Value * (desiredVelocity - rb.velocity);
             rb.AddForce(springForce, ForceMode.Acceleration);
+
+            if (Plugin.ConfigDebugPrint.Value)
+            {
+                Plugin.Log.LogInfo($"MagBoots: spring - desiredPos={desiredPos}, desiredVelocity={desiredVelocity}, springForce={springForce}, springForceMag={springForce.magnitude}, positionError={(desiredPos - rb.position).magnitude}");
+            }
         }
 
         private static Vector3 ReadTangentialMoveInput(Transform playerTransform, Vector3 normal)
@@ -728,7 +735,7 @@ namespace MagBoots
         // cheap single far-probe already found (or missed looking for) a significant height change, so
         // this cost is paid only on actual steps, not every tick of ordinary flat-ground walking.
         private List<StepCandidate> FindStepCandidates(Vector3 feetPosition, Vector3 tangentialMove, Vector3 stepUpOffset,
-            float aheadDepth, float maxNormalAngle, float maxCastDistance)
+            float aheadDepth, float maxNormalAngle, float maxCastDistance, float clampedPitch)
         {
             var candidates = new List<StepCandidate>();
             var missLog = Plugin.ConfigDebugPrint.Value ? new List<string>() : null;
@@ -741,7 +748,7 @@ namespace MagBoots
                 Vector3 aheadOrigin = feetPosition + moveDir * castDistance + stepUpOffset;
                 if (!TryFindValidSurface(aheadOrigin, -_smoothedNormal, aheadDepth, maxNormalAngle, out RaycastHit candidateHit, out string missReason))
                 {
-                    missLog?.Add($"({castDistance:F3}, {missReason})");
+                    missLog?.Add($"({castDistance:F3}, {missReason}, origin={aheadOrigin})");
                     continue;
                 }
 
@@ -753,18 +760,18 @@ namespace MagBoots
             if (missLog != null && missLog.Count > 0)
                 Plugin.Log.LogInfo("MagBoots: candidate misses (aheadDist, reason): " + string.Join(", ", missLog));
 
-            // If most candidates in this group are a step UP, a single far outlier that overshoots past
-            // the real next tread (e.g. into the gap/underside beyond it, on steep overlapping stairs)
-            // would otherwise win outright under the normal ascending sort - ascending always favors the
-            // lowest/most-negative value, and one stray negative reading beats nine genuine step-up
-            // candidates. Stepping down never has this problem: a real step-down group is never mixed
-            // with step-up candidates, so this flip can't fire there and that working behavior (lowest/
-            // nearest-down wins) is untouched.
-            int positiveCount = 0;
-            foreach (StepCandidate c in candidates)
-                if (c.RoundedHeight > 0f)
-                    positiveCount++;
-            bool isStepUpGroup = positiveCount * 2 > candidates.Count;
+            // Direction is decided by where the player is looking, not by the candidates' own heights -
+            // every height-based rule tried before this (majority-count, nearest-significant,
+            // most-significant, angle, height+distance-weight) eventually got fooled by some nearby
+            // artifact (typically a carpet/floor mesh under or behind the stairs) outscoring the real
+            // tread, because the ranking had to infer intent purely from ambiguous geometry (see
+            // project_magboots_direction_formula_investigation memory for the full history). The player's
+            // own camera pitch is a direct, unambiguous signal of intent instead: looking up or level means
+            // they're heading up a step, looking down means they're heading down one - exactly how a person
+            // naturally tilts their head while climbing real stairs. clampedPitch is positive when looking
+            // DOWN (see its own comment above), so it's negated here to match "up-or-level (>=0) -> step
+            // up" in the more intuitive up-is-positive sense.
+            bool isStepUpGroup = -clampedPitch >= 0f;
 
             if (isStepUpGroup)
             {
@@ -791,11 +798,12 @@ namespace MagBoots
                 rows.Sort((a, b) => a.CastDistance.CompareTo(b.CastDistance));
 
                 var sb = new System.Text.StringBuilder();
-                sb.Append("MagBoots: candidate table (aheadDist, heightAboveFeet): ");
+                sb.Append("MagBoots: candidate table (aheadDist, heightAboveFeet, collider): ");
                 for (int i = 0; i < rows.Count; i++)
                 {
                     bool isWinner = rows[i].CastDistance == candidates[0].CastDistance && rows[i].RoundedHeight == candidates[0].RoundedHeight;
-                    string entry = $"({rows[i].CastDistance:F3}, {rows[i].RoundedHeight:F1})";
+                    string colliderName = rows[i].Hit.collider != null ? rows[i].Hit.collider.name : "null";
+                    string entry = $"({rows[i].CastDistance:F3}, {rows[i].RoundedHeight:F1}, {colliderName})";
                     if (isWinner)
                         entry = $"**{entry}**";
                     sb.Append(entry);
@@ -803,6 +811,7 @@ namespace MagBoots
                         sb.Append(", ");
                 }
                 Plugin.Log.LogInfo(sb.ToString());
+                Plugin.Log.LogInfo($"MagBoots: winner world position - hitPoint={candidates[0].Hit.point}, collider={(candidates[0].Hit.collider != null ? candidates[0].Hit.collider.name : "null")}");
             }
 
             return candidates;
