@@ -8,7 +8,8 @@ Press the toggle key with a ship part below you. If the surface is flat enough a
 
 - Press the toggle key to attach. MagBoots checks straight down from you; if it finds a surface that's flat and big enough, you snap into place.
 - While attached, movement input walks you along the surface instead of free-thrusting. You're held at a fixed distance off the hull.
-- MagBoots checks a stride ahead of you as you walk, so you can climb and descend stairs, ramps, and ledges without losing your footing - stepping down eases you onto the lower surface once you've caught up to it, and stepping up eases your height up gradually rather than yanking you.
+- MagBoots checks a stride ahead of you as you walk, so you can climb and descend stairs, ramps, and ledges without losing your footing. Whether a step counts as "up" or "down" is decided by where you're looking - up or level means up, down means down. Stepping down holds your position until you've caught up, then eases you onto the lower surface; stepping up snaps your height onto the new step right away, then eases your forward movement back in once you've physically caught up to it - so a steep step doesn't feel like teleporting forward and up in the same instant.
+- If MagBoots ever can't find any footing at all for a moment (a bad seam, a tricky transition), it re-anchors to whatever's directly beneath you instead of leaving you stuck - you shouldn't get stranded mid-climb anymore.
 - Look up and down freely — you just can't tip all the way over and stare straight into the deck. Pitching your view further (up or down) also shortens your stride, so tilting your view takes you into smaller, more careful steps; leveling back out returns you to full stride.
 - While attached, looking around is instant and precise instead of the normal zero-g drift - turning your head doesn't keep spinning after you stop moving the mouse/stick, the way it does while free-floating. Goes back to normal zero-g drift the instant you detach.
 - Hold or toggle the run key to move faster - battery drains faster while running too, proportional to the speed increase. Run only works while already attached; it can't be armed ahead of time and never carries over into your next attach.
@@ -45,7 +46,7 @@ The config file is generated on first run at:
 Hardspace Shipbreaker\BepInEx\config\me.kerballone.MagBoots.cfg
 ```
 
-Every setting has a plain-language description in the file itself — open it in any text editor to see what each one does and tweak it to taste. Settings are grouped into sections:
+Every setting has a plain-language description in the file itself — open it in any text editor to see what each one does and tweak it to taste. Settings are named so related ones sort together (e.g. everything about height starts with `Height_`, everything about a settle/catch-up window starts with `Settle_`), and are grouped into sections:
 
 - **1 - General** — toggle key/button, run key/button, debug logging.
 - **2 - Attach** — only the initial attach itself: surface size/angle requirements, standoff height, snap duration.
@@ -57,15 +58,18 @@ Every setting has a plain-language description in the file itself — open it in
 
 A few highlights:
 
-- **AheadCastDistance** is your stride length — how far ahead MagBoots checks for the next foothold while walking.
-- **MoveSpeed** is your walking speed while attached; **RunSpeed** is how fast you go while running.
+- **Distance_MaxStride** is your stride length — how far ahead MagBoots checks for the next foothold while walking.
+- **Speed_Walk** is your walking speed while attached; **Speed_Run** is how fast you go while running. Actual speed may run a touch above whichever one you set.
 - **PlayerHeight** is how far off the surface you float.
-- **MaxStridePitch**/**MinStridePitch** control the pitch-based stride shortening: no effect within MaxStridePitch degrees of level, shrinking to a near-zero stride by MinStridePitch degrees, in either direction (looking up or down).
-- **PreciseRotation** turns on instant, drift-free looking while attached (on by default); **PreciseRotationSensitivity** is a separate multiplier just for that mode, since instant look can feel faster or slower than the drifting version at the same sensitivity.
-- **StepDownHeight** is how far below your feet MagBoots will look for a surface to attach to or step down onto.
-- **StepUpHeight** is how far above your current footing MagBoots will look for a surface to step up onto while already attached.
-- **MaxNormalAngle** is how steep a surface can be for most footholds; **MaxNormalFwdAngle** is a looser limit that only applies to the direction you're actually facing, so you can walk up steeper ramps you're heading toward.
+- **Pitch_MaxStride**/**Pitch_MinStride** control the pitch-based stride shortening: no effect within Pitch_MaxStride degrees of level, shrinking to a near-zero stride by Pitch_MinStride degrees, in either direction (looking up or down).
+- **Rotation_Precise** turns on instant, drift-free looking while attached (on by default); **Rotation_PreciseSensitivity** is a separate multiplier just for that mode, since instant look can feel faster or slower than the drifting version at the same sensitivity.
+- **Height_StepDown** is how far below your feet MagBoots will look for a surface to attach to or step down onto.
+- **Height_StepUp** is how far above your current footing MagBoots will look for a surface to step up onto while already attached.
+- **Settle_StepDown**/**Settle_StepUp** control how closely you need to catch up to a detected step (as a fraction of your stride) before MagBoots finishes the height (step down) or forward movement (step up) adjustment; **Timeout_Step** is the maximum wait either way, so you're never stuck waiting even if you never fully catch up.
+- **Angle_MaxNormal** is how steep a surface can be for most footholds; **Angle_MaxNormalFwd** is a looser limit that only applies to the direction you're actually facing, so you can walk up steeper ramps you're heading toward.
 - **BreakawayVelocity** is how hard you need to be hit before mag boots let go instead of holding on.
+
+The config file also reloads live - edit and save it while the game is running and your changes apply immediately, no restart needed.
 
 ## Installation
 

@@ -40,11 +40,11 @@ namespace MagBoots
         // Splits a detected step into two phases instead of one combined diagonal move: _attachPoint holds
         // still (no further lateral advance, no new ahead-cast) the instant a real step is detected, and
         // the vertical/normal correction only applies once the player's ACTUAL position has physically
-        // caught up to that held point (via the standoff spring), or StepTimeout elapses, whichever comes
+        // caught up to that held point (via the standoff spring), or Timeout_Step elapses, whichever comes
         // first - rather than applying the lateral move and a large vertical drop in the same tick.
         // Without this split, a steep staircase combined a full lateral stride with a large vertical drop
         // every tick, compounding downward velocity until it exceeded BreakawayVelocity - the fixed
-        // horizontal AheadCastDistance stride translates into a much bigger vertical change per tick on
+        // horizontal Distance_MaxStride stride translates into a much bigger vertical change per tick on
         // steep stairs than on shallow ones, since it doesn't account for slope. Holding the anchor fixed
         // (rather than continuing to advance it every tick with no raycast validation at all) also avoids
         // it silently racing ahead of the player and skipping over an intermediate step or ledge.
@@ -57,7 +57,7 @@ namespace MagBoots
         // Mirror of the step-down pending fields above, but inverted: a significant step UP snaps the
         // anchor's height/normal onto the new surface immediately (no risk of compounding downward
         // velocity the way a step down has), then HOLDS lateral advance until the player's body has
-        // physically caught up to the new standoff position (or StepUpTimeout elapses) before resuming
+        // physically caught up to the new standoff position (or Timeout_Step elapses) before resuming
         // forward movement. Without this, a steep step up combined a full lateral stride with an instant
         // vertical snap in the same tick, which visually looked like teleporting forward and up onto the
         // tread rather than climbing it.
@@ -165,7 +165,7 @@ namespace MagBoots
 
             // "How far below your feet mag boots will look for something to attach to" is measured from
             // the viewpoint down through the player's full standing height (PlayerHeight) plus the
-            // step-down allowance (StepDownHeight) - not just StepDownHeight alone, since the viewpoint
+            // step-down allowance (Height_StepDown) - not just Height_StepDown alone, since the viewpoint
             // itself sits PlayerHeight above where the feet would actually land.
             float castDistance = Plugin.ConfigPlayerHeight.Value + Plugin.ConfigStepDownHeight.Value;
 
@@ -297,7 +297,7 @@ namespace MagBoots
         // second and multiplier of 10, that's equivalent to 10 seconds of normal attached drain, so
         // frequent attach/detach cycling isn't a free way to dodge battery cost. While actually attached,
         // standing still (no tangential move input) drains at only IdlePowerMultiplier; while running,
-        // drain scales proportionally with how much faster RunSpeed is than MoveSpeed. Both flags are
+        // drain scales proportionally with how much faster Speed_Run is than Speed_Walk. Both flags are
         // captured from the previous tick's UpdateAttached rather than recomputed here, since tangential
         // input is only read inside that method.
         private bool _lastTangentialMoveWasActive;
@@ -374,7 +374,7 @@ namespace MagBoots
             // Re-orient roll/yaw so "down" stays aligned with the smoothed normal, without touching
             // pitch: rebuild a target rotation from the player's own *flattened* forward (its pitch
             // component discarded) plus the smoothed normal as up, then re-apply the original pitch
-            // (clamped so the player can't tip past ConfigMaxLookDownAngle toward the surface) on top.
+            // (clamped so the player can't tip past Pitch_MaxLookDown toward the surface) on top.
             // This way pitch (torque already applied by the game's own OrientationController) is fully
             // preserved except for the clamp, and only roll/yaw drift relative to the surface - e.g. from
             // walking onto a new face - gets corrected.
@@ -391,7 +391,7 @@ namespace MagBoots
                 flatForward.Normalize();
                 Vector3 rightAxis = Vector3.Cross(_smoothedNormal, flatForward).normalized;
                 float pitchAngle = Vector3.SignedAngle(flatForward, rawForward, rightAxis);
-                // Only the look-down side was ever clamped (ConfigMaxLookDownAngle) - looking up had no
+                // Only the look-down side was ever clamped (Pitch_MaxLookDown) - looking up had no
                 // limit at all, and as pitch approaches +/-90 degrees rawForward becomes nearly parallel
                 // to _smoothedNormal, degenerating flatForward's direction (and therefore rightAxis) into
                 // near-arbitrary noise. That instability could spin the player out when looking straight
@@ -417,11 +417,11 @@ namespace MagBoots
             // than always using the full configured distance regardless of where they're looking - pitching
             // down toward steep stairs (or up, symmetrically) naturally slows/shortens the stride, similar
             // to how a person takes smaller, more careful steps while looking down at uneven ground. No
-            // change within +/-MaxStridePitch degrees of level (ordinary head movement while walking
-            // shouldn't affect anything); falls off linearly toward a 0.01m floor at +/-MinStridePitch
+            // change within +/-Pitch_MaxStride degrees of level (ordinary head movement while walking
+            // shouldn't affect anything); falls off linearly toward a 0.01m floor at +/-Pitch_MinStride
             // degrees - never all the way to a literal 0m stride, since there's no real benefit to a search
             // distance that short and it would just stall the search entirely. The floor is an absolute
-            // distance (not a fraction of AheadCastDistance), so it stays meaningful even if that's
+            // distance (not a fraction of Distance_MaxStride), so it stays meaningful even if that's
             // reconfigured away from its default.
             const float MinPitchStrideDistance = 0.01f;
             float pitchMagnitude = Mathf.Abs(clampedPitch);
@@ -445,8 +445,8 @@ namespace MagBoots
             // While a step's vertical correction is pending, _attachPoint holds still (no further lateral
             // advance, no new ahead-cast) - the queued height/normal snap applies once the player's ACTUAL
             // position has physically caught up to that held point (the standoff spring pulling them
-            // there), or once StepTimeout elapses, whichever happens first. The timeout exists because the
-            // catch-up distance is measured as a fraction of AheadCastDistance (not a fixed meters value,
+            // there), or once Timeout_Step elapses, whichever happens first. The timeout exists because the
+            // catch-up distance is measured as a fraction of Distance_MaxStride (not a fixed meters value,
             // so it scales with stride length), and continuous movement can keep that fraction from ever
             // fully closing - the timeout guarantees the player is never stuck waiting indefinitely.
             if (_pendingStepCorrection)
@@ -476,7 +476,7 @@ namespace MagBoots
             }
             // Mirror of the step-down pending block above, but height/normal already snapped the instant
             // the step up was detected (see below) - what's held here is LATERAL advance, released once
-            // the player's body has physically caught up to the new standoff height (or StepTimeout
+            // the player's body has physically caught up to the new standoff height (or Timeout_Step
             // elapses), so a steep step up doesn't look like teleporting forward and up in the same tick.
             else if (_pendingStepUpCorrection)
             {
@@ -486,7 +486,7 @@ namespace MagBoots
                 // above the anchor (not the anchor/surface point itself - rb.position always sits roughly
                 // PlayerHeight above the surface, so comparing it directly against _attachPoint always
                 // showed a ~PlayerHeight gap that could never settle, making every step up wait out the
-                // full StepTimeout regardless of how quickly the player actually caught up). The tangential/
+                // full Timeout_Step regardless of how quickly the player actually caught up). The tangential/
                 // lateral component is expected and irrelevant here, only whether the player has physically
                 // risen to meet the new standoff position.
                 Vector3 standoffTarget = _attachPoint + _attachNormal * (Plugin.ConfigPlayerHeight.Value * _standoffFraction);
@@ -509,7 +509,7 @@ namespace MagBoots
             else if (!isReorienting && tangentialMove.sqrMagnitude > 0.0001f)
             {
                 // Scale the max cast distance down for a gentle analog push (e.g. a controller stick
-                // barely tilted) rather than always probing the full AheadCastDistance regardless of how
+                // barely tilted) rather than always probing the full Distance_MaxStride regardless of how
                 // fast the player is actually moving - magnitude is clamped to 1 since a full diagonal
                 // push can exceed unit length (two unit axis vectors summed). Also applies the same
                 // pitch-based distance computed above (pitchAdjustedCastDistance), so a shortened-by-pitch
@@ -522,8 +522,8 @@ namespace MagBoots
                 if (Plugin.ConfigDebugPrint.Value)
                     Plugin.Log.LogInfo($"MagBoots: pitch stride scale - clampedPitch={clampedPitch}, pitchAdjustedCastDistance={pitchAdjustedCastDistance}, maxCastDistance={maxCastDistance}");
 
-                // A foothold within FwdSweepAngle of where the player is facing gets the looser
-                // MaxNormalFwdAngle/StepUpFwdHeight instead of MaxNormalAngle/StepUpHeight, so you can
+                // A foothold within Angle_FwdSweep of where the player is facing gets the looser
+                // Angle_MaxNormalFwd/Height_StepUpFwd instead of Angle_MaxNormal/Height_StepUp, so you can
                 // walk up a steeper ramp or step up onto a taller ledge you're actually heading toward;
                 // anything off to the side or behind still needs the stricter values, which makes it
                 // harder to accidentally step up onto something you didn't mean to. Reuses flatForward
@@ -539,10 +539,10 @@ namespace MagBoots
                 float stepUpHeight = inFwdSweep ? Plugin.ConfigStepUpFwdHeight.Value : Plugin.ConfigStepUpHeight.Value;
 
                 // The probe starts stepUpHeight above the current feet-plane (so a slightly higher step
-                // can still be found) and casts down through stepUpHeight + StepDownHeight total, reaching
+                // can still be found) and casts down through stepUpHeight + Height_StepDown total, reaching
                 // that far below the current feet-plane too - one raycast covers both a step up (within
-                // stepUpHeight) and a step down (within StepDownHeight) in a single pass. Stepping down
-                // always uses the same StepDownHeight regardless of direction - only the step-up side
+                // stepUpHeight) and a step down (within Height_StepDown) in a single pass. Stepping down
+                // always uses the same Height_StepDown regardless of direction - only the step-up side
                 // splits by forward vs. non-forward.
                 Vector3 stepUpOffset = _smoothedNormal * stepUpHeight;
                 float aheadDepth = stepUpHeight + Plugin.ConfigStepDownHeight.Value;
@@ -571,7 +571,7 @@ namespace MagBoots
                     // Advance the anchor only as far as the successful probe's step distance, not the
                     // full requested stride - so a shortened step (from reeling in near a ledge) actually
                     // moves the player a correspondingly shorter distance this tick, rather than the full
-                    // MoveSpeed-paced amount regardless of how close the edge turned out to be. Scaled as
+                    // Speed_Walk-paced amount regardless of how close the edge turned out to be. Scaled as
                     // a fraction of the full stride (hitCastDistance / maxCastDistance) so a step reeled
                     // in to e.g. half the max distance also only advances the anchor half as far.
                     float strideFraction = maxCastDistance > 0.0001f ? hitCastDistance / maxCastDistance : 0f;
@@ -580,7 +580,7 @@ namespace MagBoots
                     // Advance from feetPosition (the player's real current position), not _attachPoint -
                     // _attachPoint never leads the player laterally at all now; it's always within one
                     // tick's stride of where the body actually is. This used to cap effective walking speed
-                    // well below MoveSpeed/RunSpeed (~13% observed), because the spring/damper could only
+                    // well below Speed_Walk/Speed_Run (~13% observed), because the spring/damper could only
                     // sustain nonzero velocity by maintaining a standing lag between desiredPos and the
                     // real position - zero lead meant zero lag, which meant no sustained speed. That's fixed
                     // separately now: the damper's target velocity is fed forward from _attachPoint's own
@@ -602,7 +602,7 @@ namespace MagBoots
                     // to worry about), but HOLD lateral advance until the player's body catches up - without
                     // this, a steep step up combined an instant vertical snap with a full lateral stride in
                     // the same tick, which looked like teleporting forward and up onto the tread. Anything
-                    // below StepSignificantHeight in either direction falls through to the ordinary eased
+                    // below Height_StepSignificant in either direction falls through to the ordinary eased
                     // branch, where lateral is immediate and height/plane transition is rate-limited.
                     if (signedHeightDeviation < -Plugin.ConfigStepSignificantHeight.Value)
                     {
@@ -631,7 +631,7 @@ namespace MagBoots
                         // but hold lateral advance at the CURRENT position (not candidatePoint) so the
                         // player doesn't also jump forward the full stride in the same tick. Lateral catch-up
                         // resumes once the player's body has physically risen to meet the new standoff
-                        // height, or StepTimeout elapses - handled in the pending-state block above.
+                        // height, or Timeout_Step elapses - handled in the pending-state block above.
                         Vector3 currentLateral = feetPosition - Vector3.Dot(feetPosition, aheadHit.normal) * aheadHit.normal;
                         float targetHeightUp = Vector3.Dot(aheadHit.point, aheadHit.normal);
                         _attachPoint = currentLateral + targetHeightUp * aheadHit.normal;
@@ -660,7 +660,7 @@ namespace MagBoots
                         // rather than snapping to it in the same tick - this is what actually moves gradually
                         // now, not a separate desiredPos layer. _attachPoint is still what the spring's
                         // desiredPos reads from every tick, so a large one-tick jump here (e.g. a floor
-                        // seam/small ledge just under StepSignificantHeight, or transitioning onto a
+                        // seam/small ledge just under Height_StepSignificant, or transitioning onto a
                         // differently-angled surface) still yanked the spring hard even though it wasn't
                         // "significant" enough to defer through the step-down path. Lateral position (already
                         // eased via the bounded fullStride advance above) is applied immediately, same as

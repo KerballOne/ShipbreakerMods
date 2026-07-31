@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.IO;
 using BBI.Unity.Game;
 using BepInEx;
 using BepInEx.Configuration;
@@ -147,35 +148,35 @@ namespace MagBoots
             ConfigEnabled = Config.Bind("1 - General", "Enabled", true,
                 "Turns the mod on or off (requires a restart).");
 
-            ConfigToggleKey = Config.Bind("1 - General", "ToggleKey", new KeyboardShortcut(KeyCode.M),
-                "Keyboard key to attach/detach mag boots.");
-
-            ConfigToggleButton = Config.Bind("1 - General", "ControllerToggleButton", InputControlType.DPadDown,
-                "Controller button to attach/detach mag boots.");
-
             ConfigDebugPrint = Config.Bind("1 - General", "DebugPrint", false,
                 "Prints extra troubleshooting info to the log. Leave off unless asked to turn it on.");
 
-            ConfigRunToggleKey = Config.Bind("1 - General", "RunToggleKey", new KeyboardShortcut(KeyCode.LeftShift),
-                "Keyboard key to run while attached.");
+            ConfigToggleButton = Config.Bind("1 - General", "PowerToggle_ControllerButton", InputControlType.DPadDown,
+                "Controller button to attach/detach mag boots.");
+
+            ConfigToggleKey = Config.Bind("1 - General", "PowerToggle_Key", new KeyboardShortcut(KeyCode.M),
+                "Keyboard key to attach/detach mag boots.");
+
+            ConfigRunActivationMode = Config.Bind("1 - General", "Run_ActivationMode", RunActivationMode.Toggle,
+                "How the run key/button works: Toggle means press once to start running and press again to stop; Hold means you only run while it's held down.");
 
             // Bound as a string rather than a second ConfigEntry<InputControlType> - see ParseRunControllerButton
             // for why (BepInEx would otherwise print the same huge enum value list a second time).
-            ConfigRunToggleButton = Config.Bind("1 - General", "RunControllerToggleButton", InputControlType.LeftStickButton.ToString(),
-                "Controller button to run while attached. Use the same names as ControllerToggleButton above (e.g. LeftStickButton).");
+            ConfigRunToggleButton = Config.Bind("1 - General", "RunToggle_ControllerButton", InputControlType.LeftStickButton.ToString(),
+                "Controller button to run while attached. Use the same names as PowerToggle_ControllerButton above (e.g. LeftStickButton).");
 
-            ConfigRunActivationMode = Config.Bind("1 - General", "RunActivationMode", RunActivationMode.Toggle,
-                "How the run key/button works: Toggle means press once to start running and press again to stop; Hold means you only run while it's held down.");
+            ConfigRunToggleKey = Config.Bind("1 - General", "RunToggle_Key", new KeyboardShortcut(KeyCode.LeftShift),
+                "Keyboard key to run while attached.");
 
             // Only settings governing the initial attach itself (the toggle-key raycast + snap tween into
-            // place) - PlayerHeight and MaxNormalAngle are ALSO read continuously afterward (the standoff
+            // place) - PlayerHeight and Angle_MaxNormal are ALSO read continuously afterward (the standoff
             // distance while walking, and the default non-forward-sweep surface tolerance during step
             // search, respectively), but this is their primary/originating purpose, so they live here.
+            ConfigMaxNormalAngle = Config.Bind("2 - Attach", "Angle_MaxNormal", 20f,
+                "How tilted a surface can be (in degrees) and still count as \"flat enough\" to attach to. Also used as the default (non-forward-facing) tolerance while walking - see Angle_MaxNormalFwd in Steps.");
+
             ConfigMinFaceArea = Config.Bind("2 - Attach", "MinFaceArea", 3f,
                 "How big a surface needs to be (in square meters) before you can attach to it. Keeps you from sticking to tiny brackets and pipes.");
-
-            ConfigMaxNormalAngle = Config.Bind("2 - Attach", "MaxNormalAngle", 20f,
-                "How tilted a surface can be (in degrees) and still count as \"flat enough\" to attach to. Also used as the default (non-forward-facing) tolerance while walking - see MaxNormalFwdAngle in Steps.");
 
             ConfigPlayerHeight = Config.Bind("2 - Attach", "PlayerHeight", 1.5f,
                 "How far off the surface (in meters) you float once attached. Also the ongoing standoff distance used every tick while walking, not just at the initial attach.");
@@ -185,83 +186,83 @@ namespace MagBoots
 
             // Only settings for ordinary walking/orientation to your next foothold - NOT step-specific
             // (see "4 - Steps" for detecting/handling an actual up or down transition).
-            ConfigAheadCastDistance = Config.Bind("3 - Movement", "AheadCastDistance", 0.85f,
+            ConfigAheadCastDistance = Config.Bind("3 - Movement", "Distance_MaxStride", 0.85f,
                 "Your stride length while walking (in meters) - how far ahead mag boots checks for the next foothold. Also the base search radius every step-candidate raycast is built from - see Steps.");
 
-            ConfigMoveSpeed = Config.Bind("3 - Movement", "MoveSpeed", 2f,
-                "Walking speed (in meters/second) while attached.");
-
-            ConfigRunSpeed = Config.Bind("3 - Movement", "RunSpeed", 4f,
-                "Running speed (in meters/second) while attached. Battery drains proportionally faster while running.");
-
-            ConfigCornerSmoothingSpeed = Config.Bind("3 - Movement", "CornerSmoothingSpeed", 3f,
-                "How quickly you lean into a sharp corner, instead of snapping right into the new angle. Lower is smoother/slower; higher is snappier.");
-
-            ConfigReorientSettledAngle = Config.Bind("3 - Movement", "ReorientSettledAngle", 1f,
-                "How closely you need to finish leaning into a new angle before taking the next step. Lower is stricter (smoother, but pauses more); higher is looser.");
-
-            ConfigMaxLookDownAngle = Config.Bind("3 - Movement", "MaxLookDownAngle", 45f,
+            ConfigMaxLookDownAngle = Config.Bind("3 - Movement", "Pitch_MaxLookDown", 45f,
                 "How far you can look down toward the surface before your view is stopped, so you can't tip over and stare at your own feet.");
 
-            ConfigMaxStridePitch = Config.Bind("3 - Movement", "MaxStridePitch", 10f,
+            ConfigMaxStridePitch = Config.Bind("3 - Movement", "Pitch_MaxStride", 10f,
                 "How far you can pitch your view up or down (in degrees) before your stride starts shortening. Below this, looking around doesn't affect your stride at all.");
 
-            ConfigMinStridePitch = Config.Bind("3 - Movement", "MinStridePitch", 60f,
-                "The pitch angle (in degrees, up or down) at which your stride shrinks to its minimum (~0.01m, effectively stopped). Between MaxStridePitch and this, stride shortens gradually - pitching your view lets you take smaller, more careful steps on steep stairs.");
+            ConfigMinStridePitch = Config.Bind("3 - Movement", "Pitch_MinStride", 60f,
+                "The pitch angle (in degrees, up or down) at which your stride shrinks to its minimum (~0.01m, effectively stopped). Between Pitch_MaxStride and this, stride shortens gradually - pitching your view lets you take smaller, more careful steps on steep stairs.");
 
-            ConfigPreciseRotation = Config.Bind("3 - Movement", "PreciseRotation", true,
+            ConfigCornerSmoothingSpeed = Config.Bind("3 - Movement", "Rate_CornerSmoothing", 3f,
+                "How quickly you lean into a sharp corner, instead of snapping right into the new angle. Lower is smoother/slower; higher is snappier.");
+
+            ConfigPreciseRotation = Config.Bind("3 - Movement", "Rotation_Precise", true,
                 "While attached, look/turn instantly instead of using the game's normal zero-g drift/momentum - only affects yaw and pitch (roll doesn't apply while grounded). Turns off automatically the moment you detach.");
 
-            ConfigPreciseRotationSensitivity = Config.Bind("3 - Movement", "PreciseRotationSensitivity", 0.25f,
-                "Multiplier on top of your normal mouse/controller sensitivity settings, applied only while PreciseRotation is active. Instant look can feel faster or slower than the drifting version at the same sensitivity - adjust this to taste.");
+            ConfigPreciseRotationSensitivity = Config.Bind("3 - Movement", "Rotation_PreciseSensitivity", 0.25f,
+                "Multiplier on top of your normal mouse/controller sensitivity settings, applied only while Rotation_Precise is active. Instant look can feel faster or slower than the drifting version at the same sensitivity - adjust this to taste.");
+
+            ConfigReorientSettledAngle = Config.Bind("3 - Movement", "Settle_ReorientAngle", 1f,
+                "How closely you need to finish leaning into a new angle before taking the next step. Lower is stricter (smoother, but pauses more); higher is looser.");
+
+            ConfigMoveSpeed = Config.Bind("3 - Movement", "Speed_Walk", 2f,
+                "Walking speed (in meters/second) while attached. Actual speed may run a bit higher than this target.");
+
+            ConfigRunSpeed = Config.Bind("3 - Movement", "Speed_Run", 4f,
+                "Running speed (in meters/second) while attached. Actual speed may run a bit higher than this target. Battery drains proportionally faster while running.");
 
             // Only settings for detecting and handling an actual step up or down transition while walking.
-            ConfigStepDownHeight = Config.Bind("4 - Steps", "StepDownHeight", 1.5f,
+            ConfigFwdSweepAngle = Config.Bind("4 - Steps", "Angle_FwdSweep", 60f,
+                "How wide a cone in front of you (in degrees) counts as \"forward\" for Angle_MaxNormalFwd and Height_StepUpFwd. 60 means 30 degrees to either side of dead ahead.");
+
+            ConfigMaxNormalFwdAngle = Config.Bind("4 - Steps", "Angle_MaxNormalFwd", 50f,
+                "A looser version of Angle_MaxNormal that only applies to footholds within Angle_FwdSweep in front of you - lets you walk up steeper ramps and inclines you're facing, while footholds off to the side or behind you still use the stricter Angle_MaxNormal.");
+
+            ConfigStepDownHeight = Config.Bind("4 - Steps", "Height_StepDown", 1.5f,
                 "How far below your feet (in meters) mag boots will look for something to attach to.");
 
-            ConfigStepSignificantHeight = Config.Bind("4 - Steps", "StepSignificantHeight", 0.15f,
-                "How big a height change (in meters) counts as a real step up or down versus just uneven flat ground. A real step DOWN past this waits for StepLateralSettled before adjusting your height, which keeps steep stairs from building up speed and knocking you loose. A real step UP past this instead eases in smoothly at AttachHeightFollowSpeed right away - going up doesn't have the same runaway-speed risk going down does.");
-
-            ConfigAttachHeightFollowSpeed = Config.Bind("4 - Steps", "AttachHeightFollowSpeed", 2f,
+            ConfigAttachHeightFollowSpeed = Config.Bind("4 - Steps", "Height_StepFollowVelocity", 2f,
                 "How fast (in meters/second) mag boots eases your anchor's height toward a new surface for ordinary (non-significant) height changes, instead of snapping to it instantly. Keeps small floor seams/ledges or a change in surface angle from yanking you via the standoff spring. Lower is gentler; higher is snappier.");
 
-            ConfigStepLateralSettled = Config.Bind("4 - Steps", "StepLateralSettled", 0.3f,
-                "Only applies to stepping DOWN. How closely you need to catch up to a detected step before mag boots adjusts your height to match it, as a fraction of your stride length (AheadCastDistance). 0.3 means within 30% of a stride. Moving forward isn't held up, only the up/down adjustment - this keeps steep stairs from feeling like a fast slide. Lower is stricter (closer catch-up needed); higher is looser.");
+            ConfigStepSignificantHeight = Config.Bind("4 - Steps", "Height_StepSignificant", 0.15f,
+                "How big a height change (in meters) counts as a real step up or down versus just uneven flat ground. A real step DOWN past this waits for Settle_StepDown before adjusting your height, which keeps steep stairs from building up speed and knocking you loose. A real step UP past this instead eases in smoothly at Height_StepFollowVelocity right away - going up doesn't have the same runaway-speed risk going down does.");
 
-            ConfigStepUpSettled = Config.Bind("4 - Steps", "StepUpSettled", 0.1f,
-                "Only applies to stepping UP. How closely your height needs to catch up to a detected step before mag boots resumes forward movement, as a fraction of your stride length (AheadCastDistance). 0.3 means within 30% of a stride. Height snaps immediately on a step up, but forward movement is held until this settles (or StepTimeout elapses) - this keeps a steep step up from looking like teleporting forward and up in the same tick. Lower is stricter (closer catch-up needed, more delay before moving again); higher is looser (moves again sooner, especially useful on very steep stairs where catching up in height takes longer).");
-
-            ConfigStepTimeout = Config.Bind("4 - Steps", "StepTimeout", 0.5f,
-                "Only applies to stepping DOWN. Maximum time (in seconds) mag boots will wait for you to catch up to a detected step before adjusting your height anyway. Prevents ever getting stuck waiting, even if StepLateralSettled is never reached (e.g. while continuously running).");
-
-            ConfigStepUpHeight = Config.Bind("4 - Steps", "StepUpHeight", 0.25f,
+            ConfigStepUpHeight = Config.Bind("4 - Steps", "Height_StepUp", 0.25f,
                 "How far above your feet (in meters) mag boots will look for something to step up onto while already attached, for footholds off to the side or behind you. Lower makes it harder to accidentally step up onto something you didn't mean to.");
 
-            ConfigStepUpFwdHeight = Config.Bind("4 - Steps", "StepUpFwdHeight", 0.95f,
-                "A taller version of StepUpHeight that only applies to footholds within FwdSweepAngle in front of you - lets you step up onto taller ledges and obstacles you're actually walking toward, while things off to the side or behind you still use the shorter StepUpHeight.");
+            ConfigStepUpFwdHeight = Config.Bind("4 - Steps", "Height_StepUpFwd", 0.95f,
+                "A taller version of Height_StepUp that only applies to footholds within Angle_FwdSweep in front of you - lets you step up onto taller ledges and obstacles you're actually walking toward, while things off to the side or behind you still use the shorter Height_StepUp.");
 
-            ConfigMaxNormalFwdAngle = Config.Bind("4 - Steps", "MaxNormalFwdAngle", 50f,
-                "A looser version of MaxNormalAngle that only applies to footholds within FwdSweepAngle in front of you - lets you walk up steeper ramps and inclines you're facing, while footholds off to the side or behind you still use the stricter MaxNormalAngle.");
+            ConfigStepLateralSettled = Config.Bind("4 - Steps", "Settle_StepDown", 0.1f,
+                "Only applies to stepping DOWN. How closely you need to catch up to a detected step before mag boots adjusts your height to match it, as a fraction of your stride length (Distance_MaxStride). 0.1 means within 10% of a stride. Moving forward isn't held up, only the up/down adjustment - this keeps steep stairs from feeling like a fast slide. Lower is stricter (closer catch-up needed); higher is looser.");
 
-            ConfigFwdSweepAngle = Config.Bind("4 - Steps", "FwdSweepAngle", 60f,
-                "How wide a cone in front of you (in degrees) counts as \"forward\" for MaxNormalFwdAngle and StepUpFwdHeight. 60 means 30 degrees to either side of dead ahead.");
+            ConfigStepUpSettled = Config.Bind("4 - Steps", "Settle_StepUp", 0.1f,
+                "Only applies to stepping UP. How closely your height needs to catch up to a detected step before mag boots resumes forward movement, as a fraction of your stride length (Distance_MaxStride). 0.1 means within 10% of a stride. Height snaps immediately on a step up, but forward movement is held until this settles (or Timeout_Step elapses) - this keeps a steep step up from looking like teleporting forward and up in the same tick. Lower is stricter (closer catch-up needed, more delay before moving again); higher is looser (moves again sooner, especially useful on very steep stairs where catching up in height takes longer).");
 
-            ConfigSpring = Config.Bind("5 - Physics", "Spring", 200f,
-                "How firmly mag boots pull you back to the surface if you drift away. Higher is snappier.");
+            ConfigStepTimeout = Config.Bind("4 - Steps", "Timeout_Step", 0.3f,
+                "Applies to both stepping DOWN and stepping UP. Maximum time (in seconds) mag boots will wait for you to catch up to a detected step before adjusting your position anyway (height for a step down, forward movement for a step up). Prevents ever getting stuck waiting, even if Settle_StepDown/Settle_StepUp is never reached (e.g. while continuously running).");
+
+            ConfigBreakawayVelocity = Config.Bind("5 - Physics", "BreakawayVelocity", 12f,
+                "How hard you need to be hit (in meters/second) before mag boots let go instead of holding on. Set very high to basically never let go.");
 
             ConfigDamper = Config.Bind("5 - Physics", "Damper", 30f,
                 "Smooths out that pull-back so it doesn't bounce or overshoot. Higher is calmer.");
 
-            ConfigBreakawayVelocity = Config.Bind("5 - Physics", "BreakawayVelocity", 10f,
-                "How hard you need to be hit (in meters/second) before mag boots let go instead of holding on. Set very high to basically never let go.");
+            ConfigSpring = Config.Bind("5 - Physics", "Spring", 200f,
+                "How firmly mag boots pull you back to the surface if you drift away. Higher is snappier.");
 
-            ConfigBatteryCapacityMinutes = Config.Bind("6 - Battery", "BatteryCapacityMinutes", 5f,
+            ConfigBatteryCapacityMinutes = Config.Bind("6 - Battery", "CapacityMinutes", 5f,
                 "How many minutes of attached time you get per shift before the battery runs out. Refills at the start of every shift. Set to 0 for unlimited.");
 
-            ConfigIdlePowerMultiplier = Config.Bind("6 - Battery", "IdlePowerMultiplier", 0.1f,
+            ConfigIdlePowerMultiplier = Config.Bind("6 - Battery", "PowerMultiplier_Idle", 0.1f,
                 "How much battery you use while standing still and attached, compared to walking. 0.1 means standing still uses a tenth as much power as moving. 1 means standing still costs the same as moving.");
 
-            ConfigLockingPowerMultiplier = Config.Bind("6 - Battery", "LockingPowerMultiplier", 10f,
+            ConfigLockingPowerMultiplier = Config.Bind("6 - Battery", "PowerMultiplier_Locking", 10f,
                 "How much battery the initial snap-into-place takes, compared to normal attached use. At the default SnapDuration of 1 second and a multiplier of 10, snapping into place costs as much battery as 10 seconds of normal attached time.");
 
             ConfigBatteryDisplayMode = Config.Bind("7 - HUD", "BatteryDisplayMode", BatteryDisplayMode.Gauge,
@@ -275,7 +276,7 @@ namespace MagBoots
                 "Size of the on-screen hint. 1 is the default size, 2 is twice as big, 0.5 is half as big.");
 
             ConfigShowStride = Config.Bind("7 - HUD", "ShowStride", false,
-                "Shows your current stride distance (in meters) next to the hint, which shortens as you pitch your view up or down (see MaxStridePitch/MinStridePitch).");
+                "Shows your current stride distance (in meters) next to the hint, which shortens as you pitch your view up or down (see Pitch_MaxStride/Pitch_MinStride).");
 
             if (!ConfigEnabled.Value)
             {
@@ -287,12 +288,49 @@ namespace MagBoots
             Main.EventSystem.AddHandler<GameStateChangedEvent>(OnGameStateChanged);
 
             new Harmony(PluginInfo.PLUGIN_GUID).PatchAll();
+            SetUpConfigFileWatcher();
             Log.LogInfo("MagBoots loaded. Press " + ConfigToggleKey.Value + " to attach/detach mag boots.");
+        }
+
+        private FileSystemWatcher? _configFileWatcher;
+        // Plain bool, not a Unity Time-based timestamp - the watcher's Changed event fires on a
+        // background thread, and Unity's Time API can only be touched from the main thread. Update()
+        // (main thread) polls this flag and does its own short real-world delay via a frame counter
+        // instead, both to marshal safely and to debounce multiple rapid Changed events from one save.
+        private volatile bool _configReloadPending;
+        private int _configReloadDebounceFramesLeft;
+
+        // BepInEx's ConfigFile never reloads itself when the .cfg is hand-edited on disk (confirmed: no
+        // built-in watcher in this BepInEx version, only a manual Reload() method) - without this, every
+        // tuning change required a full game restart to take effect. FileSystemWatcher is OS-level file
+        // notification (no polling, no per-tick cost), so this is free at runtime except for the rare
+        // moment an edit is actually saved.
+        private void SetUpConfigFileWatcher()
+        {
+            string directory = Path.GetDirectoryName(Config.ConfigFilePath)!;
+            string fileName = Path.GetFileName(Config.ConfigFilePath);
+
+            _configFileWatcher = new FileSystemWatcher(directory, fileName)
+            {
+                NotifyFilter = NotifyFilters.LastWrite,
+                EnableRaisingEvents = true,
+            };
+            _configFileWatcher.Changed += OnConfigFileChangedOnDisk;
+        }
+
+        // Runs on a background thread (FileSystemWatcher's own thread) - must not touch any Unity API
+        // (Time, GameObject, etc.) here, only plain .NET fields. Most editors trigger multiple Changed
+        // events per save (e.g. one for the write, one for a metadata update); Update() below debounces
+        // those into a single Reload() by restarting its own short frame-count delay every time this fires.
+        private void OnConfigFileChangedOnDisk(object sender, FileSystemEventArgs e)
+        {
+            _configReloadPending = true;
         }
 
         private void OnDestroy()
         {
             Main.EventSystem.RemoveHandler<GameStateChangedEvent>(OnGameStateChanged);
+            _configFileWatcher?.Dispose();
         }
 
         // Same GameState transition GrabController itself uses to detect the start of a new shift.
@@ -312,8 +350,29 @@ namespace MagBoots
 
         private static bool IsInFlightGameplay => GameSession.CurrentGameState == GameSession.GameState.Gameplay;
 
+        // A short frame-count delay (not time-based) before actually reloading, restarted every time
+        // OnConfigFileChangedOnDisk fires - debounces the multiple near-simultaneous Changed events most
+        // editors trigger per save into a single Config.Reload() once the file has actually settled.
+        private const int ConfigReloadDebounceFrames = 15;
+
         private void Update()
         {
+            if (_configReloadPending)
+            {
+                _configReloadPending = false;
+                _configReloadDebounceFramesLeft = ConfigReloadDebounceFrames;
+            }
+
+            if (_configReloadDebounceFramesLeft > 0)
+            {
+                _configReloadDebounceFramesLeft--;
+                if (_configReloadDebounceFramesLeft == 0)
+                {
+                    Config.Reload();
+                    Log.LogInfo("MagBoots: config file changed on disk, reloaded live.");
+                }
+            }
+
             if (_controller == null || !IsInFlightGameplay)
                 return;
 
