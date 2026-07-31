@@ -65,6 +65,7 @@ namespace MagBoots
         internal static ConfigEntry<float> ConfigSpring = null!;
         internal static ConfigEntry<float> ConfigDamper = null!;
         internal static ConfigEntry<float> ConfigBreakawayVelocity = null!;
+        internal static ConfigEntry<float> ConfigAttachMaxVelocity = null!;
         internal static ConfigEntry<float> ConfigMaxLookDownAngle = null!;
         internal static ConfigEntry<float> ConfigBatteryCapacityMinutes = null!;
         internal static ConfigEntry<float> ConfigIdlePowerMultiplier = null!;
@@ -246,6 +247,9 @@ namespace MagBoots
 
             ConfigStepTimeout = Config.Bind("4 - Steps", "Timeout_Step", 0.3f,
                 "Applies to both stepping DOWN and stepping UP. Maximum time (in seconds) mag boots will wait for you to catch up to a detected step before adjusting your position anyway (height for a step down, forward movement for a step up). Prevents ever getting stuck waiting, even if Settle_StepDown/Settle_StepUp is never reached (e.g. while continuously running).");
+
+            ConfigAttachMaxVelocity = Config.Bind("5 - Physics", "AttachMaxVelocity", 6f,
+                "Maximum relative velocity (in meters/second) between you and a surface before mag boots refuses to attach to it. Keeps you from snapping onto something moving too fast relative to you.");
 
             ConfigBreakawayVelocity = Config.Bind("5 - Physics", "BreakawayVelocity", 12f,
                 "How hard you need to be hit (in meters/second) before mag boots let go instead of holding on. Set very high to basically never let go.");

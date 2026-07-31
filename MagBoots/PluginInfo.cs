@@ -4,6 +4,6 @@ namespace MagBoots
     {
         public const string PLUGIN_GUID    = "me.kerballone.MagBoots";
         public const string PLUGIN_NAME    = "MagBoots";
-        public const string PLUGIN_VERSION = "1.4.1";
+        public const string PLUGIN_VERSION = "1.4.2";
     }
 }

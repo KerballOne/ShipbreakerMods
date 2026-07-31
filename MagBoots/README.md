@@ -50,7 +50,7 @@ Every setting has a plain-language description in the file itself — open it in
 - **2 - Attach** — only the initial attach itself: surface size/angle requirements, standoff height, snap duration.
 - **3 - Movement** — ordinary walking and looking around: stride length, move/run speed, corner smoothing, look-down limit, the pitch-based stride control, and PreciseRotation.
 - **4 - Steps** — detecting and handling an actual step up or down while walking: step height thresholds, how fast height eases in, how a step-down waits for you to catch up, forward-facing allowances for taller/steeper footholds you're heading toward.
-- **5 - Physics** — the spring/damper holding you to the surface, and how hard an impact has to be before you're knocked loose.
+- **5 - Physics** — the spring/damper holding you to the surface, how hard an impact has to be before you're knocked loose, and how fast a surface can be moving relative to you before you can attach to it.
 - **6 - Battery** — capacity and drain rates.
 - **7 - HUD** — on-screen hint appearance.
 
@@ -66,6 +66,7 @@ A few highlights:
 - **Settle_StepDown**/**Settle_StepUp** control how closely you need to catch up to a detected step (as a fraction of your stride) before MagBoots finishes the height (step down) or forward movement (step up) adjustment; **Timeout_Step** is the maximum wait either way, so you're never stuck waiting even if you never fully catch up.
 - **Angle_MaxNormal** is how steep a surface can be for most footholds; **Angle_MaxNormalFwd** is a looser limit that only applies to the direction you're actually facing, so you can walk up steeper ramps you're heading toward.
 - **BreakawayVelocity** is how hard you need to be hit before mag boots let go instead of holding on.
+- **AttachMaxVelocity** is how fast a surface can be moving relative to you before mag boots refuses to attach to it.
 
 The config file also reloads live - edit and save it while the game is running and your changes apply immediately, no restart needed.
 
