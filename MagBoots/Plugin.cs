@@ -211,10 +211,10 @@ namespace MagBoots
                 "How closely you need to finish leaning into a new angle before taking the next step. Lower is stricter (smoother, but pauses more); higher is looser.");
 
             ConfigMoveSpeed = Config.Bind("3 - Movement", "Speed_Walk", 2f,
-                "Walking speed (in meters/second) while attached. Actual speed may run a bit higher than this target.");
+                "Walking speed (in meters/second) while attached. Actual speed may run about 10% higher than this target.");
 
             ConfigRunSpeed = Config.Bind("3 - Movement", "Speed_Run", 4f,
-                "Running speed (in meters/second) while attached. Actual speed may run a bit higher than this target. Battery drains proportionally faster while running.");
+                "Running speed (in meters/second) while attached. Actual speed may run about 10% higher than this target. Battery drains proportionally faster while running.");
 
             // Only settings for detecting and handling an actual step up or down transition while walking.
             ConfigFwdSweepAngle = Config.Bind("4 - Steps", "Angle_FwdSweep", 60f,

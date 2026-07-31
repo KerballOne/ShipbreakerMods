@@ -8,15 +8,13 @@ Press the toggle key with a ship part below you. If the surface is flat enough a
 
 - Press the toggle key to attach. MagBoots checks straight down from you; if it finds a surface that's flat and big enough, you snap into place.
 - While attached, movement input walks you along the surface instead of free-thrusting. You're held at a fixed distance off the hull.
-- MagBoots checks a stride ahead of you as you walk, so you can climb and descend stairs, ramps, and ledges without losing your footing. Whether a step counts as "up" or "down" is decided by where you're looking - up or level means up, down means down. Stepping down holds your position until you've caught up, then eases you onto the lower surface; stepping up snaps your height onto the new step right away, then eases your forward movement back in once you've physically caught up to it - so a steep step doesn't feel like teleporting forward and up in the same instant.
-- If MagBoots ever can't find any footing at all for a moment (a bad seam, a tricky transition), it re-anchors to whatever's directly beneath you instead of leaving you stuck - you shouldn't get stranded mid-climb anymore.
+- MagBoots checks a stride ahead of you as you walk, so you can climb and descend stairs, ramps, and ledges without losing your footing. Whether a step counts as "up" or "down" is decided by where you're looking - up or level means up, down means down.
 - Look up and down freely — you just can't tip all the way over and stare straight into the deck. Pitching your view further (up or down) also shortens your stride, so tilting your view takes you into smaller, more careful steps; leveling back out returns you to full stride.
 - While attached, looking around is instant and precise instead of the normal zero-g drift - turning your head doesn't keep spinning after you stop moving the mouse/stick, the way it does while free-floating. Goes back to normal zero-g drift the instant you detach.
 - Hold or toggle the run key to move faster - battery drains faster while running too, proportional to the speed increase. Run only works while already attached; it can't be armed ahead of time and never carries over into your next attach.
 - Your thrusters are fully suppressed while attached, so they don't fight MagBoots' hold, waste fuel, or rumble the controller for no reason. Refueling still works normally.
 - Press the toggle key again to detach and go back to normal zero-g movement at any time.
 - Holding the thrust-down input crouches you closer to the surface, for squeezing under low obstacles; release to stand back up.
-- MagBoots only works during actual flight/salvage gameplay — it's fully inactive in the Hab, menus, loading screens, and cutscenes.
 
 ## Battery
 
