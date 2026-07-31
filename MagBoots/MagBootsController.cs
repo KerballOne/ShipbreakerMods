@@ -54,6 +54,19 @@ namespace MagBoots
         private Vector3 _pendingStepNormal;
         private Transform? _pendingStepHitTransform;
 
+        // Mirror of the step-down pending fields above, but inverted: a significant step UP snaps the
+        // anchor's height/normal onto the new surface immediately (no risk of compounding downward
+        // velocity the way a step down has), then HOLDS lateral advance until the player's body has
+        // physically caught up to the new standoff position (or StepUpTimeout elapses) before resuming
+        // forward movement. Without this, a steep step up combined a full lateral stride with an instant
+        // vertical snap in the same tick, which visually looked like teleporting forward and up onto the
+        // tread rather than climbing it.
+        private bool _pendingStepUpCorrection;
+        private float _pendingStepUpTimer;
+        private Vector3 _pendingStepUpPoint;
+        private Vector3 _pendingStepUpNormal;
+        private Transform? _pendingStepUpHitTransform;
+
         // Eases between 1.0 (standing) and 0.5 (crouched) while the thrust-down input is held, rather
         // than snapping instantly, so crouching in/out of a low gap or under an obstacle feels like a
         // deliberate crouch rather than a jarring pop.
@@ -461,6 +474,35 @@ namespace MagBoots
                         Plugin.Log.LogInfo($"MagBoots: deferred step correction applied - lateralError={lateralError.magnitude}, timedOut={timedOut}");
                 }
             }
+            // Mirror of the step-down pending block above, but height/normal already snapped the instant
+            // the step up was detected (see below) - what's held here is LATERAL advance, released once
+            // the player's body has physically caught up to the new standoff height (or StepTimeout
+            // elapses), so a steep step up doesn't look like teleporting forward and up in the same tick.
+            else if (_pendingStepUpCorrection)
+            {
+                _pendingStepUpTimer += Time.fixedDeltaTime;
+
+                // Along-normal-only distance between the player's actual position and the STANDOFF height
+                // above the anchor (not the anchor/surface point itself - rb.position always sits roughly
+                // PlayerHeight above the surface, so comparing it directly against _attachPoint always
+                // showed a ~PlayerHeight gap that could never settle, making every step up wait out the
+                // full StepTimeout regardless of how quickly the player actually caught up). The tangential/
+                // lateral component is expected and irrelevant here, only whether the player has physically
+                // risen to meet the new standoff position.
+                Vector3 standoffTarget = _attachPoint + _attachNormal * (Plugin.ConfigPlayerHeight.Value * _standoffFraction);
+                float heightError = Mathf.Abs(Vector3.Dot(standoffTarget - rb.position, _attachNormal));
+                float settleDistance = Plugin.ConfigAheadCastDistance.Value * Plugin.ConfigStepUpSettled.Value;
+                bool heightSettled = heightError <= settleDistance;
+                bool timedOut = _pendingStepUpTimer >= Plugin.ConfigStepTimeout.Value;
+
+                if (heightSettled || timedOut)
+                {
+                    _pendingStepUpCorrection = false;
+
+                    if (Plugin.ConfigDebugPrint.Value)
+                        Plugin.Log.LogInfo($"MagBoots: deferred step-up lateral release - heightError={heightError}, timedOut={timedOut}");
+                }
+            }
             // Pause looking for the next surface while still catching up to the last normal change -
             // recasting mid-reorientation was casting at a still-rotating angle and could pick up a
             // slightly different/adjacent face before settling, producing visible jitter.
@@ -553,13 +595,15 @@ namespace MagBoots
                     float signedHeightDeviation = Vector3.Dot(aheadHit.point - feetPosition, _attachNormal);
                     float heightDeviation = Mathf.Abs(signedHeightDeviation);
 
-                    // Only a step DOWN goes through the hold-then-snap pending path - that's what prevents
-                    // a full lateral stride and a large vertical drop compounding downward velocity past
-                    // BreakawayVelocity on steep descending stairs, and it works well. A step UP has no such
-                    // risk (no downward velocity to compound) and instead always falls through to the
-                    // ordinary eased branch below, so the anchor's height rises gradually via
-                    // AttachHeightFollowSpeed regardless of how large the step is, rather than holding
-                    // laterally and then instant-snapping upward once settled/timed out.
+                    // A significant step DOWN goes through the hold-then-snap pending path - that's what
+                    // prevents a full lateral stride and a large vertical drop compounding downward velocity
+                    // past BreakawayVelocity on steep descending stairs, and it works well. A significant
+                    // step UP is the mirror image: snap height/normal immediately (no downward-velocity risk
+                    // to worry about), but HOLD lateral advance until the player's body catches up - without
+                    // this, a steep step up combined an instant vertical snap with a full lateral stride in
+                    // the same tick, which looked like teleporting forward and up onto the tread. Anything
+                    // below StepSignificantHeight in either direction falls through to the ordinary eased
+                    // branch, where lateral is immediate and height/plane transition is rate-limited.
                     if (signedHeightDeviation < -Plugin.ConfigStepSignificantHeight.Value)
                     {
                         // Real step: advance the anchor laterally only this tick (project the stride onto
@@ -579,6 +623,29 @@ namespace MagBoots
 
                         if (Plugin.ConfigDebugPrint.Value)
                             Plugin.Log.LogInfo($"MagBoots: step detected, deferring vertical correction - signedHeightDeviation={signedHeightDeviation}, moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}");
+                    }
+                    else if (signedHeightDeviation > Plugin.ConfigStepSignificantHeight.Value)
+                    {
+                        // Real step up: snap height/normal onto the new surface's plane immediately (no
+                        // easing - there's no runaway-velocity risk going up the way there is going down),
+                        // but hold lateral advance at the CURRENT position (not candidatePoint) so the
+                        // player doesn't also jump forward the full stride in the same tick. Lateral catch-up
+                        // resumes once the player's body has physically risen to meet the new standoff
+                        // height, or StepTimeout elapses - handled in the pending-state block above.
+                        Vector3 currentLateral = feetPosition - Vector3.Dot(feetPosition, aheadHit.normal) * aheadHit.normal;
+                        float targetHeightUp = Vector3.Dot(aheadHit.point, aheadHit.normal);
+                        _attachPoint = currentLateral + targetHeightUp * aheadHit.normal;
+                        _attachNormal = aheadHit.normal;
+                        _attachHitTransform = aheadHit.transform;
+
+                        _pendingStepUpCorrection = true;
+                        _pendingStepUpTimer = 0f;
+                        _pendingStepUpPoint = aheadHit.point;
+                        _pendingStepUpNormal = aheadHit.normal;
+                        _pendingStepUpHitTransform = aheadHit.transform;
+
+                        if (Plugin.ConfigDebugPrint.Value)
+                            Plugin.Log.LogInfo($"MagBoots: step up detected, snapping height and deferring lateral - signedHeightDeviation={signedHeightDeviation}, moveIntensity={moveIntensity}, hitCastDistance={hitCastDistance}");
                     }
                     else
                     {

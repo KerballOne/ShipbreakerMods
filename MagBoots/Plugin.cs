@@ -42,6 +42,7 @@ namespace MagBoots
         internal static ConfigEntry<float> ConfigStepSignificantHeight = null!;
         internal static ConfigEntry<float> ConfigAttachHeightFollowSpeed = null!;
         internal static ConfigEntry<float> ConfigStepLateralSettled = null!;
+        internal static ConfigEntry<float> ConfigStepUpSettled = null!;
         internal static ConfigEntry<float> ConfigStepTimeout = null!;
         internal static ConfigEntry<float> ConfigStepUpHeight = null!;
         internal static ConfigEntry<float> ConfigStepUpFwdHeight = null!;
@@ -226,6 +227,9 @@ namespace MagBoots
 
             ConfigStepLateralSettled = Config.Bind("4 - Steps", "StepLateralSettled", 0.3f,
                 "Only applies to stepping DOWN. How closely you need to catch up to a detected step before mag boots adjusts your height to match it, as a fraction of your stride length (AheadCastDistance). 0.3 means within 30% of a stride. Moving forward isn't held up, only the up/down adjustment - this keeps steep stairs from feeling like a fast slide. Lower is stricter (closer catch-up needed); higher is looser.");
+
+            ConfigStepUpSettled = Config.Bind("4 - Steps", "StepUpSettled", 0.1f,
+                "Only applies to stepping UP. How closely your height needs to catch up to a detected step before mag boots resumes forward movement, as a fraction of your stride length (AheadCastDistance). 0.3 means within 30% of a stride. Height snaps immediately on a step up, but forward movement is held until this settles (or StepTimeout elapses) - this keeps a steep step up from looking like teleporting forward and up in the same tick. Lower is stricter (closer catch-up needed, more delay before moving again); higher is looser (moves again sooner, especially useful on very steep stairs where catching up in height takes longer).");
 
             ConfigStepTimeout = Config.Bind("4 - Steps", "StepTimeout", 0.5f,
                 "Only applies to stepping DOWN. Maximum time (in seconds) mag boots will wait for you to catch up to a detected step before adjusting your height anyway. Prevents ever getting stuck waiting, even if StepLateralSettled is never reached (e.g. while continuously running).");
