@@ -20,6 +20,8 @@ Vanilla also has a few quieter ways of slowing you back down over time, even wit
 - **PlayerLinearDrag** - vanilla quietly brakes you back down to a crawl over time whenever you're drifting and not actively thrusting, grabbing, or grappled. Off by default, so you keep drifting at a constant velocity instead.
 - **PlayerRotationDrag** - vanilla damps out any tumble/spin you pick up whenever you're not actively steering. Off by default, so spin persists indefinitely too - this automatically pauses while you're hand-grabbing something or locked in place with MagBoots, and picks back up right where vanilla would once you let go. **This is off by default along with the others, but it's by far the hardest of the three to get used to - persistent tumble means an accidental spin never stops on its own, so expect to lean on hand-grabs, MagBoots, or your Grapple Gun a lot more to correct your orientation. Turn it back on in the config if you just want linear drift without dealing with tumble too.**
 - **ObjectDrag** - vanilla applies drag to loose parts and debris so they settle down over time. Off by default, so objects drift and spin forever once set in motion, same as the player.
+- **MaxVelocityMps** - caps how fast you can drift, in meters per second. Vanilla's default is 20; this mod raises it to 40 by default. Set to 0 for no cap at all.
+- **WorkAreaRadiusMultiplier** - scales how far you can roam from the game's designated work areas before the warning/danger zone (which can eventually teleport or hurt you) kicks in. 1 is vanilla, 2 doubles it, and so on. Off (0, unlimited roaming) by default.
 
 ## Recoil
 
@@ -41,6 +43,8 @@ Hardspace Shipbreaker\BepInEx\config\me.kerballone.NewtonianPhysics.cfg
 ```
 
 Every setting has a plain-language description in the file itself - open it in any text editor to see what each one does and tweak it to taste.
+
+The config file also reloads live - edit and save it while the game is running and your changes apply immediately, no restart needed. (MaxVelocityMps is the one exception: it's only applied when the player controller spawns, so a change needs a shift/respawn to take effect.)
 
 ## Installation
 

@@ -1,3 +1,4 @@
+using System.IO;
 using BBI.Unity.Game;
 using BepInEx;
 using BepInEx.Configuration;
@@ -18,6 +19,8 @@ namespace NewtonianPhysics
         internal static ConfigEntry<bool> ConfigPlayerLinearDrag = null!;
         internal static ConfigEntry<bool> ConfigPlayerRotationDrag = null!;
         internal static ConfigEntry<bool> ConfigObjectDrag = null!;
+        internal static ConfigEntry<float> ConfigMaxVelocityMps = null!;
+        internal static ConfigEntry<float> ConfigWorkAreaRadiusMultiplier = null!;
 
         internal static ConfigEntry<bool> ConfigRecoilEnabled = null!;
         internal static ConfigEntry<float> ConfigBrakeBreak = null!;
@@ -50,6 +53,12 @@ namespace NewtonianPhysics
             ConfigObjectDrag = Config.Bind("Newtonian", "ObjectDrag", false,
                 "Vanilla applies drag to loose parts and debris so they settle down over time instead of drifting/spinning forever. Leave this off to remove that drag so objects behave the same as the player - once moving, they keep moving. Turn it on to restore vanilla's object drag.");
 
+            ConfigMaxVelocityMps = Config.Bind("Newtonian", "MaxVelocityMps", 40f,
+                "Caps how fast you can drift, in meters per second. Vanilla's default is 20. Set to 0 for no cap at all.");
+
+            ConfigWorkAreaRadiusMultiplier = Config.Bind("Newtonian", "WorkAreaRadiusMultiplier", 0f,
+                "Scales how far you can roam from the game's designated work areas before the warning/danger zone (which can eventually teleport or hurt you) kicks in. 1 is vanilla, 2 doubles it, etc. Set to 0 to disable the work area limit entirely.");
+
             ConfigRecoilEnabled = Config.Bind("Recoil", "Enabled", true,
                 "Turns on extra kickback for the Cutter and Grapple Gun.");
 
@@ -81,7 +90,71 @@ namespace NewtonianPhysics
             }
 
             new Harmony(PluginInfo.PLUGIN_GUID).PatchAll();
+            SetUpConfigFileWatcher();
             Log.LogInfo("NewtonianPhysics loaded.");
+        }
+
+        private FileSystemWatcher? _configFileWatcher;
+        // Plain bool, not a Unity Time-based timestamp - the watcher's Changed event fires on a
+        // background thread, and Unity's Time API can only be touched from the main thread. Update()
+        // (main thread) polls this flag and does its own short real-world delay via a frame counter
+        // instead, both to marshal safely and to debounce multiple rapid Changed events from one save.
+        private volatile bool _configReloadPending;
+        private int _configReloadDebounceFramesLeft;
+
+        // BepInEx's ConfigFile never reloads itself when the .cfg is hand-edited on disk - without
+        // this, every tuning change required a full game restart to take effect. FileSystemWatcher is
+        // OS-level file notification (no polling, no per-tick cost), so this is free at runtime except
+        // for the rare moment an edit is actually saved.
+        private void SetUpConfigFileWatcher()
+        {
+            string directory = Path.GetDirectoryName(Config.ConfigFilePath)!;
+            string fileName = Path.GetFileName(Config.ConfigFilePath);
+
+            _configFileWatcher = new FileSystemWatcher(directory, fileName)
+            {
+                NotifyFilter = NotifyFilters.LastWrite,
+                EnableRaisingEvents = true,
+            };
+            _configFileWatcher.Changed += OnConfigFileChangedOnDisk;
+        }
+
+        // Runs on a background thread (FileSystemWatcher's own thread) - must not touch any Unity API
+        // (Time, GameObject, etc.) here, only plain .NET fields. Most editors trigger multiple Changed
+        // events per save (e.g. one for the write, one for a metadata update); Update() below debounces
+        // those into a single Reload() by restarting its own short frame-count delay every time this fires.
+        private void OnConfigFileChangedOnDisk(object sender, FileSystemEventArgs e)
+        {
+            _configReloadPending = true;
+        }
+
+        private void OnDestroy()
+        {
+            _configFileWatcher?.Dispose();
+        }
+
+        // Same short frame-count delay (not time-based) MagBoots uses, restarted every time
+        // OnConfigFileChangedOnDisk fires - debounces the multiple near-simultaneous Changed events
+        // most editors trigger per save into a single Config.Reload() once the file has actually settled.
+        private const int ConfigReloadDebounceFrames = 15;
+
+        private void Update()
+        {
+            if (_configReloadPending)
+            {
+                _configReloadPending = false;
+                _configReloadDebounceFramesLeft = ConfigReloadDebounceFrames;
+            }
+
+            if (_configReloadDebounceFramesLeft > 0)
+            {
+                _configReloadDebounceFramesLeft--;
+                if (_configReloadDebounceFramesLeft == 0)
+                {
+                    Config.Reload();
+                    Log.LogInfo("NewtonianPhysics: config file changed on disk, reloaded live.");
+                }
+            }
         }
 
         private void FixedUpdate()
