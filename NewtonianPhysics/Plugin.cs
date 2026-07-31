@@ -31,6 +31,8 @@ namespace NewtonianPhysics
         internal static ConfigEntry<float> ConfigGrappleReflectionDistance = null!;
         internal static ConfigEntry<float> ConfigAssumedPlayerMassKg = null!;
 
+        internal static ConfigEntry<float> ConfigFarClipPlane = null!;
+
         private void Awake()
         {
             Log = Logger;
@@ -82,6 +84,9 @@ namespace NewtonianPhysics
 
             ConfigAssumedPlayerMassKg = Config.Bind("Recoil", "AssumedPlayerMassKg", 175f,
                 "Your assumed weight (in kg), used to figure out how much of a push's force you feel versus the object.");
+
+            ConfigFarClipPlane = Config.Bind("Rendering", "FarClipPlane", 99999f,
+                "Vanilla's camera stops drawing anything past 2700m - normally you'd never get far enough for that to matter, but this mod's own MaxVelocityMps/WorkAreaRadiusMultiplier settings make it easy to range past it, so distant structures can flatly vanish once you're beyond that distance. This raises the camera's draw distance so structures stay visible much farther out. Set to 0 to leave vanilla's 2700m as-is.");
 
             if (!ConfigEnabled.Value)
             {
@@ -155,6 +160,8 @@ namespace NewtonianPhysics
                     Log.LogInfo("NewtonianPhysics: config file changed on disk, reloaded live.");
                 }
             }
+
+            FarClipTuning.Tick();
         }
 
         private void FixedUpdate()

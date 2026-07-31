@@ -23,6 +23,12 @@ Vanilla also has a few quieter ways of slowing you back down over time, even wit
 - **MaxVelocityMps** - caps how fast you can drift, in meters per second. Vanilla's default is 20; this mod raises it to 40 by default. Set to 0 for no cap at all.
 - **WorkAreaRadiusMultiplier** - scales how far you can roam from the game's designated work areas before the warning/danger zone (which can eventually teleport or hurt you) kicks in. 1 is vanilla, 2 doubles it, and so on. Off (0, unlimited roaming) by default.
 
+## Rendering fixes
+
+Vanilla's camera stops drawing anything past 2700m. Normally you'd never fly far enough for that to matter, but MaxVelocityMps and WorkAreaRadiusMultiplier above make it easy to range well past it, so distant structures can flatly vanish once you're beyond that distance.
+
+- **FarClipPlane** - how far (in meters) the camera draws. Effectively unlimited (99999) by default. Set to 0 to leave vanilla's 2700m as-is.
+
 ## Recoil
 
 On by default. Adds real kickback to tools that had none:
