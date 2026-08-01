@@ -13,35 +13,30 @@ On top of that, this mod adds real recoil to the Cutter and Grapple Gun, so firi
 
 ## Newtonian movement
 
-**NoBrakes** is on by default: it disables your air brake completely. Vanilla lets you cancel all your momentum instantly on demand, which trivializes movement in a way that doesn't feel like actual zero-g. With it off, you have to plan your stops.
+**NoBrakes** is on by default: it disables your air brake completely. Stock lets you cancel all your momentum instantly on demand, which trivializes movement in a way that doesn't feel like actual zero-g. With it off, you have to plan your stops.
 
-Vanilla also has a few quieter ways of slowing you back down over time, even with NoBrakes on - these are off by default too, so drifting and tumbling both behave like real Newtonian motion: constant until something actually stops you.
+Stock also has a few quieter ways of slowing you back down over time, even with NoBrakes on - these are off by default too, so drifting and tumbling both behave like real Newtonian motion: constant until something actually stops you.
 
-- **PlayerLinearDrag** - vanilla quietly brakes you back down to a crawl over time whenever you're drifting and not actively thrusting, grabbing, or grappled. Off by default, so you keep drifting at a constant velocity instead.
-- **PlayerRotationDrag** - vanilla damps out any tumble/spin you pick up whenever you're not actively steering. Off by default, so spin persists indefinitely too - this automatically pauses while you're hand-grabbing something or locked in place with MagBoots, and picks back up right where vanilla would once you let go. **This is off by default along with the others, but it's by far the hardest of the three to get used to - persistent tumble means an accidental spin never stops on its own, so expect to lean on hand-grabs, MagBoots, or your Grapple Gun a lot more to correct your orientation. Turn it back on in the config if you just want linear drift without dealing with tumble too.**
-- **ObjectDrag** - vanilla applies drag to loose parts and debris so they settle down over time. Off by default, so objects drift and spin forever once set in motion, same as the player.
-- **MaxVelocityMps** - caps how fast you can drift, in meters per second. Vanilla's default is 20; this mod raises it to 200 by default. Set to 0 for no cap at all - though ~200 m/s is a hard engine limit either way.
-- **WorkAreaRadiusMultiplier** - scales how far you can roam from the game's designated work areas before the warning/danger zone (which can eventually teleport or hurt you) kicks in. 1 is vanilla, 2 doubles it, and so on. Off (0, unlimited roaming) by default.
-
-## Rendering fixes
-
-Vanilla wasn't built for flying as far or as fast as MaxVelocityMps and WorkAreaRadiusMultiplier let you go, so a few visual bugs show up once you range past its normal bounds - the camera draw distance cuts off, distant background objects visibly recede or approach instead of staying put, and flat station/gate cards go edge-on and disappear. This mod fixes all of that automatically.
-
-- **TriggerDistance** (default 250m) - how far from the work bay these fixes wait before kicking in.
-- **PinningMode** (`distance` by default, or `angle`) - two different ways of keeping distant flat cards from vanishing edge-on; `angle` is the older behavior if you prefer it.
-- **FlatEarthMode** (off by default) - turn on to disable the background-pinning fixes and let vanilla's recede/approach bug happen instead.
-- **StreamStretchMultiplier** (0/off by default) - not a bug fix, just a look: the speed-streak effect is tuned for vanilla's ~20 m/s cap and maxes out almost instantly at this mod's speeds. 1 restores vanilla's exact behavior, higher values let it keep stretching at higher speed.
+- **PlayerLinearDrag** - stock quietly brakes you back down to a crawl over time whenever you're drifting and not actively thrusting, grabbing, or grappled. Off by default, so you keep drifting at a constant velocity instead.
+- **PlayerRotationDrag** - stock damps out any tumble/spin you pick up whenever you're not actively steering. Off by default, so spin persists indefinitely too - this automatically pauses while you're hand-grabbing something or locked in place with MagBoots, and picks back up right where stock would once you let go. **This is off by default along with the others, but it's by far the hardest of the three to get used to - persistent tumble means an accidental spin never stops on its own, so expect to lean on hand-grabs, MagBoots, or your Grapple Gun a lot more to correct your orientation. Turn it back on in the config if you just want linear drift without dealing with tumble too.**
+- **ObjectDrag** - stock applies drag to loose parts and debris so they settle down over time. Off by default, so objects drift and spin forever once set in motion, same as the player.
+- **MaxVelocityMps** - caps how fast you can drift, in meters per second. Stock's default is 20; this mod raises it to 200 by default. Set to 0 for no cap at all - though ~200 m/s is a hard engine limit either way.
+- **WorkAreaRadiusMultiplier** - scales how far you can roam from the game's designated work areas before the warning/danger zone (which can eventually teleport or hurt you) kicks in. 1 is stock, 2 doubles it, and so on. Off (0, unlimited roaming) by default.
 
 ## Recoil
 
-On by default. Adds real kickback to tools that had none:
+On by default. Adds real kickback to tools that had none, so firing them has a consequence instead of being free:
 
 - The saw Cutter kicks you back the instant you fire, instead of waiting for the cut to finish.
 - The Scalpel/single-laser gives a steady push for as long as the beam is firing.
 - Pushing or throwing anything with the Grapple Gun kicks you back based on how close and how heavy it is - a light object barely reacts, a massive or immovable one kicks like pushing off a wall. Only within a limited range; anything farther away gives no kickback.
 - If you've grappled something too heavy to actually throw, the normal kickback you get from trying can also be scaled up or down.
+- **BrakeBreak** (1 second by default) briefly disables your air brake after any recoil hit, so the kick actually moves you instead of being cancelled out the instant it happens. This has no extra effect if NoBrakes is already on.
+- **AssumedPlayerMassKg** (175 by default) - your assumed weight, used to figure out how much of a push's force you feel versus the object you're pushing.
 
-**BrakeBreak** (1 second by default) also briefly disables your air brake after any recoil hit, so the kick actually moves you instead of being cancelled out the instant it happens. This has no extra effect if NoBrakes is already on.
+## Rendering fixes
+
+Stock wasn't built for flying as far or as fast as MaxVelocityMps and WorkAreaRadiusMultiplier let you go, so a handful of visual bugs show up once you range past its normal bounds - the camera draw distance cuts off, distant background objects visibly recede or approach instead of staying put, and flat station/gate cards go edge-on and disappear. This mod fixes all of that automatically.
 
 ## Settings
 
