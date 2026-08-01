@@ -184,6 +184,7 @@ namespace NewtonianPhysics
             }
 
             FarClipTuning.Tick();
+            SpireDiagnostic.Tick();
         }
 
         // Runs after Update/animation/physics-interpolation have all applied this frame's final

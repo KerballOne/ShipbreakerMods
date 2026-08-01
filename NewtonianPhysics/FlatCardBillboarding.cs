@@ -5,12 +5,23 @@ using UnityEngine;
 namespace NewtonianPhysics
 {
     // Keeps distant flat background cards (GateCard, the Quad/CardRing gate-ring set, and the
-    // VillageSalvageStation sprite family) at a CONSTANT angle relative to the player once the
-    // player strays past BackgroundConstants.PinDistanceMeters (250m) from the work bay - these
-    // cards are hand-placed at a single fixed world rotation, correct only when viewed from
-    // roughly the bay's own vantage point. At NewtonianPhysics's extended flight range, the
-    // player can end up viewing them from steep angles (confirmed up to ~73 degrees off face-on
-    // for GateCard alone), making a thin flat card appear edge-on/nearly invisible.
+    // VillageSalvageStation/VillageWaystation sprite families) at a CONSTANT angle relative to the
+    // player once the player strays past BackgroundConstants.PinDistanceMeters (250m) from the
+    // work bay - these cards are hand-placed at a single fixed world rotation, correct only when
+    // viewed from roughly the bay's own vantage point. At NewtonianPhysics's extended flight
+    // range, the player can end up viewing them from steep angles (confirmed up to ~73 degrees off
+    // face-on for GateCard alone), making a thin flat card appear edge-on/nearly invisible.
+    //
+    // VillageWaystation added after a follow-on investigation (project_newtonianphysics_todo in
+    // memory) into an unidentified "spire looking" object the user spotted - confirmed via texture
+    // export that all VillageWaystation instances share ONE texture (a 2048x2048 9-cell angle atlas,
+    // spritesScanned=172 uniqueTexturesExported=1), the same angle-baked-atlas authoring pattern as
+    // VillageSalvageStation. Despite some instances reporting a near-cubic world-space
+    // Renderer.bounds (not the thin/flat signature seen on GateCard/Quad), these are still ordinary
+    // SpriteRenderers - a single flat quad has no real depth to produce a genuinely 3D bounding box;
+    // a "cubic-looking" AABB here just means the flat quad is rotated away from world axes, which
+    // inflates the world-space bounds on axes that would read as thin if the object were axis-
+    // aligned. So these need the same angle-pinning fix for the same underlying reason.
     //
     // Deliberately does NOT force full face-on (0 degrees) tracking - the design goal (per the
     // user) is to PIN the angle the card happened to be at relative to the player the moment the
@@ -36,6 +47,11 @@ namespace NewtonianPhysics
         // single shared object.
         private static RotationPin[]? _salvageStationPins;
 
+        // Same bulk-scan/independent-pin treatment as VillageSalvageStation - see the class-level
+        // comment above for why VillageWaystation needs this despite not always LOOKING flat in
+        // its world-space bounds.
+        private static RotationPin[]? _waystationPins;
+
         private static Transform? _bayRoot;
         private static bool _cardsScanned;
 
@@ -49,6 +65,7 @@ namespace NewtonianPhysics
             _bayRoot = null;
             _cardsScanned = false;
             _salvageStationPins = null;
+            _waystationPins = null;
             GateCardPin.ClearCache();
             QuadPin.ClearCache();
             Quad1Pin.ClearCache();
@@ -107,6 +124,12 @@ namespace NewtonianPhysics
                 foreach (RotationPin pin in _salvageStationPins)
                     pin.Tick(player, shouldBePinned);
             }
+
+            if (_waystationPins != null)
+            {
+                foreach (RotationPin pin in _waystationPins)
+                    pin.Tick(player, shouldBePinned);
+            }
         }
 
         // One-time scan, triggered the first time the player crosses 250m from the bay rather
@@ -130,8 +153,14 @@ namespace NewtonianPhysics
                 .Select(t => new RotationPin(t))
                 .ToArray();
 
+            _waystationPins = Resources.FindObjectsOfTypeAll<Transform>()
+                .Where(t => t != null && t.gameObject.activeInHierarchy && t.name.StartsWith("VillageWaystation"))
+                .Where(t => !GetFullPath(t).Contains("_HAB"))
+                .Select(t => new RotationPin(t))
+                .ToArray();
+
             if (Plugin.ConfigDebugPrint.Value)
-                Plugin.Log.LogInfo($"FlatCardBillboarding: SCAN (triggered at 250m) salvageStationCount={_salvageStationPins.Length}");
+                Plugin.Log.LogInfo($"FlatCardBillboarding: SCAN (triggered at 250m) salvageStationCount={_salvageStationPins.Length} waystationCount={_waystationPins.Length}");
         }
 
         // Encapsulates angle-pin state for a single flat card - captures the rotational offset
