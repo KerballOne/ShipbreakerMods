@@ -77,6 +77,54 @@ namespace NewtonianPhysics
             foreach (var r in biggestNoCollider)
                 sb.AppendLine(DescribeRendererCandidate(r.transform, r));
 
+            // 5) Material/shader dump for PRF_PlanetGlow specifically, AND zero out ONLY the two
+            // properties actually plausible as brightness/tint controls (using .material, a
+            // per-instance copy, so this doesn't touch the shared asset or the inactive HAB copy's
+            // material). An earlier version of this zeroed EVERY Color/Float/Range property on the
+            // material - that included ~40 unrelated HDRP pipeline flags (_SurfaceType, _BlendMode,
+            // _ZWrite, _CullMode, every _Stencil* ref/mask), and forcing those into a degenerate
+            // state visibly corrupted rendering well beyond the glow itself (other objects going
+            // black, changed rim-lighting elsewhere) - confirmed by the user's screenshots. Only
+            // ever touch the two named color properties below.
+            sb.AppendLine("-- PRF_PlanetGlow material/shader properties (zeroing only brightness/tint candidates) --");
+            string[] brightnessPropertyNames =
+            {
+                "Color_30913618aef8424ba15afd05c75a4bed",
+                "_EmissionColor",
+            };
+            var glowTransforms = allTransforms.Where(t => t != null && t.name == "PRF_PlanetGlow" && t.gameObject.activeInHierarchy);
+            foreach (var t in glowTransforms)
+            {
+                sb.AppendLine($"path={GetFullPath(t)} active={t.gameObject.activeInHierarchy}");
+                var renderer = t.GetComponent<Renderer>();
+                if (renderer == null)
+                {
+                    sb.AppendLine("  no Renderer component");
+                    continue;
+                }
+                // .material (not .sharedMaterial) - per-instance copy, doesn't mutate the shared
+                // asset or affect the inactive HAB copy.
+                var mat = renderer.material;
+                if (mat == null || mat.shader == null)
+                {
+                    sb.AppendLine("  no material/shader");
+                    continue;
+                }
+                sb.AppendLine($"  material name={mat.name} shader={mat.shader.name} renderQueue={mat.renderQueue}");
+
+                foreach (string propName in brightnessPropertyNames)
+                {
+                    if (!mat.HasProperty(propName))
+                    {
+                        sb.AppendLine($"    {propName} - material has no such property, skipped");
+                        continue;
+                    }
+                    Color before = mat.GetColor(propName);
+                    mat.SetColor(propName, Color.clear);
+                    sb.AppendLine($"    {propName} before={before} -> set to Color.clear");
+                }
+            }
+
             sb.AppendLine("==== end dump ====");
 
             string text = sb.ToString();

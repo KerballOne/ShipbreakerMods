@@ -10,21 +10,20 @@ namespace NewtonianPhysics
     // is tagged CameraNeedsInit, e.g. on respawn/level load) that can reset farClipPlane back to
     // 2700 at any time, so rather than patch its ECS internals directly, this just re-applies the
     // configured value to the live camera every frame - cheap, and self-correcting regardless of
-    // when/how often the vanilla system happens to run.
+    // when/how often the vanilla system happens to run. Hardcoded rather than configurable - 99999
+    // (effectively unlimited) is confirmed to work well and there's no real reason to ever want less.
     internal static class FarClipTuning
     {
+        private const float FarClipPlaneMeters = 99999f;
+
         public static void Tick()
         {
             if (!Plugin.ConfigEnabled.Value)
                 return;
 
-            float configured = Plugin.ConfigFarClipPlane.Value;
-            if (configured <= 0f)
-                return;
-
             Camera? camera = LynxCameraController.MainCamera;
-            if (camera != null && camera.farClipPlane != configured)
-                camera.farClipPlane = configured;
+            if (camera != null && camera.farClipPlane != FarClipPlaneMeters)
+                camera.farClipPlane = FarClipPlaneMeters;
         }
     }
 }
