@@ -451,16 +451,25 @@ namespace NewtonianPhysics
                     // cycles in one session ratchet the planet permanently farther away each time
                     // you approach, since depth only ever grew and never shrank back - confirmed via
                     // direct testing that this asymmetry is real and compounds indefinitely with no
-                    // decay. Clamped so a large single-frame retreat can't overshoot PAST the
-                    // original depth (which would let the planet swing to the other side of its
-                    // authored position, or approach/clip through something static like Polaris) -
-                    // once back at _originalPlanetDepth, further receding is inert again, matching
-                    // the original (pre-fix) behavior from that point on.
+                    // decay.
+                    //
+                    // CRITICAL: this must only ever move _planetDepth TOWARD _originalPlanetDepth,
+                    // never past it, and never AWAY from it either - confirmed via a real bug where
+                    // clamping only against overshoot (using a "was above original" sign computed
+                    // BEFORE applying playerDepthDelta) let the planet get pulled ALONGSIDE the
+                    // player's own recede whenever _planetDepth was already at/near
+                    // _originalPlanetDepth (e.g. a session that only ever recedes, never
+                    // approaches first) - playerDepthDelta was being applied unconditionally even
+                    // though the planet had never been pushed out in the first place. Clamping the
+                    // FINAL result into the closed interval between the ORIGINAL _planetDepth (this
+                    // frame's starting point) and _originalPlanetDepth - regardless of which is
+                    // larger - guarantees the planet only ever moves toward home and never beyond
+                    // either bound, with no dependence on a precomputed direction that can go stale.
+                    float depthBeforeThisFrame = _planetDepth;
                     float movedTowardOriginal = _planetDepth + playerDepthDelta;
-                    bool wasAboveOriginal = _planetDepth >= _originalPlanetDepth;
-                    _planetDepth = wasAboveOriginal
-                        ? Mathf.Max(movedTowardOriginal, _originalPlanetDepth)
-                        : Mathf.Min(movedTowardOriginal, _originalPlanetDepth);
+                    float lowerBound = Mathf.Min(depthBeforeThisFrame, _originalPlanetDepth);
+                    float upperBound = Mathf.Max(depthBeforeThisFrame, _originalPlanetDepth);
+                    _planetDepth = Mathf.Clamp(movedTowardOriginal, lowerBound, upperBound);
                 }
 
                 Vector3 newCardPos = player.position + _lateralOffset + (_planetDepth - playerDepth) * _depthAxis;

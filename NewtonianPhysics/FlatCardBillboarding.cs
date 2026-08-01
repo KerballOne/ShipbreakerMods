@@ -513,11 +513,13 @@ namespace NewtonianPhysics
                 // Same asymmetric-but-bounded approach-vs-recede handling as PlanetPin: approaching
                 // tracks the player 1:1 along the depth axis (the object stays exactly as far away,
                 // pushed away from the player). Receding PULLS the object back toward wherever it
-                // was when pinning first activated (_originalObjectDepth), clamped so it can never
-                // overshoot past that original depth - see PlanetPin's matching comment in
-                // BackgroundParallaxTuning.cs for the full rationale (fixes a one-way ratchet where
-                // repeated approach/retreat cycles would otherwise push the object permanently
-                // farther away with no way back, confirmed as a real issue via direct testing).
+                // was when pinning first activated (_originalObjectDepth) - see PlanetPin's matching
+                // comment in BackgroundParallaxTuning.cs for the full rationale, including a real bug
+                // (fixed there and mirrored here) where clamping only against overshoot let the
+                // object get dragged ALONGSIDE the player's own recede whenever it hadn't been
+                // pushed out yet. Clamping the result into the interval between this frame's
+                // starting depth and _originalObjectDepth (regardless of which is larger) guarantees
+                // movement is always toward home and never beyond either bound.
                 float playerDepth = Vector3.Dot(player.position, _depthAxis);
                 float playerDepthDelta = playerDepth - _previousPlayerDepth;
 
@@ -530,11 +532,11 @@ namespace NewtonianPhysics
                 }
                 else
                 {
+                    float depthBeforeThisFrame = _objectDepth;
                     float movedTowardOriginal = _objectDepth + playerDepthDelta;
-                    bool wasAboveOriginal = _objectDepth >= _originalObjectDepth;
-                    _objectDepth = wasAboveOriginal
-                        ? Mathf.Max(movedTowardOriginal, _originalObjectDepth)
-                        : Mathf.Min(movedTowardOriginal, _originalObjectDepth);
+                    float lowerBound = Mathf.Min(depthBeforeThisFrame, _originalObjectDepth);
+                    float upperBound = Mathf.Max(depthBeforeThisFrame, _originalObjectDepth);
+                    _objectDepth = Mathf.Clamp(movedTowardOriginal, lowerBound, upperBound);
                 }
 
                 Vector3 newCardPos = player.position + _lateralOffset + (_objectDepth - playerDepth) * _depthAxis;
