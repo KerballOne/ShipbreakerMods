@@ -69,10 +69,11 @@ namespace NewtonianPhysics
     // disables this fix (misleadingly named after the visual artifact it produces when off, not
     // what it does).
     //
-    // Only kicks in once the player has actually strayed more than PinDistanceMeters from the work
-    // bay - close to the bay vanilla's own placement/scale already looks right (that's what it was
-    // tuned for), and pinning from the very start would just fix the planets at whatever position
-    // they happened to be at level load, which may not match vanilla's intended near-bay framing.
+    // Only kicks in once the player has actually strayed more than Plugin.ConfigTriggerDistanceMeters
+    // from the work bay - close to the bay vanilla's own placement/scale already looks right (that's
+    // what it was tuned for), and pinning from the very start would just fix the planets at whatever
+    // position they happened to be at level load, which may not match vanilla's intended near-bay
+    // framing.
     internal static class BackgroundParallaxTuning
     {
         private const string PlanetsRootObjectName = "PRF_Base_Planets";
@@ -175,8 +176,9 @@ namespace NewtonianPhysics
             if (player == null)
                 return;
 
+            float triggerDistance = Plugin.ConfigTriggerDistanceMeters.Value;
             float distFromBay = Vector3.Distance(player.position, _bayRoot.position);
-            bool shouldBePinned = distFromBay * distFromBay >= BackgroundConstants.PinDistanceMeters * BackgroundConstants.PinDistanceMeters;
+            bool shouldBePinned = distFromBay * distFromBay >= triggerDistance * triggerDistance;
 
             OctanePin.Tick(player, distFromBay, shouldBePinned);
             MoonPin.Tick(player, distFromBay, shouldBePinned);

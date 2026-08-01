@@ -1,17 +1,16 @@
 namespace NewtonianPhysics
 {
     // Shared constants for the background-planet tuning classes (BackgroundParallaxTuning,
-    // PlanetGlowFadeTuning) - both key off the same distance-from-bay threshold and object names,
-    // so they're centralized here rather than duplicated as separate private consts per file,
-    // which could silently drift out of sync if one gets tuned without the other.
+    // PlanetGlowFadeTuning, FlatCardBillboarding) - all key off the same bay-root object name, so
+    // it's centralized here rather than duplicated as a separate private const per file, which
+    // could silently drift out of sync if one gets tuned without the others.
+    //
+    // The activation distance itself (formerly a const here, PinDistanceMeters) is now
+    // Plugin.ConfigTriggerDistanceMeters - a live-reloadable tunable, not a compile-time constant -
+    // since the user asked to be able to adjust how far from the bay pinning kicks in without a
+    // rebuild. Read Plugin.ConfigTriggerDistanceMeters.Value directly at each call site instead.
     internal static class BackgroundConstants
     {
         public const string BayRootObjectName = "Work Bays";
-
-        // Distance from the work bay at which the planet pin (BackgroundParallaxTuning) activates
-        // and the glow fade (PlanetGlowFadeTuning) begins - close to the bay, vanilla's own
-        // placement/scale/brightness already looks right, so neither fix should touch anything
-        // until the player has actually strayed this far.
-        public const float PinDistanceMeters = 250f;
     }
 }

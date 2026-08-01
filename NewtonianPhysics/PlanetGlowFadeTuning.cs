@@ -5,10 +5,10 @@ using UnityEngine;
 namespace NewtonianPhysics
 {
     // Shrinks PRF_PlanetGlow to zero scale as the player travels from
-    // BackgroundConstants.PinDistanceMeters (250m) out to FadeEndMeters (500m) from the work bay,
-    // and grows it back symmetrically if the player returns closer - distance-based, not
-    // time-based, so the shrink always lines up with the same physical distance regardless of how
-    // fast the player is flying.
+    // Plugin.ConfigTriggerDistanceMeters out to FadeEndMeters (500m) from the work bay, and grows
+    // it back symmetrically if the player returns closer - distance-based, not time-based, so the
+    // shrink always lines up with the same physical distance regardless of how fast the player is
+    // flying.
     //
     // Confirmed via direct testing that color-based fading doesn't work here at all: neither
     // Material.SetColor with a computed intermediate alpha, nor MaterialPropertyBlock (the
@@ -81,16 +81,23 @@ namespace NewtonianPhysics
                 return;
 
             float distFromBay = Vector3.Distance(player.position, _bayRoot.position);
+            float triggerDistance = Plugin.ConfigTriggerDistanceMeters.Value;
 
             // Cheap every-frame check using only the cached bay root - the glow itself is never
-            // touched at all inside 250m (still full size, nothing to do) or once already
-            // confirmed fully shrunk past 500m (nothing left to do either).
-            if (distFromBay < BackgroundConstants.PinDistanceMeters)
+            // touched at all inside the trigger distance (still full size, nothing to do) or once
+            // already confirmed fully shrunk past 500m (nothing left to do either).
+            if (distFromBay < triggerDistance)
                 return;
             if (distFromBay >= FadeEndMeters && _confirmedFullyShrunk)
                 return;
 
-            float scale01 = 1f - Mathf.Clamp01((distFromBay - BackgroundConstants.PinDistanceMeters) / (FadeEndMeters - BackgroundConstants.PinDistanceMeters));
+            // If TriggerDistance has been configured at or beyond FadeEndMeters, there's no window
+            // left to fade across - snap straight to fully shrunk instead of dividing by a zero or
+            // negative span (which Clamp01 alone wouldn't protect against, since the numerator could
+            // also go negative and produce a nonsensical result rather than clamping to 0/1 as intended).
+            float scale01 = FadeEndMeters > triggerDistance
+                ? 1f - Mathf.Clamp01((distFromBay - triggerDistance) / (FadeEndMeters - triggerDistance))
+                : 0f;
 
             Transform? glowTransform = Resources.FindObjectsOfTypeAll<Transform>()
                 .FirstOrDefault(t => t != null && t.name == "PRF_PlanetGlow" && t.gameObject.activeInHierarchy);

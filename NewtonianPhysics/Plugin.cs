@@ -4,6 +4,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
+using UnityEngine;
 
 namespace NewtonianPhysics
 {
@@ -32,6 +33,10 @@ namespace NewtonianPhysics
         internal static ConfigEntry<float> ConfigAssumedPlayerMassKg = null!;
 
         internal static ConfigEntry<bool> ConfigFlatEarthMode = null!;
+        internal static ConfigEntry<string> ConfigPinningMode = null!;
+        internal static ConfigEntry<float> ConfigTriggerDistanceMeters = null!;
+
+        internal static ConfigEntry<KeyboardShortcut> ConfigFireGateBeamKey = null!;
 
         private void Awake()
         {
@@ -41,7 +46,10 @@ namespace NewtonianPhysics
                 "Turns the mod on or off (requires a restart).");
 
             ConfigDebugPrint = Config.Bind("General", "DebugPrint", false,
-                "Prints extra troubleshooting info to the log. Leave off unless asked to turn it on.");
+                "Prints extra troubleshooting info to the log, and enables the F9 scene-scan diagnostic. Leave off unless asked to turn it on.");
+
+            ConfigFireGateBeamKey = Config.Bind("General", "FireGateBeam_Key", new KeyboardShortcut(KeyCode.F7),
+                "Forces the rail gate to fire immediately instead of waiting for its normal random chance.");
 
             ConfigNoBrakes = Config.Bind("Newtonian", "NoBrakes", true,
                 "Disables your air brake entirely. Braking on demand is a bit overpowered for a zero-g game - turning it off makes movement more realistically Newtonian: you keep drifting unless something (like recoil, the Grapple Gun pulling you, grabbing something by hand, or MagBoots) actually stops you.");
@@ -86,7 +94,13 @@ namespace NewtonianPhysics
                 "Your assumed weight (in kg), used to figure out how much of a push's force you feel versus the object.");
 
             ConfigFlatEarthMode = Config.Bind("Rendering_Fixes", "FlatEarthMode", false,
-                "Earth and Moon are ordinary scene objects placed at a fixed position, meant to look distant/unmoving - vanilla movement never got far enough for that illusion to break, but this mod's own MaxVelocityMps/WorkAreaRadiusMultiplier let you drift far enough that they visibly recede or approach, which doesn't match how something that far away should look. Turn this on to disable the fix and let them recede/approach like vanilla (once you're more than 250m from the work bay). Leave off to keep them pinned at a constant offset from you instead, like real astronomical bodies, while everything else keeps shrinking/growing normally with real distance.");
+                "Distant background objects stay pinned at a constant offset from you instead of receding/approaching like stock, which breaks down at this mod's extended flight range. Turn this on to disable that pinning and restore stock behavior.");
+
+            ConfigPinningMode = Config.Bind("Rendering_Fixes", "PinningMode", "distance",
+                "How distant flat background cards are kept from going edge-on/invisible at extended flight range. 'angle' locks each card's rotation to the angle it had when pinning activated. 'distance' instead pins each card to a constant distance from you, like celestial bodies, without touching rotation.");
+
+            ConfigTriggerDistanceMeters = Config.Bind("Rendering_Fixes", "TriggerDistance", 250f,
+                "How far (in meters) from the work bay you need to fly before background pinning kicks in.");
 
             if (!ConfigEnabled.Value)
             {
@@ -184,7 +198,8 @@ namespace NewtonianPhysics
             }
 
             FarClipTuning.Tick();
-            SpireDiagnostic.Tick();
+            SceneDiagnostic.Tick();
+            GateFXDebugTrigger.Tick();
         }
 
         // Runs after Update/animation/physics-interpolation have all applied this frame's final
