@@ -52,6 +52,18 @@ namespace NewtonianPhysics
         // one snap-to-zero the first time distance is found to be >=500m, then leaves it alone.
         private static bool _confirmedFullyShrunk;
 
+        // Clears cached scene state so the next Tick() re-scans from scratch - called on the
+        // Gameplay/new-shift transition (see Plugin.OnGameStateChanged). _originalScale is also
+        // cleared since it's captured from whatever glow Transform is found in the CURRENT shift's
+        // scene - reusing a scale value captured from a previous shift's (possibly differently
+        // sized/scaled) glow object would be wrong.
+        public static void ResetState()
+        {
+            _bayRoot = null;
+            _originalScale = null;
+            _confirmedFullyShrunk = false;
+        }
+
         public static void Tick()
         {
             if (!Plugin.ConfigEnabled.Value)

@@ -94,6 +94,8 @@ namespace NewtonianPhysics
                 return;
             }
 
+            Main.EventSystem.AddHandler<GameStateChangedEvent>(OnGameStateChanged);
+
             new Harmony(PluginInfo.PLUGIN_GUID).PatchAll();
             SetUpConfigFileWatcher();
             Log.LogInfo("NewtonianPhysics loaded.");
@@ -135,7 +137,27 @@ namespace NewtonianPhysics
 
         private void OnDestroy()
         {
+            Main.EventSystem.RemoveHandler<GameStateChangedEvent>(OnGameStateChanged);
             _configFileWatcher?.Dispose();
+        }
+
+        // Same GameState transition MagBoots/GrabController use to detect the start of a new
+        // shift. Without this, BackgroundParallaxTuning/PlanetGlowFadeTuning/FlatCardBillboarding's
+        // cached Transform references (bay root, planet cards, flat cards) and one-time "already
+        // scanned"/"already pinned" flags all persist as static state across a shift reload -
+        // confirmed via direct testing that abandoning a shift and reloading leaves
+        // FlatCardBillboarding's angle-pinning silently broken (still "pinned" against Transform
+        // references from the PREVIOUS shift's now-destroyed scene, so nothing about the new
+        // shift's actual objects is ever found or touched). Forcing a full reset here fixes all
+        // three systems for a fresh shift, without needing to touch their own per-frame logic.
+        private void OnGameStateChanged(GameStateChangedEvent ev)
+        {
+            if (ev.GameState == GameSession.GameState.Gameplay && ev.PrevGameState == GameSession.GameState.LoadingComplete)
+            {
+                BackgroundParallaxTuning.ResetState();
+                PlanetGlowFadeTuning.ResetState();
+                FlatCardBillboarding.ResetState();
+            }
         }
 
         // Same short frame-count delay (not time-based) MagBoots uses, restarted every time
@@ -173,6 +195,7 @@ namespace NewtonianPhysics
         {
             BackgroundParallaxTuning.Tick();
             PlanetGlowFadeTuning.Tick();
+            FlatCardBillboarding.Tick();
         }
 
         private void FixedUpdate()

@@ -20,6 +20,7 @@
     <Reference Include="UnityEngine.CoreModule"   HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.CoreModule.dll"   Private="false" />
     <Reference Include="UnityEngine.PhysicsModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.PhysicsModule.dll" Private="false" />
     <Reference Include="InControl"                HintPath="$(GameDir)\Shipbreaker_Data\Managed\InControl.dll"                Private="false" />
+    <Reference Include="Unity.Addressables"       HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Addressables.dll"       Private="false" />
   </ItemGroup>
 
   <Target Name="DeployToBepInEx" AfterTargets="Build">

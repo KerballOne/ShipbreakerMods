@@ -106,6 +106,23 @@ namespace NewtonianPhysics
         private static int _framesUntilRescan;
         private const int RescanIntervalFrames = 90;
 
+        // Clears cached scene state so the next Tick() re-scans from scratch - called on the
+        // Gameplay/new-shift transition (see Plugin.OnGameStateChanged). Without this, _planetsRoot/
+        // _bayRoot and each PlanetPin's cached card Transform keep pointing at the PREVIOUS shift's
+        // now-destroyed scene after abandoning a shift and reloading, silently breaking position
+        // pinning for the new shift (confirmed as a real bug for FlatCardBillboarding's angle
+        // pinning, which shares this exact caching pattern - applying the same fix here defensively,
+        // even though this specific breakage wasn't independently confirmed for this file).
+        public static void ResetState()
+        {
+            _planetsRoot = null;
+            _bayRoot = null;
+            _framesUntilRescan = 0;
+            OctanePin.ClearCache();
+            MoonPin.ClearCache();
+            SunPin.ClearCache();
+        }
+
         public static void Tick()
         {
             if (!Plugin.ConfigEnabled.Value || Plugin.ConfigFlatEarthMode.Value)
@@ -192,6 +209,18 @@ namespace NewtonianPhysics
             // static PRF_Base_Planets root, so any rotation on that light's Transform propagates
             // into the world-space axis this pin relies on staying constant.
             private Vector3? _previousDepthAxis;
+
+            // Drops every cached Transform reference and pinned state so the next Reset() rebuilds
+            // everything from scratch, instead of trusting references that belong to a now-destroyed
+            // previous shift's scene.
+            public void ClearCache()
+            {
+                _planetsRoot = null;
+                _bayRoot = null;
+                _card = null;
+                _isPinned = false;
+                _previousDepthAxis = null;
+            }
 
             // searchWholeScene: false restricts the lookup to children of the active planetsRoot
             // (PRF_Base_Planets) - correct for Octane/Moon, and avoids accidentally grabbing a
