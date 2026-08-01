@@ -50,7 +50,7 @@ Hardspace Shipbreaker\BepInEx\config\me.kerballone.NewtonianPhysics.cfg
 
 Every setting has a plain-language description in the file itself - open it in any text editor to see what each one does and tweak it to taste.
 
-The config file also reloads live - edit and save it while the game is running and your changes apply immediately, no restart needed. (MaxVelocityMps is the one exception: it's only applied when the player controller spawns, so a change needs a shift/respawn to take effect.)
+The config file also reloads live - edit and save it while the game is running and your changes apply immediately, no restart needed.
 
 ## Installation
 

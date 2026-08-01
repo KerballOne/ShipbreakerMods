@@ -11,14 +11,22 @@ namespace NewtonianPhysics
     internal static class MovementTuning
     {
         // RigidbodyController.MaxVelocity (PlayerMotion's base class) is a plain public field read
-        // directly every FixedUpdate to clamp mRigidbody.velocity - no caching, so setting it once
-        // whenever the player controller wakes up is enough; no need to patch FixedUpdate itself.
+        // directly every FixedUpdate to clamp mRigidbody.velocity. Writing it once in Awake looked
+        // sufficient but isn't: nothing else ever re-reads the config afterward, so editing
+        // MaxVelocityMps in the live-reloaded .cfg had no effect until the next shift/respawn
+        // recreated the PlayerMotion instance. Matches MagBoots' approach elsewhere in this file
+        // (PlayableArea_GetPlayableAreaState_Multiplier) and in the sibling mod: never cache a
+        // config value into a game field once, always re-read Plugin.ConfigX.Value at the point of
+        // use. Prefixing FixedUpdate (rather than Awake) means this now writes MaxVelocity fresh
+        // every physics tick, immediately before base.FixedUpdate() reads it for the clamp - same
+        // per-tick cost class as DragTuning's existing FixedUpdate-scoped patches, negligible next
+        // to a single float field write.
         // 0 in config means "no cap" - Unity has no built-in infinite Rigidbody speed limit via this
         // field, so use float.MaxValue instead, which is effectively unbounded for gameplay purposes.
-        [HarmonyPatch(typeof(PlayerMotion), "Awake")]
-        private static class PlayerMotion_Awake_MaxVelocity
+        [HarmonyPatch(typeof(PlayerMotion), "FixedUpdate")]
+        private static class PlayerMotion_FixedUpdate_MaxVelocity
         {
-            private static void Postfix(PlayerMotion __instance)
+            private static void Prefix(PlayerMotion __instance)
             {
                 float configured = Plugin.ConfigMaxVelocityMps.Value;
                 __instance.MaxVelocity = configured > 0f ? configured : float.MaxValue;
