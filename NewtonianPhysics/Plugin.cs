@@ -4,7 +4,6 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
-using UnityEngine;
 
 namespace NewtonianPhysics
 {
@@ -33,7 +32,6 @@ namespace NewtonianPhysics
         internal static ConfigEntry<float> ConfigAssumedPlayerMassKg = null!;
 
         internal static ConfigEntry<bool> ConfigFlatEarthMode = null!;
-        internal static ConfigEntry<KeyboardShortcut> ConfigSceneDumpKey = null!;
 
         private void Awake()
         {
@@ -89,9 +87,6 @@ namespace NewtonianPhysics
 
             ConfigFlatEarthMode = Config.Bind("Rendering_Fixes", "FlatEarthMode", false,
                 "Earth and Moon are ordinary scene objects placed at a fixed position, meant to look distant/unmoving - vanilla movement never got far enough for that illusion to break, but this mod's own MaxVelocityMps/WorkAreaRadiusMultiplier let you drift far enough that they visibly recede or approach, which doesn't match how something that far away should look. Turn this on to disable the fix and let them recede/approach like vanilla (once you're more than 250m from the work bay). Leave off to keep them pinned at a constant offset from you instead, like real astronomical bodies, while everything else keeps shrinking/growing normally with real distance.");
-
-            ConfigSceneDumpKey = Config.Bind("Debug", "SceneDumpKey", new KeyboardShortcut(KeyCode.F9),
-                "Diagnostic only, unrelated to normal play: press to dump scene info (cameras, background renderers, Earth/Moon candidates) to the BepInEx log, AND zero out PRF_PlanetGlow's confirmed brightness/tint properties, as a quick visual sanity check.");
 
             if (!ConfigEnabled.Value)
             {
@@ -167,7 +162,6 @@ namespace NewtonianPhysics
             }
 
             FarClipTuning.Tick();
-            SceneDiagnostics.Tick();
         }
 
         // Runs after Update/animation/physics-interpolation have all applied this frame's final
@@ -175,25 +169,10 @@ namespace NewtonianPhysics
         // position, so doing it here (rather than in Update) avoids a frame of lag against the
         // camera's actual rendered position, which was visible as stutter/jitter at high Newtonian
         // speeds for the former.
-        private int _glowFadeThrottleCounter;
-        private const int GlowFadeThrottleFrames = 5;
-
         private void LateUpdate()
         {
             BackgroundParallaxTuning.Tick();
-
-            // PlanetGlowFadeTuning.Tick() itself is unchanged/untouched (its internal logic is
-            // confirmed working) - it does two Resources.FindObjectsOfTypeAll scene scans every
-            // time it runs, which caused a severe frame rate stutter when called every frame. This
-            // just calls the identical method less often (every 5th frame) rather than changing
-            // anything about how it finds/moves the glow, since prior attempts to cache references
-            // inside that method broke the fade outright.
-            _glowFadeThrottleCounter++;
-            if (_glowFadeThrottleCounter >= GlowFadeThrottleFrames)
-            {
-                _glowFadeThrottleCounter = 0;
-                PlanetGlowFadeTuning.Tick();
-            }
+            PlanetGlowFadeTuning.Tick();
         }
 
         private void FixedUpdate()
