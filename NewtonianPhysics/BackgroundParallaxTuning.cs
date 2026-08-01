@@ -200,6 +200,7 @@ namespace NewtonianPhysics
             private Vector3 _depthAxis;
             private Vector3 _lateralOffset;
             private float _planetDepth;
+            private float _originalPlanetDepth;
             private float _previousPlayerDepth;
             private bool _isPinned;
 
@@ -408,6 +409,7 @@ namespace NewtonianPhysics
                     Vector3 offset = _card.position - player.position;
                     _lateralOffset = offset - Vector3.Dot(offset, _depthAxis) * _depthAxis;
                     _planetDepth = Vector3.Dot(_card.position, _depthAxis);
+                    _originalPlanetDepth = _planetDepth;
                     _previousPlayerDepth = Vector3.Dot(player.position, _depthAxis);
                     _isPinned = true;
 
@@ -431,15 +433,35 @@ namespace NewtonianPhysics
 
                 // "Pin" means pinned to the PLAYER's position, not frozen at a fixed world-space
                 // point - so approaching tracks the player 1:1 (gap along the depth axis stays
-                // exactly constant), while receding leaves the planet's depth untouched (matches
-                // vanilla's own recede speed). Compared directly via |gap| each frame rather than a
-                // pre-derived sign, so this still works correctly even if the player's depth passes
-                // the planet's.
+                // exactly constant, pushing the planet away). Compared directly via |gap| each
+                // frame rather than a pre-derived sign, so this still works correctly even if the
+                // player's depth passes the planet's.
                 float previousGap = Mathf.Abs(_planetDepth - _previousPlayerDepth);
                 float candidateGap = Mathf.Abs(_planetDepth - playerDepth);
                 bool isReceding = candidateGap > previousGap;
                 if (!isReceding)
+                {
                     _planetDepth += playerDepthDelta;
+                }
+                else
+                {
+                    // Receding PULLS the planet back toward wherever it was when pinning first
+                    // activated (_originalPlanetDepth), rather than leaving it frozen at whatever
+                    // depth the last approach pushed it to. Without this, repeated approach/retreat
+                    // cycles in one session ratchet the planet permanently farther away each time
+                    // you approach, since depth only ever grew and never shrank back - confirmed via
+                    // direct testing that this asymmetry is real and compounds indefinitely with no
+                    // decay. Clamped so a large single-frame retreat can't overshoot PAST the
+                    // original depth (which would let the planet swing to the other side of its
+                    // authored position, or approach/clip through something static like Polaris) -
+                    // once back at _originalPlanetDepth, further receding is inert again, matching
+                    // the original (pre-fix) behavior from that point on.
+                    float movedTowardOriginal = _planetDepth + playerDepthDelta;
+                    bool wasAboveOriginal = _planetDepth >= _originalPlanetDepth;
+                    _planetDepth = wasAboveOriginal
+                        ? Mathf.Max(movedTowardOriginal, _originalPlanetDepth)
+                        : Mathf.Min(movedTowardOriginal, _originalPlanetDepth);
+                }
 
                 Vector3 newCardPos = player.position + _lateralOffset + (_planetDepth - playerDepth) * _depthAxis;
 

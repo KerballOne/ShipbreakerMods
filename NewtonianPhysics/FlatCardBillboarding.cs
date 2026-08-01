@@ -415,6 +415,7 @@ namespace NewtonianPhysics
             private Vector3 _depthAxis;
             private Vector3 _lateralOffset;
             private float _objectDepth;
+            private float _originalObjectDepth;
             private float _previousPlayerDepth;
             private bool _isPinned;
             private float _nextThrottledLogTime;
@@ -492,6 +493,7 @@ namespace NewtonianPhysics
                     Vector3 offset = _card.position - player.position;
                     _lateralOffset = offset - Vector3.Dot(offset, _depthAxis) * _depthAxis;
                     _objectDepth = Vector3.Dot(_card.position, _depthAxis);
+                    _originalObjectDepth = _objectDepth;
                     _previousPlayerDepth = Vector3.Dot(player.position, _depthAxis);
                     _isPinned = true;
 
@@ -508,11 +510,14 @@ namespace NewtonianPhysics
                 if (!_isPinned)
                     return;
 
-                // Same asymmetric approach-vs-recede handling as PlanetPin: approaching tracks the
-                // player 1:1 along the depth axis (the object stays exactly as far away, receding
-                // from the player exactly as fast as they approach), while receding leaves the
-                // object's depth untouched (matches vanilla's own recede speed) - see PlanetPin's
-                // own comment block in BackgroundParallaxTuning.cs for the full rationale.
+                // Same asymmetric-but-bounded approach-vs-recede handling as PlanetPin: approaching
+                // tracks the player 1:1 along the depth axis (the object stays exactly as far away,
+                // pushed away from the player). Receding PULLS the object back toward wherever it
+                // was when pinning first activated (_originalObjectDepth), clamped so it can never
+                // overshoot past that original depth - see PlanetPin's matching comment in
+                // BackgroundParallaxTuning.cs for the full rationale (fixes a one-way ratchet where
+                // repeated approach/retreat cycles would otherwise push the object permanently
+                // farther away with no way back, confirmed as a real issue via direct testing).
                 float playerDepth = Vector3.Dot(player.position, _depthAxis);
                 float playerDepthDelta = playerDepth - _previousPlayerDepth;
 
@@ -520,7 +525,17 @@ namespace NewtonianPhysics
                 float candidateGap = Mathf.Abs(_objectDepth - playerDepth);
                 bool isReceding = candidateGap > previousGap;
                 if (!isReceding)
+                {
                     _objectDepth += playerDepthDelta;
+                }
+                else
+                {
+                    float movedTowardOriginal = _objectDepth + playerDepthDelta;
+                    bool wasAboveOriginal = _objectDepth >= _originalObjectDepth;
+                    _objectDepth = wasAboveOriginal
+                        ? Mathf.Max(movedTowardOriginal, _originalObjectDepth)
+                        : Mathf.Min(movedTowardOriginal, _originalObjectDepth);
+                }
 
                 Vector3 newCardPos = player.position + _lateralOffset + (_objectDepth - playerDepth) * _depthAxis;
                 _card.position = newCardPos;
