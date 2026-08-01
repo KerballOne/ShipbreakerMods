@@ -35,6 +35,7 @@ namespace NewtonianPhysics
         internal static ConfigEntry<bool> ConfigFlatEarthMode = null!;
         internal static ConfigEntry<string> ConfigPinningMode = null!;
         internal static ConfigEntry<float> ConfigTriggerDistanceMeters = null!;
+        internal static ConfigEntry<float> ConfigStreamStretchMultiplier = null!;
 
         internal static ConfigEntry<KeyboardShortcut> ConfigFireGateBeamKey = null!;
 
@@ -101,6 +102,9 @@ namespace NewtonianPhysics
 
             ConfigTriggerDistanceMeters = Config.Bind("Rendering_Fixes", "TriggerDistance", 250f,
                 "How far (in meters) from the work bay you need to fly before background pinning kicks in.");
+
+            ConfigStreamStretchMultiplier = Config.Bind("Rendering_Fixes", "StreamStretchMultiplier", 0f,
+                "Scales the speed-streak effect. 1 is equivalent to stock behavior, 0 is off.");
 
             if (!ConfigEnabled.Value)
             {

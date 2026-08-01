@@ -73,5 +73,41 @@ namespace NewtonianPhysics
                 return true;
             }
         }
+
+        // StreamFXControllerLynx drives the speed-streak effect (a Kvant.Stream instance) - every
+        // Update() it sets TailFactor/TailMax-derived tail length from the player's live velocity:
+        // tail = Clamp(velocity.magnitude * TailFactor, TailMin, TailMax). Stock's defaults
+        // (TailFactor=2, TailMax=5) mean the tail length maxes out and stops growing at just
+        // 2.5 m/s (5 / 2) - far below stock's own ~20 m/s cap, and completely saturated across
+        // this entire mod's much higher speed range, so the streak length has effectively been a
+        // constant regardless of how fast the player actually goes. Scaling both TailFactor and
+        // TailMax by the same multiplier stretches the whole curve (including its ceiling)
+        // proportionally, rather than just raising the ceiling alone and leaving the low end
+        // unnaturally sharp relative to it.
+        //
+        // Prefixing Update() (not Start()) so this re-applies every frame from the ORIGINAL
+        // (unscaled) values cached on first sight - same reasoning as
+        // PlayerMotion_FixedUpdate_MaxVelocity above: a one-shot write would go stale the moment
+        // the config is live-reloaded mid-session, and directly multiplying the field in place
+        // frame over frame (instead of always rescaling from a fixed original) would compound the
+        // multiplier every single frame instead of applying it once.
+        [HarmonyPatch(typeof(StreamFXControllerLynx), "Update")]
+        private static class StreamFXControllerLynx_Update_StretchMultiplier
+        {
+            private static readonly Dictionary<StreamFXControllerLynx, (float TailFactor, float TailMax)> sOriginalValues = new();
+
+            private static void Prefix(StreamFXControllerLynx __instance)
+            {
+                if (!sOriginalValues.TryGetValue(__instance, out var original))
+                {
+                    original = (__instance.TailFactor, __instance.TailMax);
+                    sOriginalValues[__instance] = original;
+                }
+
+                float multiplier = Plugin.ConfigStreamStretchMultiplier.Value;
+                __instance.TailFactor = original.TailFactor * multiplier;
+                __instance.TailMax = original.TailMax * multiplier;
+            }
+        }
     }
 }

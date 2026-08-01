@@ -20,6 +20,12 @@
     <Reference Include="UnityEngine.CoreModule"   HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.CoreModule.dll"   Private="false" />
     <Reference Include="UnityEngine.PhysicsModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.PhysicsModule.dll" Private="false" />
     <Reference Include="UnityEngine.InputLegacyModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.InputLegacyModule.dll" Private="false" />
+    <Reference Include="UnityEngine.ParticleSystemModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.ParticleSystemModule.dll" Private="false" />
+    <Reference Include="Unity.RenderPipelines.Core.Runtime" HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.RenderPipelines.Core.Runtime.dll" Private="false" />
+    <Reference Include="Unity.RenderPipelines.HighDefinition.Runtime" HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.RenderPipelines.HighDefinition.Runtime.dll" Private="false" />
+    <Reference Include="RetroLookProHDRP.Effects" HintPath="$(GameDir)\Shipbreaker_Data\Managed\RetroLookProHDRP.Effects.dll" Private="false" />
+    <Reference Include="RetroLookPro.Resources" HintPath="$(GameDir)\Shipbreaker_Data\Managed\RetroLookPro.Resources.dll" Private="false" />
+    <Reference Include="Assembly-CSharp"        HintPath="$(GameDir)\Shipbreaker_Data\Managed\Assembly-CSharp.dll"        Private="false" />
     <Reference Include="InControl"                HintPath="$(GameDir)\Shipbreaker_Data\Managed\InControl.dll"                Private="false" />
     <Reference Include="Unity.Addressables"       HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Addressables.dll"       Private="false" />
   </ItemGroup>
