@@ -25,9 +25,14 @@ Vanilla also has a few quieter ways of slowing you back down over time, even wit
 
 ## Rendering fixes
 
-Vanilla's camera stops drawing anything past 2700m. Normally you'd never fly far enough for that to matter, but MaxVelocityMps and WorkAreaRadiusMultiplier above make it easy to range well past it, so distant structures can flatly vanish once you're beyond that distance.
+Vanilla's camera stops drawing anything past 2700m, and background objects (Earth, Moon, the Sun, distant station/gate cards) are placed and sized for how they look from near the work bay. Normally you'd never fly far enough for any of that to matter, but MaxVelocityMps and WorkAreaRadiusMultiplier above make it easy to range well past it.
 
-- **FarClipPlane** - how far (in meters) the camera draws. Effectively unlimited (99999) by default. Set to 0 to leave vanilla's 2700m as-is.
+- Camera draw distance is always raised well beyond 2700m, so distant structures no longer flatly vanish once you're far out.
+- **TriggerDistance** (default 250m) - how far from the work bay you need to fly before any of the fixes below kick in. Close to the bay, vanilla's own placement already looks right.
+- Earth, Moon, the Sun, and the planet glow stay pinned at a constant distance from you past that point, like real astronomical bodies, instead of visibly receding or approaching the way vanilla's fixed-position placement would once you're flying far enough to notice.
+- **PinningMode** (`distance` by default, or `angle`) - how distant flat background cards (the rail gate card, the ring cards near it, and the village station/waystation cards) are kept from going edge-on/invisible at extended flight range. `distance` pins each card to a constant distance from you, same as the celestial bodies above. `angle` instead locks each card's rotation to whatever angle it had relative to you the moment it activated, letting its position drift like vanilla.
+- **FlatEarthMode** (off by default) - disables all of the background pinning above and restores vanilla's recede/approach behavior, if you'd rather see it break down at range than have it artificially held in place.
+- **StreamStretchMultiplier** (0/off by default) - the speed-streak effect you see while drifting fast is tuned for vanilla's ~20 m/s cap and maxes out almost immediately at this mod's higher speeds. 1 restores exactly how it behaves in vanilla; higher values let it keep stretching further as you go faster; 0 turns it off entirely.
 
 ## Recoil
 
