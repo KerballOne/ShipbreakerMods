@@ -2,22 +2,38 @@ using System.Collections.Generic;
 using System.Linq;
 using BBI.Unity.Game;
 using HarmonyLib;
+using InControl;
 using UnityEngine;
 
 namespace NewtonianPhysics
 {
     // Forces the rail gate laser-fire sequence to start on demand, bypassing RailGateBehaviour's
     // normal gating (random per-shift chance/delay rolls - see project_gatefx_investigation in
-    // memory). Bound to Plugin.ConfigFireGateBeamKey (default F7) - useful for testing how
-    // GateCard/the beam VFX (FlatCardBillboarding's angle/distance pinning) look without waiting
-    // for a real, rare gate visit.
+    // memory). Bound to Plugin.ConfigFireGateBeamKey (default F7) or, while a controller is the
+    // active input device, Plugin.ConfigFireGateBeamBtn (default None/unbound) - useful for
+    // testing how GateCard/the beam VFX (FlatCardBillboarding's angle/distance pinning) look
+    // without waiting for a real, rare gate visit.
     internal static class GateFXDebugTrigger
     {
         private const float DebugStepIntervalSeconds = 2f;
 
+        // Same controller-vs-keyboard detection MagBoots uses - only reads the controller binding
+        // while a controller is actually the last-used input device, so the keyboard binding still
+        // works normally otherwise even if a controller button happens to be configured.
+        private static bool IsControllerActive =>
+            LynxControls.Instance != null &&
+            LynxControls.Instance.LastInputType == BindingSourceType.DeviceBindingSource;
+
+        private static bool ShouldFire()
+        {
+            if (IsControllerActive && Plugin.ConfigFireGateBeamBtn.Value != InputControlType.None)
+                return InputManager.ActiveDevice?[Plugin.ConfigFireGateBeamBtn.Value].WasPressed ?? false;
+            return Plugin.ConfigFireGateBeamKey.Value.IsDown();
+        }
+
         public static void Tick()
         {
-            if (!Plugin.ConfigFireGateBeamKey.Value.IsDown())
+            if (!ShouldFire())
                 return;
 
             // Same _HAB-duplicate-aware whole-scene search pattern used throughout this mod

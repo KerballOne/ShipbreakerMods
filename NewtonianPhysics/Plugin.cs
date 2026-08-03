@@ -4,6 +4,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
+using InControl;
 using UnityEngine;
 
 namespace NewtonianPhysics
@@ -38,6 +39,7 @@ namespace NewtonianPhysics
         internal static ConfigEntry<float> ConfigStreamStretchMultiplier = null!;
 
         internal static ConfigEntry<KeyboardShortcut> ConfigFireGateBeamKey = null!;
+        internal static ConfigEntry<InputControlType> ConfigFireGateBeamBtn = null!;
 
         private void Awake()
         {
@@ -52,6 +54,9 @@ namespace NewtonianPhysics
             ConfigFireGateBeamKey = Config.Bind("General", "FireGateBeam_Key", new KeyboardShortcut(KeyCode.F7),
                 "Forces the rail gate to fire immediately instead of waiting for its normal random chance.");
 
+            ConfigFireGateBeamBtn = Config.Bind("General", "FireGateBeam_Btn", InputControlType.None,
+                "Same as FireGateBeam_Key, but for a controller button - only used while a controller is your active input device. Set to None to leave it keyboard-only.");
+
             ConfigNoBrakes = Config.Bind("Newtonian", "NoBrakes", true,
                 "Disables your air brake entirely. Braking on demand is a bit overpowered for a zero-g game - turning it off makes movement more realistically Newtonian: you keep drifting unless something (like recoil, the Grapple Gun pulling you, grabbing something by hand, or MagBoots) actually stops you.");
 
@@ -65,7 +70,7 @@ namespace NewtonianPhysics
                 "Vanilla applies drag to loose parts and debris so they settle down over time instead of drifting/spinning forever. Leave this off to remove that drag so objects behave the same as the player - once moving, they keep moving. Turn it on to restore vanilla's object drag.");
 
             ConfigMaxVelocityMps = Config.Bind("Newtonian", "MaxVelocityMps", 200f,
-                "Caps how fast you can drift, in meters per second. Vanilla's default is 20. Set to 0 for no cap at all - though ~200 m/s is a hard engine limit either way.");
+                "Caps how fast you can drift, in meters per second - also raises how fast your thrusters alone can accelerate you (vanilla's thrust speed is a separate, much lower limit from your overall speed cap, but this setting drives both). Vanilla's overall cap is 20. Set to 0 for no cap at all - though ~200 m/s is a hard engine limit either way.");
 
             ConfigWorkAreaRadiusMultiplier = Config.Bind("Newtonian", "WorkAreaRadiusMultiplier", 0f,
                 "Scales how far you can roam from the game's designated work areas before the warning/danger zone (which can eventually teleport or hurt you) kicks in. 1 is vanilla, 2 doubles it, etc. Set to 0 to disable the work area limit entirely.");
