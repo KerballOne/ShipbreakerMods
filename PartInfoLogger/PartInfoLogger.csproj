@@ -29,6 +29,9 @@
     <Reference Include="UnityEngine.PhysicsModule"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.PhysicsModule.dll"
                Private="false" />
+    <Reference Include="UnityEngine.InputLegacyModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.InputLegacyModule.dll"
+               Private="false" />
     <Reference Include="Unity.Entities"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Entities.dll"
                Private="false" />

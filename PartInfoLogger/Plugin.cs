@@ -110,6 +110,7 @@ namespace PartInfoLogger
                     }
                     Instance.StartCoroutine(DumpMaterialProperties());
                     Instance.StartCoroutine(DumpJointCensus());
+                    Instance.StartCoroutine(PickupInspector.DumpAllInteractables());
                     if (MeshDiagnosticsEnabled.Value || PositionDriftEnabled.Value)
                     {
                         var prefixes = MeshDiagnosticsNamePrefixes.Value
@@ -191,6 +192,8 @@ namespace PartInfoLogger
 
         private void Update()
         {
+            PickupInspector.Tick();
+
             if (SkipDiagnosticsEnabled == null || !SkipDiagnosticsEnabled.Value) return;
 
             var habController = Resources.FindObjectsOfTypeAll<Hab3DController>().FirstOrDefault();
