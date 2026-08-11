@@ -139,7 +139,20 @@ namespace NewtonianPhysics
         // part's real Rigidbody.drag/angularDrag - it runs continuously as the ship's structure
         // graph updates, not just once on spawn, so re-zeroing here after the original keeps
         // loose parts and debris drag-free the same way the player already is.
-        [HarmonyPatch(typeof(HierarchyParent), nameof(HierarchyParent.ApplyChildData))]
+        //
+        // Deliberately NOT auto-discovered by Harmony's PatchAll() (no [HarmonyPatch] attribute
+        // here - see ApplyManually below) - HierarchyParent's static cctor builds a
+        // Unity.Entities.ComponentTypes array from typeof(...) calls, which requires
+        // Unity.Entities.TypeManager to already be initialized. Patching this method via
+        // PatchAll() in Plugin.Awake() forces the CLR to JIT-compile it (MonoMod's
+        // GetFunctionPointer/GetNativeStart), which in turn forces HierarchyParent's static
+        // cctor to run - but Awake() fires during BepInEx's very early plugin-load pass, well
+        // before the game's own TypeManager.Initialize() has run. That crashes the cctor with a
+        // NullReferenceException, and .NET permanently marks HierarchyParent as faulted for the
+        // rest of the session - every later legitimate use (ShipSpawnSystem.LoadingFixupHierarchies,
+        // called every frame while a ship loads) then rethrows the same TypeInitializationException
+        // forever. Confirmed via a user's crash log showing exactly this failure chain, immediately
+        // under PatchAll() in Plugin.Awake(), only when this mod was installed.
         private static class HierarchyParent_ApplyChildData_Suppress
         {
             private static void Postfix(HierarchyParent __instance)
@@ -153,6 +166,22 @@ namespace NewtonianPhysics
                     rb.angularDrag = 0f;
                 }
             }
+        }
+
+        private static bool sApplied;
+
+        // Applied once, on the first real Gameplay transition (see Plugin.OnGameStateChanged) -
+        // by then the game's own ECS systems are already running, so TypeManager is guaranteed
+        // initialized and HierarchyParent's static cctor can run safely.
+        public static void ApplyManually()
+        {
+            if (sApplied)
+                return;
+            sApplied = true;
+
+            new Harmony(PluginInfo.PLUGIN_GUID).Patch(
+                AccessTools.Method(typeof(HierarchyParent), nameof(HierarchyParent.ApplyChildData)),
+                postfix: new HarmonyMethod(AccessTools.Method(typeof(HierarchyParent_ApplyChildData_Suppress), "Postfix")));
         }
     }
 }

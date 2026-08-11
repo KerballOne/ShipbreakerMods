@@ -181,6 +181,12 @@ namespace NewtonianPhysics
                 PlanetGlowFadeTuning.ResetState();
                 FlatCardBillboarding.ResetState();
             }
+
+            // Deferred until here (not part of PatchAll() in Awake()) - see the comment on
+            // DragTuning.HierarchyParent_ApplyChildData_Suppress for why patching this method
+            // too early crashes HierarchyParent's static cctor.
+            if (ev.GameState == GameSession.GameState.Gameplay)
+                DragTuning.ApplyManually();
         }
 
         // Same short frame-count delay (not time-based) MagBoots uses, restarted every time
