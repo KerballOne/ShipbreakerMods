@@ -31,6 +31,7 @@ namespace PartInfoLogger
         internal static ConfigEntry<bool> MeshDiagnosticsEnabled = null!;
         internal static ConfigEntry<string> MeshDiagnosticsNamePrefixes = null!;
         internal static ConfigEntry<bool> PositionDriftEnabled = null!;
+        internal static ConfigEntry<bool> PickupInspectorEnabled = null!;
         internal static Plugin Instance = null!;
 
         private void Awake()
@@ -91,6 +92,14 @@ namespace PartInfoLogger
                 "Built to detect whether a part that fails to auto-joint was pushed away by a physics separation " +
                 "impulse from excess mesh-collider overlap at spawn. Leave off for normal use.");
 
+            PickupInspectorEnabled = Config.Bind(
+                "PickupInspector", "Enabled", false,
+                "If true, enables the F9 hotkey: raycasts from the camera and dumps every component (full " +
+                "reflective field/property dump) on whatever's hit, walking both up and down the hierarchy. " +
+                "Built to compare a baked (non-addressable) pickup part against a working addressable one " +
+                "component-for-component. Zero cost when not pressed; leave off unless actively diagnosing " +
+                "interaction/pickup wiring.");
+
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             harmony.PatchAll();
 
@@ -110,7 +119,6 @@ namespace PartInfoLogger
                     }
                     Instance.StartCoroutine(DumpMaterialProperties());
                     Instance.StartCoroutine(DumpJointCensus());
-                    Instance.StartCoroutine(PickupInspector.DumpAllInteractables());
                     if (MeshDiagnosticsEnabled.Value || PositionDriftEnabled.Value)
                     {
                         var prefixes = MeshDiagnosticsNamePrefixes.Value
