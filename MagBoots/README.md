@@ -8,6 +8,7 @@ Press the toggle key with a ship part below you. If the surface is flat enough a
 
 - Press the toggle key to attach. MagBoots checks straight down from you; if it finds a surface that's flat and big enough, you snap into place.
 - While attached, movement input walks you along the surface instead of free-thrusting. You're held at a fixed distance off the hull.
+- If the part you're attached to is moving (or being moved), you move with it - MagBoots tracks the surface itself, not just a fixed point in space.
 - MagBoots checks a stride ahead of you as you walk, so you can climb and descend stairs, ramps, and ledges without losing your footing. Whether a step counts as "up" or "down" is decided by where you're looking - up or level means up, down means down.
 - Look up and down freely — you just can't tip all the way over and stare straight into the deck. Pitching your view further (up or down) also shortens your stride, so tilting your view takes you into smaller, more careful steps; leveling back out returns you to full stride.
 - While attached, looking around is instant and precise instead of the normal zero-g drift - turning your head doesn't keep spinning after you stop moving the mouse/stick, the way it does while free-floating. Goes back to normal zero-g drift the instant you detach.

@@ -31,6 +31,20 @@ namespace MagBoots
         private Vector3 _attachPoint;
         private Transform? _attachHitTransform;
 
+        // Cached alongside _attachHitTransform (via SetAttach) rather than GetComponent every tick - null
+        // for static hull geometry, in which case the surface's own velocity is zero.
+        private Rigidbody? _attachHitRigidbody;
+
+        // _attachPoint/_attachNormal above are the world-space values actually used everywhere else in
+        // the file - but a moving/rotating hit part (an airlock, a ship section under thrust) would leave
+        // them stale, since nothing previously re-derived them from the part's own motion. These track the
+        // same point/normal in _attachHitTransform's LOCAL space instead, and RefreshAttachFromHitTransform
+        // (called once per tick, before anything else reads _attachPoint/_attachNormal) converts them back
+        // to world space via TransformPoint/TransformDirection - so the player rides along with the part.
+        // Kept in sync with _attachPoint/_attachNormal/_attachHitTransform at every assignment site.
+        private Vector3 _attachLocalPoint;
+        private Vector3 _attachLocalNormal;
+
         // Splits a detected step into two phases: _attachPoint holds still the instant a real step is
         // detected, and the vertical/normal correction only applies once the player physically catches up
         // (via the standoff spring) or Timeout_Step elapses. Without this, a steep staircase combined a
@@ -182,12 +196,40 @@ namespace MagBoots
             _errorTimer = 0f;
         }
 
-        private void BeginSnap(Vector3 point, Vector3 normal, Transform hitTransform)
+        // Sets _attachPoint/_attachNormal/_attachHitTransform together with their local-space counterparts
+        // (see the fields' own comment) - always go through this rather than assigning those fields
+        // individually, so a moving/rotating hit part is never silently left out of sync.
+        private void SetAttach(Vector3 point, Vector3 normal, Transform? hitTransform)
         {
             _attachPoint = point;
             _attachNormal = normal;
-            _smoothedNormal = normal;
             _attachHitTransform = hitTransform;
+            _attachHitRigidbody = hitTransform != null ? hitTransform.GetComponent<Rigidbody>() : null;
+
+            if (hitTransform != null)
+            {
+                _attachLocalPoint = hitTransform.InverseTransformPoint(point);
+                _attachLocalNormal = hitTransform.InverseTransformDirection(normal);
+            }
+        }
+
+        // Re-derives _attachPoint/_attachNormal from the hit transform's current world position/rotation,
+        // so a part that moved or rotated since the last assignment carries the player along with it.
+        // Called once per tick, before anything else in UpdateAttached reads _attachPoint/_attachNormal.
+        // No-op if there's no hit transform (shouldn't happen while attached, but cheap to guard).
+        private void RefreshAttachFromHitTransform()
+        {
+            if (_attachHitTransform == null)
+                return;
+
+            _attachPoint = _attachHitTransform.TransformPoint(_attachLocalPoint);
+            _attachNormal = _attachHitTransform.TransformDirection(_attachLocalNormal).normalized;
+        }
+
+        private void BeginSnap(Vector3 point, Vector3 normal, Transform hitTransform)
+        {
+            SetAttach(point, normal, hitTransform);
+            _smoothedNormal = normal;
             _standoffFraction = 1f;
             _pendingStepCorrection = false;
 
@@ -242,6 +284,7 @@ namespace MagBoots
         {
             _state = MagBootsState.Off;
             _attachHitTransform = null;
+            _attachHitRigidbody = null;
             ThrustSuppression.SetSuppressed(false);
             PreciseRotation.SetActive(false);
 
@@ -374,6 +417,10 @@ namespace MagBoots
                 return;
             }
 
+            // Carry the player along with a moving/rotating hit part before anything below reads
+            // _attachPoint/_attachNormal - see the fields' own comment.
+            RefreshAttachFromHitTransform();
+
             // Ease toward the raw target (_attachNormal); rotation, move direction, the ahead-cast, and
             // the standoff offset all derive from this smoothed value so they transition together.
             _smoothedNormal = Vector3.Slerp(_smoothedNormal, _attachNormal, Time.fixedDeltaTime * Plugin.ConfigCornerSmoothingSpeed.Value).normalized;
@@ -455,10 +502,9 @@ namespace MagBoots
                 if (lateralSettled || timedOut)
                 {
                     Vector3 offset = _attachPoint - _pendingStepPoint;
-                    _attachPoint -= Vector3.Dot(offset, _pendingStepNormal) * _pendingStepNormal;
+                    Vector3 resolvedPoint = _attachPoint - Vector3.Dot(offset, _pendingStepNormal) * _pendingStepNormal;
                     SnapRotationToNormal(_pendingStepNormal);
-                    _attachNormal = _pendingStepNormal;
-                    _attachHitTransform = _pendingStepHitTransform;
+                    SetAttach(resolvedPoint, _pendingStepNormal, _pendingStepHitTransform);
                     _pendingStepCorrection = false;
 
                     if (Plugin.ConfigDebugPrint.Value)
@@ -564,7 +610,8 @@ namespace MagBoots
                         // Advance the anchor laterally only this tick (project onto the CURRENT plane, so
                         // height doesn't change yet), and queue the vertical correction for once input
                         // eases off, on a separate tick from the lateral move.
-                        _attachPoint = candidatePoint - Vector3.Dot(candidatePoint - feetPosition, _attachNormal) * _attachNormal;
+                        Vector3 advancedPoint = candidatePoint - Vector3.Dot(candidatePoint - feetPosition, _attachNormal) * _attachNormal;
+                        SetAttach(advancedPoint, _attachNormal, _attachHitTransform);
 
                         _pendingStepCorrection = true;
                         _pendingStepTimer = 0f;
@@ -582,10 +629,8 @@ namespace MagBoots
                         // Catch-up handled in the pending-state block above.
                         Vector3 currentLateral = feetPosition - Vector3.Dot(feetPosition, aheadHit.normal) * aheadHit.normal;
                         float targetHeightUp = Vector3.Dot(aheadHit.point, aheadHit.normal);
-                        _attachPoint = currentLateral + targetHeightUp * aheadHit.normal;
                         SnapRotationToNormal(aheadHit.normal);
-                        _attachNormal = aheadHit.normal;
-                        _attachHitTransform = aheadHit.transform;
+                        SetAttach(currentLateral + targetHeightUp * aheadHit.normal, aheadHit.normal, aheadHit.transform);
 
                         _pendingStepUpCorrection = true;
                         _pendingStepUpTimer = 0f;
@@ -613,9 +658,7 @@ namespace MagBoots
                         float targetHeight = Vector3.Dot(targetAttachPoint, aheadHit.normal);
                         float easedHeight = Mathf.MoveTowards(currentHeight, targetHeight,
                             Plugin.ConfigAttachHeightFollowSpeed.Value * Time.fixedDeltaTime);
-                        _attachPoint = targetLateral + easedHeight * aheadHit.normal;
-                        _attachNormal = aheadHit.normal;
-                        _attachHitTransform = aheadHit.transform;
+                        SetAttach(targetLateral + easedHeight * aheadHit.normal, aheadHit.normal, aheadHit.transform);
 
                         if (Plugin.ConfigDebugPrint.Value)
                         {
@@ -645,11 +688,7 @@ namespace MagBoots
                     }
 
                     if (fallbackHit)
-                    {
-                        _attachPoint = recoveryHit.point;
-                        _attachNormal = recoveryHit.normal;
-                        _attachHitTransform = recoveryHit.transform;
-                    }
+                        SetAttach(recoveryHit.point, recoveryHit.normal, recoveryHit.transform);
                     // else: nothing below even at this depth - hold last valid attach point/normal.
                 }
             }
@@ -673,8 +712,13 @@ namespace MagBoots
             // derived from _attachPoint's own delta - differencing that would bake in any velocity
             // overshoot and feed an inflated target back into the damper, an unbounded runaway that let
             // the player accelerate past BreakawayVelocity. A fixed target can't bootstrap that runaway.
+            // Adds the hit part's own velocity (zero for static hull geometry) so the damper targets
+            // riding along with a moving surface instead of fighting to hold a fixed world position while
+            // it drifts away - without this, only the spring's positional term pulled the player back,
+            // producing a constant drag/lag against a moving or accelerating part.
             float desiredSpeed = IsRunning ? Plugin.ConfigRunSpeed.Value : Plugin.ConfigMoveSpeed.Value;
-            Vector3 desiredVelocity = tangentialMove * desiredSpeed;
+            Vector3 surfaceVelocity = _attachHitRigidbody != null ? _attachHitRigidbody.velocity : Vector3.zero;
+            Vector3 desiredVelocity = tangentialMove * desiredSpeed + surfaceVelocity;
 
             Vector3 springForce = Plugin.ConfigSpring.Value * (desiredPos - rb.position)
                                    + Plugin.ConfigDamper.Value * (desiredVelocity - rb.velocity);
