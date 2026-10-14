@@ -1,6 +1,6 @@
 # FreePlayPlus
 
-More to do in Hardspace: Shipbreaker's FreePlay: career ghost ships, danger that actually matters, and supplies you have to manage.
+More to do in Hardspace: Shipbreaker's FreePlay: career ghost ships, danger that actually matters, supplies you have to manage, and saves so big ships don't have to be finished in one sitting.
 
 Formerly **GhostShipsInFreePlay**. See [Upgrading from GhostShipsInFreePlay](#upgrading-from-ghostshipsinfreeplay).
 
@@ -46,6 +46,25 @@ FreePlay also starts your balance at **$0** instead of career's $1.25B starting 
 
 In career, dying costs a clone fee and you respawn on the same ship. FreePlay has no currency, so there's no cost to dying. With FreePlayPlus (on by default), acknowledging the death report takes you back to the **FreePlay ship select** instead of respawning, so you pick your next ship.
 
+## Ship saves
+
+Large ships, custom ones especially, can take more than one sitting. FreePlayPlus saves the ship you're working on so you can come back to it.
+
+- **Autosaves** every time salvage passes another 10% (adjustable). The newest 3 are kept.
+- **Manual save:** at the Hab door, the prompt's Cancel button now reads **Save**.
+- **Exit save:** confirming Exit at the Hab door saves before leaving. Quitting from the pause menu, abandoning the shift, or dying does not save.
+- Each ship keeps up to 20 saves; past that, the oldest is deleted.
+
+On the FreePlay ship select, a ship with saves shows **Saved 42.3%** (its latest save). Picking it opens the save list: date, type and salvaged % for each save, with **Load** and **Delete**, plus **New ship**, **Delete all** and **Close**. It works with mouse, keyboard and controller.
+
+Loading restores the ship as it was, cuts included. Your own oxygen, fuel, health and tools start fresh, as on a new ship.
+
+Saves are kept in `%USERPROFILE%\AppData\LocalLow\Blackbird Interactive\Hardspace_ Shipbreaker\FreePlayPlus\ShipSaves\<Ship_Name>\`, separate from the game's own saves.
+
+### Custom ships
+
+Saves work for custom ships (ModdedShipLoader and similar) too. Before a saved custom ship loads, FreePlayPlus prepares its parts the same way a fresh spawn does, so a big custom ship can take a moment on a **Preparing** screen. It also works around build quirks that would otherwise leave a loaded custom ship solid but unsalvageable (for example, parts carrying a script that doesn't exist at runtime), and makes sure custom ships show their own name and get the standard FreePlay starting upgrades.
+
 ## Checking whether a ship is a ghost
 
 Every time a ship finishes spawning, in FreePlay or career, one line is written to `BepInEx\LogOutput.log`:
@@ -71,11 +90,12 @@ Hardspace Shipbreaker\BepInEx\config\me.kerballone.FreePlayPlus.cfg
 - **ConsumeOxygen** / **ConsumeFuel** / **ConsumeDemoCharges** / **ConsumeTethers** (default on): each resource runs out as above. Turn one off to make it unlimited again.
 - **RefillSeconds** (default 5): how long a kiosk oxygen or fuel purchase takes to fill while the kiosk is open. 0 = instant.
 - **StartAtZeroDebt** (default on): FreePlay starts at $0 instead of career's $1.25B starting debt.
+- **AutosavePoints** (default 10): autosave each time salvage passes another multiple of this percent. 0 = no autosaves.
+- **Autosaves** (default 3): how many autosaves to keep per ship. Manual and exit saves are kept until you delete them.
 - **ToggleKey** / **ToggleControllerButton:** the keyboard key (G) and controller button (DPad Down) that flip the Ghost Ship checkbox.
 - **GhostVariantTag:** the text shown after ship names. TextMeshPro rich text is supported.
 - **OffsetFromBottomCenterX** / **OffsetFromBottomCenterY:** moves the checkbox from its bottom-center spot.
 - **DebugLogging** (default off): extra troubleshooting detail in the log.
-- **StartSupplyPercent** (default 100): testing aid; below 100, each FreePlay spawn starts with that percent of oxygen and fuel.
 
 ## Notes
 

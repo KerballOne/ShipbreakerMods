@@ -25,13 +25,14 @@ namespace FreePlayPlus
         internal static ConfigEntry<bool> ConsumeTethers = null!;
         internal static ConfigEntry<float> RefillSeconds = null!;
         internal static ConfigEntry<bool> StartAtZeroDebt = null!;
+        internal static ConfigEntry<float> AutosavePoints = null!;
+        internal static ConfigEntry<int> Autosaves = null!;
         internal static ConfigEntry<KeyboardShortcut> ToggleKey = null!;
         internal static ConfigEntry<InputControlType> ToggleControllerButton = null!;
         internal static ConfigEntry<string> IndicatorText = null!;
         internal static ConfigEntry<float> ToggleOffsetX = null!;
         internal static ConfigEntry<float> ToggleOffsetY = null!;
         internal static ConfigEntry<bool> DebugLogging = null!;
-        internal static ConfigEntry<float> StartSupplyPercent = null!;
 
         private void Awake()
         {
@@ -103,6 +104,22 @@ namespace FreePlayPlus
                 "kiosk shows. When true, FreePlay starts at $0 and kiosk purchases count up from there. " +
                 "Your career profile is never affected either way.");
 
+            AutosavePoints = Config.Bind(
+                "Saves", "AutosavePoints", 10f,
+                new ConfigDescription(
+                    "FreePlay autosaves the ship each time salvage progress passes another multiple of " +
+                    "this percent (10 = at 10%, 20%, 30%...). 0 = no autosaves. Saves are listed when you " +
+                    "pick the ship on the FreePlay ship select.",
+                    new AcceptableValueRange<float>(0f, 100f)));
+
+            Autosaves = Config.Bind(
+                "Saves", "Autosaves", 3,
+                new ConfigDescription(
+                    "How many autosaves to keep per ship; older autosaves are deleted. Manual saves (the " +
+                    "Save button on the Hab door prompt) and exit saves are kept until you delete them. " +
+                    "Each ship keeps at most 20 saves in total; past that the oldest is deleted.",
+                    new AcceptableValueRange<int>(0, 20)));
+
             ToggleKey = Config.Bind(
                 "UI", "ToggleKey", new KeyboardShortcut(KeyCode.G),
                 "Keyboard shortcut that flips the Ghost Ship checkbox while the FreePlay ship " +
@@ -135,13 +152,6 @@ namespace FreePlayPlus
                 "property-driven trigger on a ghost ship. The one-line [GhostStatus] report per " +
                 "ship spawn is always logged regardless of this setting.");
 
-            StartSupplyPercent = Config.Bind(
-                "Debug", "StartSupplyPercent", 100f,
-                new ConfigDescription(
-                    "Testing aid. Below 100, every FreePlay spawn starts with this percent of oxygen " +
-                    "and thruster fuel, so kiosk refills can be tried without draining them first. " +
-                    "100 = off.",
-                    new AcceptableValueRange<float>(0f, 100f)));
 
             // Per class rather than PatchAll(), so one patch whose target moved in a game update
             // is logged and skipped instead of aborting every patch after it.
@@ -163,13 +173,17 @@ namespace FreePlayPlus
 
         private void Update()
         {
+            CustomShipAssetLocator.TryInstall();
             FreePlayDamage.Tick();
             TimedRefill.Tick();
+            ShipSaver.Tick();
+            SaveListUI.Tick();
             if (!FreePlayToggleUI.IsVisible) return;
 
             var controller = IsControllerActive;
             FreePlayToggleUI.Refresh(controller ? GetControllerButtonLabel(ToggleControllerButton.Value) : ToggleKey.Value.ToString());
 
+            if (SaveListUI.IsOpen || SaveListUI.Preparing) return; // the popup / preparing panel owns input
             var pressed = controller
                 ? InputManager.ActiveDevice?[ToggleControllerButton.Value].WasPressed ?? false
                 : ToggleKey.Value.IsDown();

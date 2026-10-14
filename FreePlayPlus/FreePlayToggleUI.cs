@@ -61,6 +61,8 @@ namespace FreePlayPlus
             {
                 label.font = gameText.font;
                 label.fontSharedMaterial = gameText.fontSharedMaterial;
+                SaveListUI.Font = gameText.font;
+                SaveListUI.FontMaterial = gameText.fontSharedMaterial;
             }
             label.fontSize = 24f;
             label.color = Color.white;

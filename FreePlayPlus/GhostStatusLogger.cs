@@ -8,11 +8,15 @@ namespace FreePlayPlus
     // (its ghost affix is a 15% roll), and stock FreePlay launches log nothing ghost-related.
     internal static class GhostStatusLogger
     {
-        public static void Register() =>
+        public static void Register()
+        {
             Main.EventSystem.AddHandler<ShipAllSpawnWrapperEvent>(OnShipAllSpawnWrapperEvent);
+            Main.EventSystem.AddHandler<UnlockAbilityEvent>(ev => Plugin.Debug($"UnlockAbilityEvent {ev.Ability} (FreePlay={FreePlayDamage.IsFreePlay})."));
+        }
 
         private static void OnShipAllSpawnWrapperEvent(ShipAllSpawnWrapperEvent ev)
         {
+            if (ev.State == ShipAllSpawnWrapperEvent.SpawnState.Complete) SavedShipPrimer.ReleaseHeld();
             if (ev.State != ShipAllSpawnWrapperEvent.SpawnState.Complete || ev.ShipPreview == null) return;
             var preview = ev.ShipPreview;
 

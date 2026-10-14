@@ -299,45 +299,6 @@ namespace FreePlayPlus
         }
     }
 
-    // Testing aid: Debug.StartSupplyPercent < 100 starts each FreePlay spawn with that much O2 and
-    // fuel, so a kiosk refill can be tried without first draining them. Applied once the player and
-    // thrusters have finished initialising (both reset to full during spawn).
-    internal static class StartSupply
-    {
-        internal static void Schedule()
-        {
-            var percent = Plugin.StartSupplyPercent.Value;
-            if (percent >= 100f || !FreePlayDamage.IsFreePlay) return;
-            Plugin.Instance.StartCoroutine(Apply(percent / 100f));
-        }
-
-        private static IEnumerator Apply(float fraction)
-        {
-            var waited = 0f;
-            while (GameSession.CurrentGameState != GameSession.GameState.Gameplay && waited < 30f)
-            {
-                waited += Time.unscaledDeltaTime;
-                yield return null;
-            }
-            yield return new WaitForSecondsRealtime(1f);
-            if (!FreePlayDamage.IsFreePlay) yield break;
-
-            var thrust = Object.FindObjectOfType<ThrustController>();
-            if (thrust != null)
-                Traverse.Create(thrust).Property("Charge").SetValue(thrust.MaxCharge * fraction);
-
-            var world = World.DefaultGameObjectInjectionWorld;
-            var player = PlayerProfileService.Instance?.Profile?.PlayerEntity ?? Entity.Null;
-            if (world != null && player != Entity.Null && world.EntityManager.Exists(player) && world.EntityManager.HasComponent<OxygenComponent>(player))
-            {
-                var oxygen = world.EntityManager.GetComponentData<OxygenComponent>(player);
-                oxygen.Current = oxygen.Max * fraction;
-                world.EntityManager.SetComponentData(player, oxygen);
-            }
-            Plugin.Log.LogInfo($"StartSupplyPercent: O2 and fuel set to {fraction * 100f:F0}% (fuel {(thrust != null ? "ok" : "not found")}).");
-        }
-    }
-
     // Fuel: PurchaseFuel posts UpdateThrusterChargeEvent synchronously inside OnClick; a kiosk
     // TriggerableThrusterCharge posts it when its queued trigger fires (flagged below).
     [HarmonyPatch(typeof(ThrustController), "OnThrustChargeUpdated")]
@@ -475,6 +436,23 @@ namespace FreePlayPlus
             }
             Traverse.Create(profile).Field("mDifficultyMode").SetValue(sZeroDebtMode);
             Plugin.Debug("FreePlay profile starts at $0 debt.");
+        }
+    }
+
+    // Demo charges unlock via UnlockAbilityEvent(DemoCharge) (from the level's starting upgrades).
+    // Stock FreePlay never notices - unlimited charges skip the lock - but with ConsumeDemoCharges a
+    // custom level without FreePlay upgrades leaves them locked (buyable, not selectable). FreePlay
+    // always has demo charges, so unlock them if they're still locked once the controller starts.
+    [HarmonyPatch(typeof(DemoChargeController), "Start")]
+    internal static class DemoChargeController_Start_Patch
+    {
+        private static void Postfix(DemoChargeController __instance)
+        {
+            var unlocked = __instance.IsUnlocked;
+            Plugin.Debug($"Demo charges at spawn: unlocked={unlocked}, freePlay={FreePlayDamage.IsFreePlay}, consume={Plugin.ConsumeDemoCharges.Value}.");
+            if (unlocked || !FreePlayConsumption.Consumes(Resource.DemoCharges)) return;
+            Traverse.Create(__instance).Method("OnDemoChargeUnlocked", UnlockAbilityEvent.GetEvent(UnlockAbilityID.DemoCharge)).GetValue();
+            Plugin.Log.LogInfo("FreePlay: demo charges were locked at spawn; unlocked them.");
         }
     }
 }

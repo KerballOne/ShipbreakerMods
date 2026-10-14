@@ -15,12 +15,15 @@
     <Reference Include="0Harmony"               HintPath="$(GameDir)\BepInEx\core\0Harmony.dll"                            Private="false" />
     <Reference Include="BBI.Unity.Game"         HintPath="$(GameDir)\Shipbreaker_Data\Managed\BBI.Unity.Game.dll"          Private="false" />
     <Reference Include="Carbon.Core"            HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Core.dll"             Private="false" />
+    <Reference Include="Carbon.Localization.Core" HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Localization.Core.dll" Private="false" />
     <Reference Include="InControl"              HintPath="$(GameDir)\Shipbreaker_Data\Managed\InControl.dll"              Private="false" />
     <Reference Include="Unity.Addressables"     HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Addressables.dll"      Private="false" />
+    <Reference Include="Unity.Collections"      HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Collections.dll"       Private="false" />
     <Reference Include="Unity.Entities"         HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Entities.dll"          Private="false" />
     <Reference Include="Unity.ResourceManager"  HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.ResourceManager.dll"   Private="false" />
     <Reference Include="Unity.TextMeshPro"      HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.TextMeshPro.dll"       Private="false" />
     <Reference Include="UnityEngine"            HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.dll"             Private="false" />
+    <Reference Include="UnityEngine.AssetBundleModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.AssetBundleModule.dll" Private="false" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.CoreModule.dll"  Private="false" />
     <Reference Include="UnityEngine.UI"         HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UI.dll"          Private="false" />
     <Reference Include="UnityEngine.UIModule"   HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UIModule.dll"    Private="false" />

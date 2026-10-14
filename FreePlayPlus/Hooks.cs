@@ -201,6 +201,7 @@ namespace FreePlayPlus
         private static void Postfix(LevelSelectController __instance)
         {
             PendingGhost.Current = null;
+            ShipSaveStore.InvalidateAll();
             GhostShipCatalog.EnsureResolving();
             FreePlayToggleUI.Attach(__instance);
         }

@@ -75,7 +75,6 @@ namespace FreePlayPlus
         {
             FreePlayDamage.RemoveGodMode("spawn");
             TimedRefill.Clear("spawn");
-            StartSupply.Schedule();
         }
     }
 
