@@ -1,7 +1,7 @@
 using System.Linq;
 using BBI.Unity.Game;
 
-namespace GhostShipsInFreePlay
+namespace FreePlayPlus
 {
     // One line per ship spawn, any session and whether or not the checkbox is on, stating whether
     // the ship actually carries the ghost property -- the ghost override's name alone doesn't say
