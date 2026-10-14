@@ -17,14 +17,13 @@ namespace FreePlayPlus
 
         internal static ConfigEntry<bool> ForceGhostShip = null!;
         internal static ConfigEntry<bool> IncludeCareerOnlyModules = null!;
-        internal static ConfigEntry<bool> FreePlayHealthDamage = null!;
+        internal static ConfigEntry<bool> HealthDamage = null!;
         internal static ConfigEntry<bool> ExitToMenuOnDeath = null!;
         internal static ConfigEntry<bool> ConsumeOxygen = null!;
         internal static ConfigEntry<bool> ConsumeFuel = null!;
         internal static ConfigEntry<bool> ConsumeDemoCharges = null!;
         internal static ConfigEntry<bool> ConsumeTethers = null!;
         internal static ConfigEntry<float> RefillSeconds = null!;
-        internal static ConfigEntry<bool> StartAtZeroDebt = null!;
         internal static ConfigEntry<float> AutosavePoints = null!;
         internal static ConfigEntry<int> Autosaves = null!;
         internal static ConfigEntry<KeyboardShortcut> ToggleKey = null!;
@@ -41,7 +40,7 @@ namespace FreePlayPlus
             MigrateOldConfig();
 
             ForceGhostShip = Config.Bind(
-                "General", "ForceGhostShip", false,
+                "GhostShips", "ForceGhostShip", false,
                 "State of the \"Ghost Ship\" checkbox on the FreePlay ship selection screen. When " +
                 "true, every FreePlay ship launched loads as a ghost ship -- the same property set " +
                 "career mode uses for its scrambled-thumbnail ghost ship cards (AI nodes, ghost " +
@@ -50,59 +49,52 @@ namespace FreePlayPlus
                 "checkbox rather than edited here.");
 
             IncludeCareerOnlyModules = Config.Bind(
-                "General", "IncludeCareerOnlyModules", true,
+                "GhostShips", "IncludeCareerOnlyModules", true,
                 "Only applies to ghost ships. Some ship modules, hardpoints and scripted spawns " +
                 "(including the ghost ship's AI nodes) are flagged to be left out of FreePlay. When " +
                 "true, the ghost ship keeps them, matching the career ghost variant. Set false to " +
                 "keep stock FreePlay stripping (the ship will then have no AI nodes).");
 
-            FreePlayHealthDamage = Config.Bind(
-                "General", "FreePlayHealthDamage", true,
+            HealthDamage = Config.Bind(
+                "Survival", "HealthDamage", true,
                 "Applies to every FreePlay ship, ghost or not. Stock FreePlay makes you invulnerable. " +
                 "When true, you take health damage from impacts and hazards (decompression, " +
                 "explosions, crushing, leaving the play area) like in career, and suit repair " +
-                "pickups found on the ship heal you. Oxygen stays unlimited as in stock FreePlay. " +
-                "Set false for stock FreePlay invulnerability.");
+                "pickups found on the ship heal you. Set false for stock FreePlay invulnerability.");
 
             ExitToMenuOnDeath = Config.Bind(
-                "General", "ExitToMenuOnDeath", true,
+                "Survival", "ExitToMenuOnDeath", true,
                 "When you die in FreePlay, acknowledging the death report takes you back to the " +
                 "FreePlay ship select instead of respawning on the same ship. (In career a death " +
                 "costs a clone fee; FreePlay has no currency, so this makes death end the run.) " +
                 "Set false to respawn on the ship as stock.");
 
             ConsumeOxygen = Config.Bind(
-                "Consumables", "ConsumeOxygen", true,
+                "Survival", "ConsumeOxygen", true,
                 "FreePlay oxygen drains like in career instead of being unlimited. Refill at the " +
-                "kiosk or in pressurised areas. With FreePlayHealthDamage also on, running out " +
+                "kiosk or in pressurised areas. With HealthDamage also on, running out " +
                 "suffocates you.");
 
             ConsumeFuel = Config.Bind(
-                "Consumables", "ConsumeFuel", true,
+                "Survival", "ConsumeFuel", true,
                 "FreePlay thruster fuel drains like in career instead of being unlimited. Refill at the kiosk.");
 
             ConsumeDemoCharges = Config.Bind(
-                "Consumables", "ConsumeDemoCharges", true,
+                "Survival", "ConsumeDemoCharges", true,
                 "FreePlay demo charges are limited to career's carry amount instead of unlimited. Buy more at the kiosk.");
 
             ConsumeTethers = Config.Bind(
-                "Consumables", "ConsumeTethers", true,
+                "Survival", "ConsumeTethers", true,
                 "FreePlay tethers are limited to career's carry amount instead of 1000. Buy more at the kiosk.");
 
             RefillSeconds = Config.Bind(
-                "Consumables", "RefillSeconds", 5f,
+                "Survival", "RefillSeconds", 15f,
                 new ConfigDescription(
-                    "How long, in seconds, an oxygen or fuel purchase at the FreePlay kiosk takes to " +
+                    "How long, in seconds, an oxygen, fuel or medkit purchase at the FreePlay kiosk takes to " +
                     "fill. You pay immediately; the refill only runs while the kiosk screen is open " +
                     "and pauses if you leave (it resumes when you come back, no need to buy again). " +
                     "0 = instant, as stock. Pickups found on the ship are always instant.",
                     new AcceptableValueRange<float>(0f, 60f)));
-
-            StartAtZeroDebt = Config.Bind(
-                "Consumables", "StartAtZeroDebt", true,
-                "FreePlay uses a throwaway profile that starts with career's $1.25B debt, which the " +
-                "kiosk shows. When true, FreePlay starts at $0 and kiosk purchases count up from there. " +
-                "Your career profile is never affected either way.");
 
             AutosavePoints = Config.Bind(
                 "Saves", "AutosavePoints", 10f,
@@ -117,40 +109,43 @@ namespace FreePlayPlus
                 new ConfigDescription(
                     "How many autosaves to keep per ship; older autosaves are deleted. Manual saves (the " +
                     "Save button on the Hab door prompt) and exit saves are kept until you delete them. " +
-                    "Each ship keeps at most 20 saves in total; past that the oldest is deleted.",
-                    new AcceptableValueRange<int>(0, 20)));
+                    "Each ship keeps at most 12 saves in total; past that the oldest is deleted.",
+                    new AcceptableValueRange<int>(0, 12)));
 
             ToggleKey = Config.Bind(
-                "UI", "ToggleKey", new KeyboardShortcut(KeyCode.G),
+                "GhostShip_UI", "ToggleKey", new KeyboardShortcut(KeyCode.G),
                 "Keyboard shortcut that flips the Ghost Ship checkbox while the FreePlay ship " +
                 "selection screen is open.");
 
             ToggleControllerButton = Config.Bind(
-                "UI", "ToggleControllerButton", InputControlType.DPadDown,
+                "GhostShip_UI", "ToggleControllerButton", InputControlType.DPadDown,
                 "Controller button that flips the Ghost Ship checkbox while the FreePlay ship " +
                 "selection screen is open. Used (and shown on the checkbox) instead of ToggleKey " +
                 "whenever the last input came from a controller.");
 
             IndicatorText = Config.Bind(
-                "UI", "GhostVariantTag", "<size=75%><color=#FF8C1A>(GHOST)</color></size>",
+                "GhostShip_UI", "GhostVariantTag", "<size=75%><color=#FF8C1A>(GHOST)</color></size>",
                 "Shown after a ship's name (two spaces are added in front automatically) in the " +
                 "FreePlay ship list when the Ghost Ship checkbox is checked and that ship has a " +
                 "career ghost variant. TextMeshPro rich text.");
 
             ToggleOffsetX = Config.Bind(
-                "UI", "OffsetFromBottomCenterX", 0f,
+                "GhostShip_UI", "OffsetFromBottomCenterX", 0f,
                 "Horizontal offset of the checkbox from the bottom center of the screen, in UI units.");
 
             ToggleOffsetY = Config.Bind(
-                "UI", "OffsetFromBottomCenterY", 40f,
+                "GhostShip_UI", "OffsetFromBottomCenterY", 40f,
                 "Vertical offset of the checkbox from the bottom center of the screen, in UI units.");
 
             DebugLogging = Config.Bind(
                 "Debug", "DebugLogging", false,
                 "Extra logging for troubleshooting: every career property set found while looking " +
                 "up ghost variants, which ships got the (GHOST) tag, generation details, and each " +
-                "property-driven trigger on a ghost ship. The one-line [GhostStatus] report per " +
+                "property-driven trigger on a ghost ship; kiosk refills; ship saves and custom-ship " +
+                "save loading. The one-line [GhostStatus] report per " +
                 "ship spawn is always logged regardless of this setting.");
+
+            MigrateRenamedSettings();
 
 
             // Per class rather than PatchAll(), so one patch whose target moved in a game update
@@ -215,8 +210,8 @@ namespace FreePlayPlus
         }
 
         // This mod was released as GhostShipsInFreePlay (plugin ID me.kerballone.GhostShipsInFreePlay).
-        // Section/key names are unchanged, so a first run under the new ID starts from a copy of the
-        // old config instead of defaults. The old file is left in place.
+        // A first run under the new ID starts from a copy of the old config (MigrateRenamedSettings then
+        // moves its values to the current names) instead of defaults. The old file is left in place.
         private void MigrateOldConfig()
         {
             var oldPath = Path.Combine(Paths.ConfigPath, "me.kerballone.GhostShipsInFreePlay.cfg");
@@ -224,6 +219,43 @@ namespace FreePlayPlus
             File.Copy(oldPath, Config.ConfigFilePath);
             Config.Reload();
             Log.LogInfo("Copied settings from the old GhostShipsInFreePlay config.");
+        }
+
+        // Settings that moved section or were renamed: (old section, old key) -> new entry.
+        private static (string section, string key, ConfigEntryBase entry)[] RenamedSettings() => new (string, string, ConfigEntryBase)[]
+        {
+            ("General", "ForceGhostShip", ForceGhostShip),
+            ("General", "IncludeCareerOnlyModules", IncludeCareerOnlyModules),
+            ("General", "FreePlayHealthDamage", HealthDamage),
+            ("General", "ExitToMenuOnDeath", ExitToMenuOnDeath),
+            ("Consumables", "ConsumeOxygen", ConsumeOxygen),
+            ("Consumables", "ConsumeFuel", ConsumeFuel),
+            ("Consumables", "ConsumeDemoCharges", ConsumeDemoCharges),
+            ("Consumables", "ConsumeTethers", ConsumeTethers),
+            ("Consumables", "RefillSeconds", RefillSeconds),
+            ("UI", "ToggleKey", ToggleKey),
+            ("UI", "ToggleControllerButton", ToggleControllerButton),
+            ("UI", "GhostVariantTag", IndicatorText),
+            ("UI", "OffsetFromBottomCenterX", ToggleOffsetX),
+            ("UI", "OffsetFromBottomCenterY", ToggleOffsetY),
+        };
+
+        // Carries values from the old section/key names over to the new ones, then drops every
+        // setting this version no longer has (old names, removed settings) from the file.
+        private void MigrateRenamedSettings()
+        {
+            var orphans = Traverse.Create(Config).Property("OrphanedEntries").GetValue<System.Collections.Generic.Dictionary<ConfigDefinition, string>>();
+            if (orphans == null || orphans.Count == 0) return;
+            var moved = 0;
+            foreach (var (section, key, entry) in RenamedSettings())
+            {
+                if (!orphans.TryGetValue(new ConfigDefinition(section, key), out var value)) continue;
+                entry.SetSerializedValue(value);
+                moved++;
+            }
+            orphans.Clear();
+            Config.Save();
+            Log.LogInfo($"Config updated to the new layout ({moved} setting(s) carried over, old entries removed).");
         }
 
         internal static void Debug(string msg)

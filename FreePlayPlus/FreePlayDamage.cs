@@ -7,9 +7,9 @@ namespace FreePlayPlus
     // FreePlay's "no damage" is Player.SetGodMode(true), which adds a single Invulnerable component
     // to the player entity. Every vitality system excludes Invulnerable, so it blocks health and suit
     // damage *and* healing, oxygen changes, oxygen drain, and asphyxiation all at once.
-    // With FreePlayHealthDamage or ConsumeOxygen on, Invulnerable is removed again right after the
+    // With HealthDamage or ConsumeOxygen on, Invulnerable is removed again right after the
     // game adds it (Player.Start, and every respawn):
-    //   - FreePlayHealthDamage brings back health/suit damage from impacts and hazards; healing uses
+    //   - HealthDamage brings back health/suit damage from impacts and hazards; healing uses
     //     the same ModifyHealth/ModifySuit path, so suit repair pickups work too. When it's off, the
     //     narrower InvulnerableHealth + InvulnerableSuit flags are added instead, which also block
     //     asphyxiation.
@@ -23,14 +23,14 @@ namespace FreePlayPlus
             SceneLoader.Instance != null &&
             SceneLoader.Instance.CurrentLevelData.SessionType == GameSession.SessionType.FreeMode;
 
-        private static bool Active => IsFreePlay && (Plugin.FreePlayHealthDamage.Value || Plugin.ConsumeOxygen.Value);
+        private static bool Active => IsFreePlay && (Plugin.HealthDamage.Value || Plugin.ConsumeOxygen.Value);
 
         internal static void RemoveGodMode(string when)
         {
             if (!Active || !TryGetPlayer(out var entityManager, out var player)) return;
             if (!entityManager.HasComponent<Invulnerable>(player)) return;
             Player.SetGodMode(player, entityManager, enabled: false);
-            var healthDamage = Plugin.FreePlayHealthDamage.Value;
+            var healthDamage = Plugin.HealthDamage.Value;
             if (!healthDamage)
             {
                 if (!entityManager.HasComponent<InvulnerableHealth>(player)) entityManager.AddComponentData(player, default(InvulnerableHealth));

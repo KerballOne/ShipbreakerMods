@@ -215,7 +215,7 @@ namespace FreePlayPlus
 
     internal static class TimedRefill
     {
-        private static float sPendingFuel, sFuelRate, sPendingOxygen, sOxygenRate;
+        private static float sPendingFuel, sFuelRate, sPendingOxygen, sOxygenRate, sPendingHealth, sHealthRate;
         private static ThrustController? sThrust;
         private static VendingMachineUIController? sKiosk;
         private static System.Action<ThrustController, float>? sSetCharge;
@@ -226,10 +226,12 @@ namespace FreePlayPlus
 
         internal static float PendingOxygen => sPendingOxygen;
 
+        internal static float PendingHealth => sPendingHealth;
+
         internal static void Clear(string why)
         {
-            if (sPendingFuel > 0f || sPendingOxygen > 0f) Plugin.Debug($"Pending kiosk refills dropped ({why}).");
-            sPendingFuel = sPendingOxygen = 0f;
+            if (sPendingFuel > 0f || sPendingOxygen > 0f || sPendingHealth > 0f) Plugin.Debug($"Pending kiosk refills dropped ({why}).");
+            sPendingFuel = sPendingOxygen = sPendingHealth = 0f;
             TriggerableComponent_QueueTrigger_Patch.KioskQueued.Clear();
         }
 
@@ -248,6 +250,41 @@ namespace FreePlayPlus
             Plugin.Debug($"Kiosk oxygen refill queued: +{amount:F1} (pending {sPendingOxygen:F1}).");
         }
 
+        internal static void AddHealth(float amount)
+        {
+            sPendingHealth += amount;
+            sHealthRate = amount / Plugin.RefillSeconds.Value;
+            Plugin.Debug($"Kiosk health refill queued: +{amount:F1} (pending {sPendingHealth:F1}).");
+        }
+
+        internal static bool IsTimed(BuffableCategory category) =>
+            category == BuffableCategory.Oxygen || category == BuffableCategory.Health;
+
+        internal static void Add(BuffableCategory category, float amount)
+        {
+            if (category == BuffableCategory.Oxygen) AddOxygen(amount);
+            else if (category == BuffableCategory.Health) AddHealth(amount);
+        }
+
+        internal static bool TryGetVitality(EntityManager entityManager, Entity player, BuffableCategory category, out float current, out float max)
+        {
+            current = max = 0f;
+            if (!entityManager.Exists(player)) return false;
+            if (category == BuffableCategory.Oxygen && entityManager.HasComponent<OxygenComponent>(player))
+            {
+                var oxygen = entityManager.GetComponentData<OxygenComponent>(player);
+                current = oxygen.Current; max = oxygen.Max;
+                return true;
+            }
+            if (category == BuffableCategory.Health && entityManager.HasComponent<HealthComponent>(player))
+            {
+                var health = entityManager.GetComponentData<HealthComponent>(player);
+                current = health.Current; max = health.Max;
+                return true;
+            }
+            return false;
+        }
+
         private static bool KioskOpen()
         {
             if (sKiosk == null) sKiosk = Object.FindObjectOfType<VendingMachineUIController>();
@@ -257,7 +294,7 @@ namespace FreePlayPlus
         // Called from Plugin.Update.
         internal static void Tick()
         {
-            if (sPendingFuel <= 0f && sPendingOxygen <= 0f) return;
+            if (sPendingFuel <= 0f && sPendingOxygen <= 0f && sPendingHealth <= 0f) return;
             if (!FreePlayDamage.IsFreePlay) { Clear("left FreePlay"); return; }
             if (!KioskOpen()) return;
             var dt = Time.deltaTime;
@@ -296,6 +333,24 @@ namespace FreePlayPlus
                     }
                 }
             }
+
+            if (sPendingHealth > 0f)
+            {
+                var world = World.DefaultGameObjectInjectionWorld;
+                var player = PlayerProfileService.Instance?.Profile?.PlayerEntity ?? Entity.Null;
+                if (world != null && player != Entity.Null && world.EntityManager.Exists(player) && world.EntityManager.HasComponent<HealthComponent>(player))
+                {
+                    var health = world.EntityManager.GetComponentData<HealthComponent>(player);
+                    var step = Mathf.Min(sHealthRate * dt, sPendingHealth);
+                    if (health.Current >= health.Max) sPendingHealth = 0f;
+                    else
+                    {
+                        health.Current = Mathf.Min(health.Current + step, health.Max);
+                        world.EntityManager.SetComponentData(player, health);
+                        sPendingHealth -= step;
+                    }
+                }
+            }
         }
     }
 
@@ -327,7 +382,7 @@ namespace FreePlayPlus
         private static void Finalizer() => ThrustController_OnThrustChargeUpdated_Patch.InKioskThrusterTrigger = false;
     }
 
-    // Oxygen: PurchaseOxygen / PurchaseTriggerable queue a TriggerableVitalityChange.
+    // Oxygen / health: PurchaseOxygen, PurchaseHealth or PurchaseTriggerable may queue a TriggerableVitalityChange.
     [HarmonyPatch(typeof(TriggerableVitalityChange), "OnTrigger")]
     internal static class TriggerableVitalityChange_OnTrigger_Patch
     {
@@ -336,34 +391,34 @@ namespace FreePlayPlus
             if (!TriggerableComponent_QueueTrigger_Patch.TakeKiosk(__instance) || !TimedRefill.Enabled) return true;
             var t = Traverse.Create(__instance);
             var vitalityType = t.Field("m_VitalityType").GetValue<VitalityTypeAsset>();
-            if (vitalityType == null || vitalityType.BuffableCategory != BuffableCategory.Oxygen) return true;
+            if (vitalityType == null || !TimedRefill.IsTimed(vitalityType.BuffableCategory)) return true;
 
             var player = PlayerProfileService.Instance.Profile.PlayerEntity;
             var entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
-            if (!entityManager.Exists(player) || !entityManager.HasComponent<OxygenComponent>(player)) return true;
+            if (!TimedRefill.TryGetVitality(entityManager, player, vitalityType.BuffableCategory, out var current, out var max)) return true;
 
-            var oxygen = entityManager.GetComponentData<OxygenComponent>(player);
             var modType = t.Field("m_ModificationType").GetValue<VitalityData.ModType>();
-            var gain = OxygenGain(oxygen, t.Field("m_Amount").GetValue<float>(), modType);
-            if (gain > 0f) TimedRefill.AddOxygen(gain);
+            var gain = Gain(current, max, t.Field("m_Amount").GetValue<float>(), modType);
+            if (gain > 0f) TimedRefill.Add(vitalityType.BuffableCategory, gain);
             Main.EventSystem.Post(TriggerableVitalityEvent.GetEvent(modType, vitalityType));
             return false;
         }
 
-        // How much O2 a modification adds, per ModifyOxygen's ModType semantics.
-        internal static float OxygenGain(OxygenComponent oxygen, float amount, VitalityData.ModType modType) => modType switch
+        // How much a modification adds, per the vitality systems' ModType semantics.
+        internal static float Gain(float current, float max, float amount, VitalityData.ModType modType) => modType switch
         {
             VitalityData.ModType.Relative => amount,
-            VitalityData.ModType.RelativeFractional => amount * oxygen.Max,
-            VitalityData.ModType.Fractional => amount * oxygen.Max - oxygen.Current,
-            _ => amount - oxygen.Current,
+            VitalityData.ModType.RelativeFractional => amount * max,
+            VitalityData.ModType.Fractional => amount * max - current,
+            _ => amount - current,
         };
     }
 
-    // Oxygen, as the FreePlay kiosk actually sells it: PurchaseOxygen queues a TriggerableDamagePlayer
-    // whose DamageAsset has an O2-gaining VitalityModification (VitalitySystem passes each one's
-    // Amount/ModType straight into ModifyOxygen). O2 gains become a pending refill; any other
-    // modifications in the same asset are applied as stock.
+    // Oxygen and health, as the FreePlay kiosk actually sells them: PurchaseOxygen / PurchaseHealth
+    // queue a TriggerableDamagePlayer whose DamageAsset has an O2- or health-gaining
+    // VitalityModification (VitalitySystem passes each one's Amount/ModType straight into
+    // ModifyOxygen/ModifyHealth). Those gains become a pending refill; any other modifications in
+    // the same asset are applied as stock.
     [HarmonyPatch(typeof(TriggerableDamagePlayer), "OnTrigger")]
     internal static class TriggerableDamagePlayer_OnTrigger_Patch
     {
@@ -375,26 +430,35 @@ namespace FreePlayPlus
 
             var player = PlayerProfileService.Instance.Profile.PlayerEntity;
             var entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
-            if (!entityManager.Exists(player) || !entityManager.HasComponent<OxygenComponent>(player)) return true;
-            var oxygen = entityManager.GetComponentData<OxygenComponent>(player);
+            if (!entityManager.Exists(player)) return true;
 
-            // Resolve each modification's amount once (Range amounts are re-rolled per read).
-            var mods = new List<(DamageData.VitalityModification mod, float amount)>();
-            var oxygenGain = 0f;
+            // Resolve each modification's amount once (Range amounts are re-rolled per read). Only
+            // O2/health gains are timed; everything else is applied as stock.
+            var mods = new List<(DamageData.VitalityModification mod, float amount, bool timed)>();
+            var gains = new Dictionary<BuffableCategory, float>();
             foreach (var mod in damage.VitalityModifications)
             {
                 var amount = mod.Amount;
-                mods.Add((mod, amount));
-                if (mod.VitalityType != null && mod.VitalityType.BuffableCategory == BuffableCategory.Oxygen)
-                    oxygenGain += Mathf.Max(0f, TriggerableVitalityChange_OnTrigger_Patch.OxygenGain(oxygen, amount, mod.ModificationType));
+                var timed = false;
+                var category = mod.VitalityType != null ? mod.VitalityType.BuffableCategory : BuffableCategory.None;
+                if (TimedRefill.IsTimed(category) && TimedRefill.TryGetVitality(entityManager, player, category, out var current, out var max))
+                {
+                    var gain = TriggerableVitalityChange_OnTrigger_Patch.Gain(current, max, amount, mod.ModificationType);
+                    if (gain > 0f)
+                    {
+                        timed = true;
+                        gains[category] = (gains.TryGetValue(category, out var sum) ? sum : 0f) + gain;
+                    }
+                }
+                mods.Add((mod, amount, timed));
             }
-            if (oxygenGain <= 0f) return true;
+            if (gains.Count == 0) return true;
 
-            TimedRefill.AddOxygen(oxygenGain);
+            foreach (var gain in gains) TimedRefill.Add(gain.Key, gain.Value);
             var damageType = damage.DamageType != null ? damage.DamageType.ID : AssetTypeID<DamageTypeAsset>.None;
-            foreach (var (mod, amount) in mods)
+            foreach (var (mod, amount, timed) in mods)
             {
-                if (mod.VitalityType == null || mod.VitalityType.BuffableCategory == BuffableCategory.Oxygen) continue;
+                if (timed || mod.VitalityType == null) continue;
                 VitalitySystem.TryModifyVitality(player, mod.VitalityType, damageType, Entity.Null, amount, mod.ModificationType);
             }
             return false;
@@ -414,6 +478,17 @@ namespace FreePlayPlus
         }
     }
 
+    // Same for medkits: stock refuses one only at full health.
+    [HarmonyPatch(typeof(PurchaseHealth), "CanModifyVitality")]
+    internal static class PurchaseHealth_CanModifyVitality_Patch
+    {
+        private static void Postfix(HealthComponent component, ref bool __result)
+        {
+            if (!__result || !TimedRefill.Enabled || TimedRefill.PendingHealth <= 0f) return;
+            __result = component.Current + TimedRefill.PendingHealth < component.Max;
+        }
+    }
+
     // FreePlay's throwaway profile uses the default difficulty, whose StartingDebtAmount
     // ($1,252,594,441.92) is what the kiosk shows (debt = StartingDebtAmount - Credits). Give the
     // FreePlay profile its own copy of that asset with no starting debt, so the kiosk starts at $0
@@ -425,7 +500,7 @@ namespace FreePlayPlus
 
         private static void Postfix(PlayerProfileService __instance, bool bValue)
         {
-            if (!bValue || !Plugin.StartAtZeroDebt.Value) return;
+            if (!bValue) return;
             var profile = __instance.Profile;
             if (profile == null || profile.PlayerProfileType != PlayerProfileType.FreeMode) return;
             if (sZeroDebtMode == null)

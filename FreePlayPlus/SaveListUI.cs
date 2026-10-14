@@ -30,11 +30,16 @@ namespace FreePlayPlus
         private static readonly Color kAccent = new Color(1f, 0.55f, 0.1f, 1f);
         private static readonly Color kButton = new Color(0.16f, 0.16f, 0.16f, 1f);
         private static readonly Color kButtonDanger = new Color(0.35f, 0.08f, 0.06f, 1f);
+        private static readonly Color kStripe = new Color(1f, 1f, 1f, 0.05f);
         private const float kRowHeight = 52f;
+        // Thin enough that a full list (MaxSavesPerShip) fits without scrolling, so the mouse never needs to scroll.
+        private const float kListRowHeight = 44f;
+        private const float kListSpacing = 4f;
         private const float kHeaderHeight = 64f;
         private const float kFooterHeight = 60f;
         private const float kPad = 24f;
         private const float kFooterButtonWidth = 250f;
+        private const float kPanelWidth = 1100f;
 
         private static GameObject? sRoot;
         private static LevelSelectButton? sButton;
@@ -169,7 +174,7 @@ namespace FreePlayPlus
             var scaler = sRoot.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
-            scaler.matchWidthOrHeight = 0.5f;
+            scaler.matchWidthOrHeight = 1f; // scale by height, so the full list fits on any aspect ratio
             sRoot.AddComponent<GraphicRaycaster>();
 
             var dim = Child("Dim", (RectTransform)sRoot.transform);
@@ -177,9 +182,10 @@ namespace FreePlayPlus
             dim.gameObject.AddComponent<Image>().color = kDim; // blocks clicks to the menu behind
 
             var panel = Child("Panel", dim);
-            panel.anchorMin = new Vector2(0.2f, 0.12f);
-            panel.anchorMax = new Vector2(0.8f, 0.88f);
-            panel.offsetMin = panel.offsetMax = Vector2.zero;
+            panel.anchorMin = new Vector2(0.5f, 0.12f);
+            panel.anchorMax = new Vector2(0.5f, 0.88f);
+            panel.offsetMin = new Vector2(-kPanelWidth / 2f, 0f);
+            panel.offsetMax = new Vector2(kPanelWidth / 2f, 0f);
             panel.gameObject.AddComponent<Image>().color = kPanel;
             panel.gameObject.AddComponent<Outline>().effectColor = kAccent;
 
@@ -219,7 +225,7 @@ namespace FreePlayPlus
             content.pivot = new Vector2(0.5f, 1f);
             content.offsetMin = content.offsetMax = Vector2.zero;
             var contentLayout = content.gameObject.AddComponent<VerticalLayoutGroup>();
-            contentLayout.spacing = 6f;
+            contentLayout.spacing = kListSpacing;
             contentLayout.childForceExpandHeight = false;
             contentLayout.childForceExpandWidth = true;
             contentLayout.childControlHeight = true;
@@ -230,16 +236,17 @@ namespace FreePlayPlus
 
             var saves = ShipSaveStore.List(sShipKey);
             if (saves.Count == 0)
-                Label(Row(content), "<color=#999999>No saves for this ship.</color>", 22f, TextAlignmentOptions.Left, Color.white, flexible: true);
-            foreach (var save in saves)
+                Label(Row(content), "<color=#999999>No saves for this ship.</color>", 22f, TextAlignmentOptions.Left, Color.white, flexible: true, height: kListRowHeight);
+            for (var i = 0; i < saves.Count; i++)
             {
-                var row = Row(content);
-                Label(row, $"{save.Time:yyyy-MM-dd  HH:mm}    {save.KindLabel}    <color=#FF8C1A>{save.Percent:0.0}%</color> salvaged", 22f, TextAlignmentOptions.Left, Color.white, flexible: true);
+                var save = saves[i];
+                var row = Row(content, striped: i % 2 == 0);
+                Label(row, $"{save.Time:yyyy-MM-dd  HH:mm}    {save.KindLabel}    <color=#FF8C1A>{save.Percent:0.0}%</color> salvaged", 22f, TextAlignmentOptions.Left, Color.white, flexible: true, height: kListRowHeight);
                 var captured = save;
                 sGrid.Add(new List<Button>
                 {
-                    ButtonUI(row, "Load", kButton, 150f, () => Load(captured)),
-                    ButtonUI(row, "Delete", kButtonDanger, 150f, () => { ShipSaveStore.Delete(sShipKey, captured); AfterChange(); }),
+                    ButtonUI(row, "Load", kButton, 150f, () => Load(captured), height: kListRowHeight),
+                    ButtonUI(row, "Delete", kButtonDanger, 150f, () => { ShipSaveStore.Delete(sShipKey, captured); AfterChange(); }, height: kListRowHeight),
                 });
             }
             Label(footer, $"<color=#999999>{saves.Count} / {ShipSaveStore.MaxSavesPerShip} saves</color>", 20f, TextAlignmentOptions.Left, Color.white, flexible: true);
@@ -395,16 +402,21 @@ namespace FreePlayPlus
             layout.childControlHeight = true;
         }
 
-        private static RectTransform Row(RectTransform parent)
+        // Alternate rows get a faint band so the eye can follow a save's text across to its buttons.
+        private static RectTransform Row(RectTransform parent, bool striped = false)
         {
             var row = Child("Row", parent);
             RowLayout(row);
+            row.GetComponent<HorizontalLayoutGroup>().padding = new RectOffset(10, 0, 0, 0);
+            var band = row.gameObject.AddComponent<Image>();
+            band.color = striped ? kStripe : Color.clear;
+            band.raycastTarget = false;
             var element = row.gameObject.AddComponent<LayoutElement>();
-            element.minHeight = element.preferredHeight = kRowHeight;
+            element.minHeight = element.preferredHeight = kListRowHeight;
             return row;
         }
 
-        private static TextMeshProUGUI Label(RectTransform parent, string text, float size, TextAlignmentOptions align, Color color, bool flexible = false)
+        private static TextMeshProUGUI Label(RectTransform parent, string text, float size, TextAlignmentOptions align, Color color, bool flexible = false, float height = kRowHeight)
         {
             var rect = Child("Label", parent);
             var tmp = rect.gameObject.AddComponent<TextMeshProUGUI>();
@@ -419,11 +431,11 @@ namespace FreePlayPlus
             tmp.overflowMode = TextOverflowModes.Ellipsis;
             tmp.raycastTarget = false;
             tmp.text = text;
-            if (flexible) Size(rect.gameObject, kRowHeight, 0f, flexible: true);
+            if (flexible) Size(rect.gameObject, height, 0f, flexible: true);
             return tmp;
         }
 
-        private static Button ButtonUI(RectTransform parent, string text, Color color, float width, UnityEngine.Events.UnityAction onClick, bool flexible = false)
+        private static Button ButtonUI(RectTransform parent, string text, Color color, float width, UnityEngine.Events.UnityAction onClick, bool flexible = false, float height = kRowHeight)
         {
             var rect = Child("Button_" + text, parent);
             var image = rect.gameObject.AddComponent<Image>();
@@ -447,7 +459,7 @@ namespace FreePlayPlus
             rect.gameObject.AddComponent<Outline>().effectColor = new Color(kAccent.r, kAccent.g, kAccent.b, 0.35f);
             var label = Label(rect, text, 22f, TextAlignmentOptions.Center, Color.white);
             Stretch((RectTransform)label.transform);
-            Size(rect.gameObject, kRowHeight, width, flexible);
+            Size(rect.gameObject, height, width, flexible);
             return button;
         }
     }

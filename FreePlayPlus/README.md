@@ -38,9 +38,7 @@ Stock FreePlay gives you unlimited oxygen, fuel, demo charges and tethers, so th
 - **Demo charges** start at career's carry amount.
 - **Tethers** start at career's carry amount instead of 1000.
 
-Restock at the kiosk. Oxygen and fuel purchases take **5 seconds** to fill (adjustable, or 0 for instant), so a supply run takes a moment. You pay up front; the refill only runs while the kiosk screen is open, so if you leave it pauses, and it picks up where it left off when you come back, without buying again. Pickups found on the ship still apply instantly.
-
-FreePlay also starts your balance at **$0** instead of career's $1.25B starting debt, so the kiosk shows what you've actually spent this run. Your career profile is never affected.
+Restock at the kiosk. Oxygen, fuel and medkit purchases take **15 seconds** to fill (adjustable, or 0 for instant), so a supply run takes a moment. You pay up front; the refill only runs while the kiosk screen is open, so if you leave it pauses, and it picks up where it left off when you come back, without buying again. Pickups found on the ship still apply instantly.
 
 ## Death ends the run
 
@@ -53,7 +51,7 @@ Large ships, custom ones especially, can take more than one sitting. FreePlayPlu
 - **Autosaves** every time salvage passes another 10% (adjustable). The newest 3 are kept.
 - **Manual save:** at the Hab door, the prompt's Cancel button now reads **Save**.
 - **Exit save:** confirming Exit at the Hab door saves before leaving. Quitting from the pause menu, abandoning the shift, or dying does not save.
-- Each ship keeps up to 20 saves; past that, the oldest is deleted.
+- Each ship keeps up to 12 saves; past that, the oldest is deleted.
 
 On the FreePlay ship select, a ship with saves shows **Saved 42.3%** (its latest save). Picking it opens the save list: date, type and salvaged % for each save, with **Load** and **Delete**, plus **New ship**, **Delete all** and **Close**. It works with mouse, keyboard and controller.
 
@@ -83,18 +81,28 @@ The config file is generated on first run at:
 Hardspace Shipbreaker\BepInEx\config\me.kerballone.FreePlayPlus.cfg
 ```
 
+Settings from an older version are carried over to the current names automatically.
+
+**[GhostShips]**
 - **ForceGhostShip:** the Ghost Ship checkbox state. Normally changed from the checkbox itself.
 - **IncludeCareerOnlyModules** (default on): keeps the parts the game normally leaves out of FreePlay ghost ships, including the AI nodes. Turn it off and ghost ships will have no AI nodes.
-- **FreePlayHealthDamage** (default on): health damage in FreePlay, as above. Turn it off for stock invulnerability.
-- **ExitToMenuOnDeath** (default on): a FreePlay death returns you to the ship select. Turn it off to respawn on the ship as stock.
-- **ConsumeOxygen** / **ConsumeFuel** / **ConsumeDemoCharges** / **ConsumeTethers** (default on): each resource runs out as above. Turn one off to make it unlimited again.
-- **RefillSeconds** (default 5): how long a kiosk oxygen or fuel purchase takes to fill while the kiosk is open. 0 = instant.
-- **StartAtZeroDebt** (default on): FreePlay starts at $0 instead of career's $1.25B starting debt.
-- **AutosavePoints** (default 10): autosave each time salvage passes another multiple of this percent. 0 = no autosaves.
-- **Autosaves** (default 3): how many autosaves to keep per ship. Manual and exit saves are kept until you delete them.
+
+**[GhostShip_UI]**
 - **ToggleKey** / **ToggleControllerButton:** the keyboard key (G) and controller button (DPad Down) that flip the Ghost Ship checkbox.
 - **GhostVariantTag:** the text shown after ship names. TextMeshPro rich text is supported.
 - **OffsetFromBottomCenterX** / **OffsetFromBottomCenterY:** moves the checkbox from its bottom-center spot.
+
+**[Survival]**
+- **HealthDamage** (default on): health damage in FreePlay, as above. Turn it off for stock invulnerability.
+- **ExitToMenuOnDeath** (default on): a FreePlay death returns you to the ship select. Turn it off to respawn on the ship as stock.
+- **ConsumeOxygen** / **ConsumeFuel** / **ConsumeDemoCharges** / **ConsumeTethers** (default on): each resource runs out as above. Turn one off to make it unlimited again.
+- **RefillSeconds** (default 15): how long a kiosk oxygen, fuel or medkit purchase takes to fill while the kiosk is open. 0 = instant.
+
+**[Saves]**
+- **AutosavePoints** (default 10): autosave each time salvage passes another multiple of this percent. 0 = no autosaves.
+- **Autosaves** (default 3): how many autosaves to keep per ship. Manual and exit saves are kept until you delete them.
+
+**[Debug]**
 - **DebugLogging** (default off): extra troubleshooting detail in the log.
 
 ## Notes

@@ -36,7 +36,7 @@ namespace FreePlayPlus
     // listing never opens a file.
     internal static class ShipSaveStore
     {
-        internal const int MaxSavesPerShip = 20;
+        internal const int MaxSavesPerShip = 12;
         private const string kTimeFormat = "yyyyMMdd-HHmmss-fff";
 
         private static readonly Dictionary<string, List<ShipSave>> sCache = new Dictionary<string, List<ShipSave>>();
@@ -189,7 +189,7 @@ namespace FreePlayPlus
         }
 
         // Autosaves beyond the Autosaves setting go first (oldest first), then anything beyond the
-        // 20-per-ship cap, oldest of any kind.
+        // 12-per-ship cap, oldest of any kind.
         internal static void Prune(string shipKey)
         {
             Invalidate(shipKey);
