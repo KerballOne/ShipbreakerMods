@@ -64,6 +64,27 @@ namespace FreePlayPlus
             Plugin.Log.LogInfo($"Saved-ship asset locator installed ({modBundleFiles} mod bundle file(s)).");
         }
 
+        // Usage tracking (to find out whether this locator is still needed now that saved custom
+        // ships are primed before loading): each asset actually handed to the game is logged once,
+        // and a per-spawn total is logged when the ship finishes spawning.
+        private static int sServedThisSpawn;
+        private static readonly HashSet<string> sLoggedServed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        internal static void RecordServed(string key, UnityEngine.Object asset)
+        {
+            sServedThisSpawn++;
+            if (sLoggedServed.Add(key))
+                Plugin.Log.LogInfo($"Saved-ship asset locator supplied '{asset.name}' ({asset.GetType().Name}) for key {key}.");
+        }
+
+        // Called when a ship finishes spawning.
+        internal static void LogSpawnTotal(string ship)
+        {
+            if (sInstance == null) return;
+            Plugin.Log.LogInfo($"Saved-ship asset locator supplied {sServedThisSpawn} asset(s) while '{ship}' spawned.");
+            sServedThisSpawn = 0;
+        }
+
         internal static bool TryGet(string key, out UnityEngine.Object asset)
         {
             asset = null!;
@@ -177,7 +198,10 @@ namespace FreePlayPlus
         {
             var key = provideHandle.Location.InternalId;
             if (CustomShipAssetLocator.TryGet(key, out var asset))
+            {
+                CustomShipAssetLocator.RecordServed(key, asset);
                 provideHandle.Complete(asset, true, null);
+            }
             else
                 provideHandle.Complete<UnityEngine.Object>(null!, false, new Exception($"FreePlayPlus: custom-ship asset {key} is no longer loaded."));
         }

@@ -162,7 +162,7 @@ namespace FreePlayPlus
                 try { harmony.CreateClassProcessor(type).Patch(); }
                 catch (System.Exception ex) { Log.LogError($"Patch {type.Name} failed; that feature is disabled: {ex.GetBaseException().Message}"); }
             }
-            GhostStatusLogger.Register();
+            ShipSpawnEvents.Register();
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} {PluginInfo.PLUGIN_VERSION} loaded. ForceGhostShip={ForceGhostShip.Value}");
         }
 
