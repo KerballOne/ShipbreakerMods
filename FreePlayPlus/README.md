@@ -1,6 +1,6 @@
 # FreePlayPlus
 
-More to do in Hardspace: Shipbreaker's FreePlay: career ghost ships, and danger that actually matters.
+More to do in Hardspace: Shipbreaker's FreePlay: career ghost ships, danger that actually matters, and supplies you have to manage.
 
 Formerly **GhostShipsInFreePlay**. See [Upgrading from GhostShipsInFreePlay](#upgrading-from-ghostshipsinfreeplay).
 
@@ -27,7 +27,20 @@ Stock FreePlay makes you invulnerable. FreePlayPlus turns damage back on (on by 
 
 - You take health damage from impacts and hazards like in career: decompression, explosions, crushing, and leaving the play area.
 - Suit repair kits found on the ship heal you.
-- Oxygen stays unlimited, as in stock FreePlay.
+- Oxygen is handled separately: see [Consumables](#consumables).
+
+## Consumables
+
+Stock FreePlay gives you unlimited oxygen, fuel, demo charges and tethers, so the kiosk has little to sell. FreePlayPlus makes each of them run out like in career (all on by default, each with its own setting):
+
+- **Oxygen** drains as you work. Refill at the kiosk or in pressurised areas. With health damage on, running out suffocates you.
+- **Thruster fuel** drains as you thrust.
+- **Demo charges** start at career's carry amount.
+- **Tethers** start at career's carry amount instead of 1000.
+
+Restock at the kiosk. Oxygen and fuel purchases take **5 seconds** to fill (adjustable, or 0 for instant), so a supply run takes a moment. You pay up front; the refill only runs while the kiosk screen is open, so if you leave it pauses, and it picks up where it left off when you come back, without buying again. Pickups found on the ship still apply instantly.
+
+FreePlay also starts your balance at **$0** instead of career's $1.25B starting debt, so the kiosk shows what you've actually spent this run. Your career profile is never affected.
 
 ## Death ends the run
 
@@ -55,10 +68,14 @@ Hardspace Shipbreaker\BepInEx\config\me.kerballone.FreePlayPlus.cfg
 - **IncludeCareerOnlyModules** (default on): keeps the parts the game normally leaves out of FreePlay ghost ships, including the AI nodes. Turn it off and ghost ships will have no AI nodes.
 - **FreePlayHealthDamage** (default on): health damage in FreePlay, as above. Turn it off for stock invulnerability.
 - **ExitToMenuOnDeath** (default on): a FreePlay death returns you to the ship select. Turn it off to respawn on the ship as stock.
+- **ConsumeOxygen** / **ConsumeFuel** / **ConsumeDemoCharges** / **ConsumeTethers** (default on): each resource runs out as above. Turn one off to make it unlimited again.
+- **RefillSeconds** (default 5): how long a kiosk oxygen or fuel purchase takes to fill while the kiosk is open. 0 = instant.
+- **StartAtZeroDebt** (default on): FreePlay starts at $0 instead of career's $1.25B starting debt.
 - **ToggleKey** / **ToggleControllerButton:** the keyboard key (G) and controller button (DPad Down) that flip the Ghost Ship checkbox.
 - **GhostVariantTag:** the text shown after ship names. TextMeshPro rich text is supported.
 - **OffsetFromBottomCenterX** / **OffsetFromBottomCenterY:** moves the checkbox from its bottom-center spot.
 - **DebugLogging** (default off): extra troubleshooting detail in the log.
+- **StartSupplyPercent** (default 100): testing aid; below 100, each FreePlay spawn starts with that percent of oxygen and fuel.
 
 ## Notes
 

@@ -7,11 +7,14 @@ namespace FreePlayPlus
     // FreePlay's "no damage" is Player.SetGodMode(true), which adds a single Invulnerable component
     // to the player entity. Every vitality system excludes Invulnerable, so it blocks health and suit
     // damage *and* healing, oxygen changes, oxygen drain, and asphyxiation all at once.
-    // With FreePlayHealthDamage on, Invulnerable is removed again right after the game adds it
-    // (Player.Start, and every respawn), which brings back health/suit damage from impacts and
-    // hazards; healing uses the same ModifyHealth/ModifySuit path, so suit repair pickups work too.
-    // Oxygen has no separate invulnerability flag, so it's topped back up to full every frame to
-    // keep FreePlay's unlimited oxygen.
+    // With FreePlayHealthDamage or ConsumeOxygen on, Invulnerable is removed again right after the
+    // game adds it (Player.Start, and every respawn):
+    //   - FreePlayHealthDamage brings back health/suit damage from impacts and hazards; healing uses
+    //     the same ModifyHealth/ModifySuit path, so suit repair pickups work too. When it's off, the
+    //     narrower InvulnerableHealth + InvulnerableSuit flags are added instead, which also block
+    //     asphyxiation.
+    //   - Oxygen has no separate invulnerability flag. With ConsumeOxygen off it's topped back up to
+    //     full every frame to keep FreePlay's unlimited oxygen.
     internal static class FreePlayDamage
     {
         private static bool sLoggedActive;
@@ -20,25 +23,31 @@ namespace FreePlayPlus
             SceneLoader.Instance != null &&
             SceneLoader.Instance.CurrentLevelData.SessionType == GameSession.SessionType.FreeMode;
 
-        private static bool Active => Plugin.FreePlayHealthDamage.Value && IsFreePlay;
+        private static bool Active => IsFreePlay && (Plugin.FreePlayHealthDamage.Value || Plugin.ConsumeOxygen.Value);
 
         internal static void RemoveGodMode(string when)
         {
             if (!Active || !TryGetPlayer(out var entityManager, out var player)) return;
             if (!entityManager.HasComponent<Invulnerable>(player)) return;
             Player.SetGodMode(player, entityManager, enabled: false);
-            Plugin.Debug($"FreePlay health damage: removed god mode ({when}).");
+            var healthDamage = Plugin.FreePlayHealthDamage.Value;
+            if (!healthDamage)
+            {
+                if (!entityManager.HasComponent<InvulnerableHealth>(player)) entityManager.AddComponentData(player, default(InvulnerableHealth));
+                if (!entityManager.HasComponent<InvulnerableSuit>(player)) entityManager.AddComponentData(player, default(InvulnerableSuit));
+            }
+            Plugin.Debug($"FreePlay: removed god mode ({when}).");
             if (!sLoggedActive)
             {
                 sLoggedActive = true;
-                Plugin.Log.LogInfo("FreePlay health damage enabled (oxygen stays unlimited).");
+                Plugin.Log.LogInfo($"FreePlay health damage {(healthDamage ? "on" : "off")}, oxygen {(Plugin.ConsumeOxygen.Value ? "consumed" : "unlimited")}.");
             }
         }
 
         // Called from Plugin.Update.
         internal static void Tick()
         {
-            if (!Active || !TryGetPlayer(out var entityManager, out var player)) return;
+            if (!Active || Plugin.ConsumeOxygen.Value || !TryGetPlayer(out var entityManager, out var player)) return;
             if (!entityManager.HasComponent<OxygenComponent>(player)) return;
             var oxygen = entityManager.GetComponentData<OxygenComponent>(player);
             if (oxygen.Current >= oxygen.Max) return;
@@ -62,12 +71,21 @@ namespace FreePlayPlus
     [HarmonyPatch(typeof(Player), "Start")]
     internal static class Player_Start_Patch
     {
-        private static void Postfix() => FreePlayDamage.RemoveGodMode("spawn");
+        private static void Postfix()
+        {
+            FreePlayDamage.RemoveGodMode("spawn");
+            TimedRefill.Clear("spawn");
+            StartSupply.Schedule();
+        }
     }
 
     [HarmonyPatch(typeof(Player), "OnRespawned")]
     internal static class Player_OnRespawned_Patch
     {
-        private static void Postfix() => FreePlayDamage.RemoveGodMode("respawn");
+        private static void Postfix()
+        {
+            FreePlayDamage.RemoveGodMode("respawn");
+            TimedRefill.Clear("respawn");
+        }
     }
 }
