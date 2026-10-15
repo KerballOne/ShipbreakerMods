@@ -14,6 +14,9 @@
     <Reference Include="BepInEx"                    HintPath="$(GameDir)\BepInEx\core\BepInEx.dll"                                Private="false" />
     <Reference Include="0Harmony"                   HintPath="$(GameDir)\BepInEx\core\0Harmony.dll"                               Private="false" />
     <Reference Include="BBI.Unity.Game"             HintPath="$(GameDir)\Shipbreaker_Data\Managed\BBI.Unity.Game.dll"             Private="false" />
+    <Reference Include="Doozy.Engine"               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Doozy.Engine.dll"               Private="false" />
+    <Reference Include="Unity.TextMeshPro"          HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.TextMeshPro.dll"          Private="false" />
+    <Reference Include="UnityEngine.UI"             HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UI.dll"             Private="false" />
     <Reference Include="UnityEngine"                HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.dll"                Private="false" />
     <Reference Include="UnityEngine.CoreModule"     HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.CoreModule.dll"     Private="false" />
     <Reference Include="UnityEngine.UIModule"       HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UIModule.dll"         Private="false" />

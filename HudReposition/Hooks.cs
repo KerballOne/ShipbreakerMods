@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using BBI.Unity.Game;
 using HarmonyLib;
 using UnityEngine;
@@ -29,7 +31,7 @@ namespace HudReposition
         }
 
         // Converts a percentage offset (e.g. -15 = -15%) to canvas units for this element's canvas.
-        internal static Vector2 PercentToCanvasUnits(Vector2 percent, Transform t)
+        internal static Vector2 PercentToCanvasUnits(Vector2 percent, Transform t, bool log)
         {
             if (!TryGetRootCanvas(t, out var canvas, out var rect))
             {
@@ -46,42 +48,64 @@ namespace HudReposition
             float screenH = rect.height * scale;
             float cx = percent.x / 100f * screenW / scale;
             float cy = percent.y / 100f * screenH / scale;
-            Plugin.Log.LogInfo($"[HudReposition] Canvas: scaleFactor={scale} screenSize={screenW}x{screenH} → canvasUnits=({cx:F1}, {cy:F1}) for {percent}%");
+            if (log) Plugin.Log.LogInfo($"[HudReposition] Canvas: scaleFactor={scale} screenSize={screenW}x{screenH} → canvasUnits=({cx:F1}, {cy:F1}) for {percent}%");
             return new Vector2(cx, cy);
         }
+    }
+
+    // Remembers a panel's original position so its offset can be re-applied whenever the settings
+    // change (HUD options tab), instead of only once in Awake.
+    internal sealed class HudOffset : MonoBehaviour
+    {
+        private static readonly List<HudOffset> sAll = new List<HudOffset>();
+
+        private RectTransform mRect = null!;
+        private Vector2 mBase;
+        private Func<Vector2> mPercent = null!;
+        private string mName = "";
+
+        internal static void Attach(Component panel, string name, Func<Vector2> percent)
+        {
+            var rect = panel.GetComponent<RectTransform>();
+            if (rect == null) return;
+            var offset = panel.gameObject.AddComponent<HudOffset>();
+            offset.mRect = rect;
+            offset.mBase = rect.anchoredPosition;
+            offset.mPercent = percent;
+            offset.mName = name;
+            sAll.Add(offset);
+            offset.Apply(log: true);
+        }
+
+        internal static void ApplyAll()
+        {
+            foreach (var offset in sAll)
+                if (offset != null) offset.Apply(log: false);
+        }
+
+        private void Apply(bool log)
+        {
+            var percent = mPercent();
+            var delta = percent == Vector2.zero ? Vector2.zero : CanvasHelper.PercentToCanvasUnits(percent, transform, log);
+            mRect.anchoredPosition = mBase + delta;
+            if (log && percent != Vector2.zero)
+                Plugin.Log.LogInfo($"[HudReposition] {mName} moved by {percent}% ({delta}) → {mRect.anchoredPosition}");
+        }
+
+        private void OnDestroy() => sAll.Remove(this);
     }
 
     [HarmonyPatch(typeof(ObjectInfoUIController), "Awake")]
     static class PatchObjectInfoAwake
     {
-        static void Postfix(ObjectInfoUIController __instance)
-        {
-            var percent = Plugin.ParseOffset(Plugin.PartInfoOffset);
-            if (percent == Vector2.zero) return;
-
-            var rt = __instance.GetComponent<RectTransform>();
-            if (rt == null) return;
-
-            var delta = CanvasHelper.PercentToCanvasUnits(percent, __instance.transform);
-            rt.anchoredPosition += delta;
-            Plugin.Log.LogInfo($"[HudReposition] PartInfo moved by {percent}% ({delta}) → {rt.anchoredPosition}");
-        }
+        static void Postfix(ObjectInfoUIController __instance) =>
+            HudOffset.Attach(__instance, "PartInfo", () => Plugin.PartInfoOffset);
     }
 
     [HarmonyPatch(typeof(ObjectSalvageInfoUIController), "Awake")]
     static class PatchSalvageInfoAwake
     {
-        static void Postfix(ObjectSalvageInfoUIController __instance)
-        {
-            var percent = Plugin.ParseOffset(Plugin.SalvageLabelOffset);
-            if (percent == Vector2.zero) return;
-
-            var rt = __instance.GetComponent<RectTransform>();
-            if (rt == null) return;
-
-            var delta = CanvasHelper.PercentToCanvasUnits(percent, __instance.transform);
-            rt.anchoredPosition += delta;
-            Plugin.Log.LogInfo($"[HudReposition] SalvageLabel moved by {percent}% ({delta}) → {rt.anchoredPosition}");
-        }
+        static void Postfix(ObjectSalvageInfoUIController __instance) =>
+            HudOffset.Attach(__instance, "SalvageLabel", () => Plugin.SalvageLabelOffset);
     }
 }
