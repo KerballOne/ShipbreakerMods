@@ -332,28 +332,27 @@ namespace FreePlayPlus
             HideOutgoingView(unified, ((sActiveIndex(unified) + direction) % count + count) % count);
         }
 
-        // LB/RB step through m_OptionTabs in array order, but other mods' tabs may be placed in the
-        // tab bar out of that order (ShipbreakerTweaks puts its button right after Audio even when it
-        // was appended after ours). Keep our button directly after the tab before it in the array,
-        // so the bar matches the bumper order. Run from postfixes, after every mod's install prefix.
-        internal static void TrySyncTabPosition(UnifiedOptionsScreen unified)
+        // LB/RB step through m_OptionTabs in array order, but a mod may place its button elsewhere in
+        // the bar (ShipbreakerTweaks always puts its button right after Audio, even when it was
+        // appended to the array after another mod's tab). Reorders the tab buttons to match the array,
+        // a no-op when they already do; any mod doing the same pass gets the same result, so it
+        // doesn't depend on load order. Run from postfixes, after every mod's install prefix.
+        internal static void TrySyncTabOrder(UnifiedOptionsScreen unified)
         {
-            try { SyncTabPosition(unified); }
-            catch (Exception ex) { Plugin.Log.LogError($"Could not position the {kTabLabel} tab: {ex}"); }
+            try { SyncTabOrder(unified); }
+            catch (Exception ex) { Plugin.Log.LogError($"Could not order the {kTabLabel} tab: {ex}"); }
         }
 
-        private static void SyncTabPosition(UnifiedOptionsScreen unified)
+        private static void SyncTabOrder(UnifiedOptionsScreen unified)
         {
-            var ours = OurIndex(unified);
-            if (ours <= 0) return;
-            var tabs = sTabs(unified);
-            var tab = tabs[ours].transform;
-            var previous = tabs[ours - 1].transform;
-            if (tab.parent != previous.parent) return;
-            var target = previous.GetSiblingIndex();
-            // Removing our tab first shifts the previous one down by one if ours is before it.
-            if (tab.GetSiblingIndex() > target) target++;
-            if (tab.GetSiblingIndex() != target) tab.SetSiblingIndex(target);
+            if (OurIndex(unified) < 0) return;
+            var tabs = sTabs(unified).Select(t => t != null ? t.transform : null).ToArray();
+            if (tabs.Length == 0 || tabs.Any(t => t == null || t.parent != tabs[0]!.parent)) return;
+            var first = tabs.Min(t => t!.GetSiblingIndex());
+            // Only when the buttons sit next to each other, so nothing else in the bar gets moved.
+            if (tabs.Max(t => t!.GetSiblingIndex()) - first != tabs.Length - 1) return;
+            for (var i = 0; i < tabs.Length; i++)
+                if (tabs[i]!.GetSiblingIndex() != first + i) tabs[i]!.SetSiblingIndex(first + i);
         }
 
         internal static void OnOptionsClosed(UnifiedOptionsScreen unified)
@@ -494,14 +493,14 @@ namespace FreePlayPlus
     internal static class UnifiedOptionsScreen_OnEnable_Patch
     {
         private static void Prefix(UnifiedOptionsScreen __instance) => OptionsTab.TryInstall(__instance);
-        private static void Postfix(UnifiedOptionsScreen __instance) => OptionsTab.TrySyncTabPosition(__instance);
+        private static void Postfix(UnifiedOptionsScreen __instance) => OptionsTab.TrySyncTabOrder(__instance);
     }
 
     [HarmonyPatch(typeof(UnifiedOptionsScreen), nameof(UnifiedOptionsScreen.ShowCorrectTabOnStart))]
     internal static class UnifiedOptionsScreen_ShowCorrectTabOnStart_Patch
     {
         private static void Prefix(UnifiedOptionsScreen __instance) => OptionsTab.TryInstall(__instance);
-        private static void Postfix(UnifiedOptionsScreen __instance) => OptionsTab.TrySyncTabPosition(__instance);
+        private static void Postfix(UnifiedOptionsScreen __instance) => OptionsTab.TrySyncTabOrder(__instance);
     }
 
     [HarmonyPatch(typeof(UnifiedOptionsScreen), nameof(UnifiedOptionsScreen.ShowTab))]
@@ -513,7 +512,7 @@ namespace FreePlayPlus
             try { OptionsTab.HideOutgoingView(__instance, index); }
             catch (Exception ex) { Plugin.Log.LogError($"FREEPLAY+ tab switch: {ex}"); }
         }
-        private static void Postfix(UnifiedOptionsScreen __instance) => OptionsTab.TrySyncTabPosition(__instance);
+        private static void Postfix(UnifiedOptionsScreen __instance) => OptionsTab.TrySyncTabOrder(__instance);
     }
 
     [HarmonyPatch(typeof(UnifiedOptionsScreen), nameof(UnifiedOptionsScreen.NextOptionTab))]
@@ -525,7 +524,7 @@ namespace FreePlayPlus
             try { OptionsTab.HideOutgoingViewStep(__instance, 1); }
             catch (Exception ex) { Plugin.Log.LogError($"FREEPLAY+ tab switch: {ex}"); }
         }
-        private static void Postfix(UnifiedOptionsScreen __instance) => OptionsTab.TrySyncTabPosition(__instance);
+        private static void Postfix(UnifiedOptionsScreen __instance) => OptionsTab.TrySyncTabOrder(__instance);
     }
 
     [HarmonyPatch(typeof(UnifiedOptionsScreen), nameof(UnifiedOptionsScreen.PreviousOptionTab))]
@@ -537,7 +536,7 @@ namespace FreePlayPlus
             try { OptionsTab.HideOutgoingViewStep(__instance, -1); }
             catch (Exception ex) { Plugin.Log.LogError($"FREEPLAY+ tab switch: {ex}"); }
         }
-        private static void Postfix(UnifiedOptionsScreen __instance) => OptionsTab.TrySyncTabPosition(__instance);
+        private static void Postfix(UnifiedOptionsScreen __instance) => OptionsTab.TrySyncTabOrder(__instance);
     }
 
     [HarmonyPatch(typeof(UnifiedOptionsScreen), "OnDisable")]

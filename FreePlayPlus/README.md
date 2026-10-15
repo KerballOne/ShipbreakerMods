@@ -81,7 +81,7 @@ Every time a ship finishes spawning, in FreePlay or career, one line is written 
 
 ## Settings
 
-Most settings can be changed in game on the **FREEPLAY+** tab of the Options menu, from the title screen or the pause menu. Changes take effect as soon as you make them. Leaving the Options menu without saving puts the old values back. Settings marked "(next ship)" take effect when the next ship loads. The keybinds, the tag text, the checkbox offsets and debug logging can only be changed in the config file.
+Most settings can be changed in game on the **FREEPLAY+** tab of the Options menu, from the title screen or the pause menu. Changes take effect as soon as you make them. Leaving the Options menu without saving puts the old values back. Settings marked "(next ship)" take effect when the next ship loads. The keybinds, the tag text, the checkbox offsets and debug logging can only be changed in the config file. The tab works alongside other mods that add their own Options tabs, such as ShipbreakerTweaks.
 
 The config file is generated on first run at:
 
