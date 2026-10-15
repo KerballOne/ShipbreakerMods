@@ -3,7 +3,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>me.kerballone.MagBoots</AssemblyName>
     <RootNamespace>MagBoots</RootNamespace>
-    <Version>1.4.3</Version>
+    <Version>1.4.4</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <Optimize>true</Optimize>
@@ -23,6 +23,9 @@
     <Reference Include="UnityEngine.PhysicsModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.PhysicsModule.dll" Private="false" />
     <Reference Include="UnityEngine.IMGUIModule"  HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.IMGUIModule.dll" Private="false" />
     <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="Doozy.Engine"           HintPath="$(GameDir)\Shipbreaker_Data\Managed\Doozy.Engine.dll"           Private="false" />
+    <Reference Include="Unity.TextMeshPro"      HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.TextMeshPro.dll"      Private="false" />
+    <Reference Include="UnityEngine.UI"         HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UI.dll"         Private="false" />
     <Reference Include="InControl"                HintPath="$(GameDir)\Shipbreaker_Data\Managed\InControl.dll"                Private="false" />
   </ItemGroup>
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using BBI.Unity.Game;
@@ -29,6 +30,7 @@ namespace MagBoots
     public class Plugin : BaseUnityPlugin
     {
         internal static ManualLogSource Log = null!;
+        internal static Plugin Instance = null!;
 
         internal static ConfigEntry<bool> ConfigEnabled = null!;
         internal static ConfigEntry<KeyboardShortcut> ConfigToggleKey = null!;
@@ -71,28 +73,25 @@ namespace MagBoots
         internal static ConfigEntry<float> ConfigIdlePowerMultiplier = null!;
         internal static ConfigEntry<float> ConfigLockingPowerMultiplier = null!;
         internal static ConfigEntry<BatteryDisplayMode> ConfigBatteryDisplayMode = null!;
-        internal static ConfigEntry<string> ConfigHudOffset = null!;
+        internal static ConfigEntry<float> ConfigHudOffsetX = null!;
+        internal static ConfigEntry<float> ConfigHudOffsetY = null!;
         internal static ConfigEntry<float> ConfigHudScale = null!;
         internal static ConfigEntry<bool> ConfigShowStride = null!;
 
         private MagBootsController? _controller;
 
-        internal static Vector2 ParseHudOffset()
+        internal static Vector2 HudOffset => new Vector2(ConfigHudOffsetX.Value, ConfigHudOffsetY.Value);
+
+        // Parses the old "(x, y)" HUD Offset string (before it was split into Offset_X/Offset_Y).
+        private static bool TryParseOffset(string text, out Vector2 offset)
         {
-            try
-            {
-                var s = ConfigHudOffset.Value.Trim().Trim('(', ')');
-                var parts = s.Split(',');
-                if (parts.Length != 2) throw new FormatException();
-                float x = float.Parse(parts[0].Trim(), CultureInfo.InvariantCulture);
-                float y = float.Parse(parts[1].Trim(), CultureInfo.InvariantCulture);
-                return new Vector2(x, y);
-            }
-            catch
-            {
-                Log.LogWarning($"MagBoots: could not parse HudOffset '{ConfigHudOffset.Value}' — expected format: (x, y). Using (0, 0).");
-                return Vector2.zero;
-            }
+            offset = Vector2.zero;
+            var parts = text.Trim().Trim('"').Trim().Trim('(', ')').Split(',');
+            if (parts.Length != 2) return false;
+            if (!float.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var x)) return false;
+            if (!float.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var y)) return false;
+            offset = new Vector2(x, y);
+            return true;
         }
 
         private static bool IsControllerActive =>
@@ -145,6 +144,7 @@ namespace MagBoots
         private void Awake()
         {
             Log = Logger;
+            Instance = this;
 
             ConfigEnabled = Config.Bind("1 - General", "Enabled", true,
                 "Turns the mod on or off (requires a restart).");
@@ -272,15 +272,22 @@ namespace MagBoots
             ConfigBatteryDisplayMode = Config.Bind("7 - HUD", "BatteryDisplayMode", BatteryDisplayMode.Gauge,
                 "How the battery is shown on screen: Gauge (bar), Percentage, Timer (minutes:seconds), or Off (hidden).");
 
-            ConfigHudOffset = Config.Bind("7 - HUD", "Offset", "(0, -48)",
-                "Moves the on-screen hint from the center of your screen, as a percent of your screen size. " +
-                "Format: (x, y). e.g. (0, -48) moves it to the bottom-center. Negative x moves it left, negative y moves it down.");
+            var hudOffsetRange = new AcceptableValueRange<float>(-50f, 50f);
+            ConfigHudOffsetX = Config.Bind("7 - HUD", "Offset_X", 0f, new ConfigDescription(
+                "Moves the on-screen hint left/right from the center of your screen, as a percent of your screen size. Negative moves it left.",
+                hudOffsetRange));
+
+            ConfigHudOffsetY = Config.Bind("7 - HUD", "Offset_Y", -48f, new ConfigDescription(
+                "Moves the on-screen hint up/down from the center of your screen, as a percent of your screen size. Negative moves it down; -48 is the bottom-center.",
+                hudOffsetRange));
 
             ConfigHudScale = Config.Bind("7 - HUD", "Scale", 1f,
                 "Size of the on-screen hint. 1 is the default size, 2 is twice as big, 0.5 is half as big.");
 
             ConfigShowStride = Config.Bind("7 - HUD", "ShowStride", false,
                 "Shows your current stride distance (in meters) next to the hint, which shortens as you pitch your view up or down (see Pitch_MaxStride/Pitch_MinStride).");
+
+            MigrateHudOffset();
 
             if (!ConfigEnabled.Value)
             {
@@ -291,9 +298,35 @@ namespace MagBoots
             _controller = new MagBootsController();
             Main.EventSystem.AddHandler<GameStateChangedEvent>(OnGameStateChanged);
 
-            new Harmony(PluginInfo.PLUGIN_GUID).PatchAll();
+            // Per class rather than PatchAll(), so a patch whose target moved in a game update is
+            // logged and skipped instead of aborting every patch after it.
+            var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
+            foreach (var type in AccessTools.GetTypesFromAssembly(typeof(Plugin).Assembly))
+            {
+                if (!type.IsDefined(typeof(HarmonyPatch), inherit: false)) continue;
+                try { harmony.CreateClassProcessor(type).Patch(); }
+                catch (Exception ex) { Log.LogError($"Patch {type.Name} failed; that feature is disabled: {ex.GetBaseException().Message}"); }
+            }
             SetUpConfigFileWatcher();
             Log.LogInfo("MagBoots loaded. Press " + ConfigToggleKey.Value + " to attach/detach mag boots.");
+        }
+
+        // 1.4.x stored the HUD offset as one "(x, y)" string. Carry it over to Offset_X/Offset_Y (so it
+        // can be two sliders on the MAGBOOTS options tab) and drop the old key from the file.
+        private void MigrateHudOffset()
+        {
+            var orphans = Traverse.Create(Config).Property("OrphanedEntries").GetValue<Dictionary<ConfigDefinition, string>>();
+            var old = new ConfigDefinition("7 - HUD", "Offset");
+            if (orphans == null || !orphans.TryGetValue(old, out var text)) return;
+            orphans.Remove(old);
+            if (TryParseOffset(text, out var offset))
+            {
+                ConfigHudOffsetX.Value = offset.x;
+                ConfigHudOffsetY.Value = offset.y;
+                Log.LogInfo($"MagBoots: HUD Offset '{text}' carried over to Offset_X={ConfigHudOffsetX.Value}, Offset_Y={ConfigHudOffsetY.Value}.");
+            }
+            else Log.LogWarning($"MagBoots: could not parse old HUD Offset '{text}'; using the default.");
+            Config.Save();
         }
 
         private FileSystemWatcher? _configFileWatcher;
@@ -303,12 +336,16 @@ namespace MagBoots
         // instead, both to marshal safely and to debounce multiple rapid Changed events from one save.
         private volatile bool _configReloadPending;
         private int _configReloadDebounceFramesLeft;
+        // Write time of the .cfg right after the MAGBOOTS tab saved it, so the watcher can tell that
+        // write apart from a hand edit and skip reloading values that are already live.
+        private static DateTime sOwnWriteTimeUtc;
 
         // BepInEx's ConfigFile never reloads itself when the .cfg is hand-edited on disk (confirmed: no
         // built-in watcher in this BepInEx version, only a manual Reload() method) - without this, every
         // tuning change required a full game restart to take effect. FileSystemWatcher is OS-level file
         // notification (no polling, no per-tick cost), so this is free at runtime except for the rare
-        // moment an edit is actually saved.
+        // moment an edit is actually saved. Kept alongside the MAGBOOTS options tab because editing the
+        // file is quicker than the menu when trying many values in a row.
         private void SetUpConfigFileWatcher()
         {
             string directory = Path.GetDirectoryName(Config.ConfigFilePath)!;
@@ -329,6 +366,24 @@ namespace MagBoots
         private void OnConfigFileChangedOnDisk(object sender, FileSystemEventArgs e)
         {
             _configReloadPending = true;
+        }
+
+        // Called by the MAGBOOTS tab right after it saves the .cfg.
+        internal static void NoteOwnConfigWrite()
+        {
+            try { sOwnWriteTimeUtc = File.GetLastWriteTimeUtc(Instance.Config.ConfigFilePath); }
+            catch (Exception) { sOwnWriteTimeUtc = default; }
+        }
+
+        private void ReloadConfigFromDisk()
+        {
+            DateTime writeTime;
+            try { writeTime = File.GetLastWriteTimeUtc(Config.ConfigFilePath); }
+            catch (Exception) { writeTime = default; }
+            if (writeTime != default && writeTime == sOwnWriteTimeUtc) return; // the tab's own save
+
+            Config.Reload();
+            Log.LogInfo("MagBoots: config file changed on disk, reloaded live.");
         }
 
         private void OnDestroy()
@@ -369,12 +424,12 @@ namespace MagBoots
 
             if (_configReloadDebounceFramesLeft > 0)
             {
-                _configReloadDebounceFramesLeft--;
+                // Held while the Options menu has unsaved MAGBOOTS edits open, so a reload can't
+                // overwrite them mid-edit; it runs once the menu closes.
+                if (_configReloadDebounceFramesLeft > 1 || !EditSession.IsOpen)
+                    _configReloadDebounceFramesLeft--;
                 if (_configReloadDebounceFramesLeft == 0)
-                {
-                    Config.Reload();
-                    Log.LogInfo("MagBoots: config file changed on disk, reloaded live.");
-                }
+                    ReloadConfigFromDisk();
             }
 
             if (_controller == null || !IsInFlightGameplay)
@@ -413,7 +468,7 @@ namespace MagBoots
 
             string runKeyLabel = GetRunKeyLabel();
 
-            Vector2 percent = ParseHudOffset();
+            Vector2 percent = HudOffset;
             var offsetPixels = new Vector2(percent.x / 100f * Screen.width, -percent.y / 100f * Screen.height);
 
             bool showBattery = ConfigBatteryCapacityMinutes.Value > 0f && ConfigBatteryDisplayMode.Value != BatteryDisplayMode.Off;

@@ -35,11 +35,13 @@ A small on-screen hint in the corner shows your current status, styled to match 
 - **Red** — error, no valid surface found below you
 - **Gray** — no power, battery depleted
 
-Its position and size can both be tweaked in the config — position as a percentage offset from the center of your screen, size as a scale multiplier (1 is default, 2 is twice as big). Turning on `ShowStride` in the config adds a small readout right of the hint showing your current stride distance, which shrinks in real time as you pitch your view.
+Its position and size can both be tweaked on the MAGBOOTS options tab or in the config — position as a percentage offset from the center of your screen (`Offset_X` / `Offset_Y`), size as a scale multiplier (1 is default, 2 is twice as big). Turning on `ShowStride` adds a small readout right of the hint showing your current stride distance, which shrinks in real time as you pitch your view.
 
 ## Settings
 
-The config file is generated on first run at:
+The everyday settings can be changed in game on the **MAGBOOTS** tab of the Options menu, from the title screen or the pause menu: run mode (toggle or hold), walk and run speed, precise rotation and its sensitivity, battery capacity and drain, how the battery is shown, and the HUD hint's position, size and stride readout. Changes take effect as soon as you make them. **Save** keeps your changes; leaving Options without saving puts the old values back. **Enabled** needs a restart, and battery **Capacity** applies from the next shift. The tab works alongside other mods that add their own Options tabs, such as ShipbreakerTweaks.
+
+The keys and buttons, and the finer tuning (Attach, Steps and Physics), are in the config file, generated on first run at:
 
 ```
 Hardspace Shipbreaker\BepInEx\config\me.kerballone.MagBoots.cfg
@@ -69,7 +71,9 @@ A few highlights:
 - **BreakawayVelocity** is how hard you need to be hit before mag boots let go instead of holding on.
 - **AttachMaxVelocity** is how fast a surface can be moving relative to you before mag boots refuses to attach to it.
 
-The config file also reloads live - edit and save it while the game is running and your changes apply immediately, no restart needed.
+The config file also reloads live - edit and save it while the game is running and your changes apply immediately, no restart needed. That's the quickest way to try lots of values in a row. While the Options menu is open, a file edit waits until you close it, and saving from the MAGBOOTS tab rewrites the file with the tab's values.
+
+The HUD hint's position used to be a single `Offset = (x, y)` setting; it's now `Offset_X` and `Offset_Y`, and your old value is carried over automatically.
 
 ## Installation
 
@@ -86,3 +90,7 @@ MagBoots works entirely on your own client, via raycasts and forces on your own 
 ## See also
 
 [NewtonianPhysics](https://github.com/KerballOne/ShipbreakerMods/tree/kb1/NewtonianPhysics) is a separate, optional companion mod that removes on-demand air braking and adds real recoil to the Cutter and Grapple Gun — it pairs well with MagBoots as an alternative way to stop and control your movement.
+
+## Support
+
+Questions, bugs, or feedback? Join the Shipbreaker Discord: [discord.gg/shipbreakergame](https://discord.gg/shipbreakergame)
