@@ -24,6 +24,7 @@ namespace FreePlayPlus
         internal static ConfigEntry<bool> ConsumeDemoCharges = null!;
         internal static ConfigEntry<bool> ConsumeTethers = null!;
         internal static ConfigEntry<float> RefillSeconds = null!;
+        internal static ConfigEntry<bool> NoCredit = null!;
         internal static ConfigEntry<float> AutosavePoints = null!;
         internal static ConfigEntry<int> Autosaves = null!;
         internal static ConfigEntry<KeyboardShortcut> ToggleKey = null!;
@@ -95,6 +96,12 @@ namespace FreePlayPlus
                     "and pauses if you leave (it resumes when you come back, no need to buy again). " +
                     "0 = instant, as stock. Pickups found on the ship are always instant.",
                     new AcceptableValueRange<float>(0f, 60f)));
+
+            NoCredit = Config.Bind(
+                "Survival", "NoCredit", true,
+                "FreePlay kiosk purchases are refused when they would take this run's total kiosk " +
+                "expenses past the credit value salvaged from the ship so far (the run continues across " +
+                "ship saves). Set false to buy freely.");
 
             AutosavePoints = Config.Bind(
                 "Saves", "AutosavePoints", 10f,

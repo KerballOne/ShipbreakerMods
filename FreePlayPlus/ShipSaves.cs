@@ -19,13 +19,16 @@ namespace FreePlayPlus
         public DateTime Time;
         public SaveKind Kind;
         public float Percent;
+        public float? Runtime;  // shift clock seconds; null for saves made before it was recorded
+        public float Expenses;  // kiosk spend so far
 
         public string KindLabel => Kind switch { SaveKind.Auto => "Autosave", SaveKind.Manual => "Manual", _ => "Exit" };
     }
 
     // FreePlay ship saves, one folder per FreePlay ship, in the game's save-data folder but outside
     // Saves\ so nothing the game owns is touched:
-    //   <SaveDataPath>\FreePlayPlus\ShipSaves\<Ship_Name>\<yyyyMMdd-HHmmss-fff>_<kind>_<percent>.ship
+    //   <SaveDataPath>\FreePlayPlus\ShipSaves\<Ship_Name>\<yyyyMMdd-HHmmss-fff>_<kind>_<percent>_<runtime s>_<expenses>.ship
+    // (runtime and expenses were added later; names without them still load, with no runtime shown.)
     // The folder is named after the ship as the FreePlay ship select shows it ("The Tachi" ->
     // The_Tachi); a ship-id.txt file inside holds the level's starting ship asset GUID, which is what
     // saves are matched by, so two ships sharing a display name can't mix. Folders from 1.1.0 test
@@ -155,7 +158,15 @@ namespace FreePlayPlus
                         !Enum.TryParse(parts[1], true, out SaveKind kind) ||
                         !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var percent))
                         continue;
-                    saves.Add(new ShipSave { Path = file, Time = time, Kind = kind, Percent = percent });
+                    var save = new ShipSave { Path = file, Time = time, Kind = kind, Percent = percent };
+                    if (parts.Length >= 5 &&
+                        float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var runtime) &&
+                        float.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var expenses))
+                    {
+                        save.Runtime = runtime;
+                        save.Expenses = expenses;
+                    }
+                    saves.Add(save);
                 }
             }
             saves.Sort((a, b) => b.Time.CompareTo(a.Time)); // newest first
@@ -163,10 +174,13 @@ namespace FreePlayPlus
             return saves;
         }
 
-        internal static string NewPath(string shipKey, string shipName, SaveKind kind, float percent)
+        internal static string NewPath(string shipKey, string shipName, SaveKind kind, float percent, float runtime, float expenses)
         {
             var folder = EnsureShipFolder(shipKey, shipName);
-            var name = $"{DateTime.Now.ToString(kTimeFormat, CultureInfo.InvariantCulture)}_{kind.ToString().ToLowerInvariant()}_{percent.ToString("0.0", CultureInfo.InvariantCulture)}.ship";
+            var name = $"{DateTime.Now.ToString(kTimeFormat, CultureInfo.InvariantCulture)}_{kind.ToString().ToLowerInvariant()}" +
+                       $"_{percent.ToString("0.0", CultureInfo.InvariantCulture)}" +
+                       $"_{Mathf.FloorToInt(runtime).ToString(CultureInfo.InvariantCulture)}" +
+                       $"_{expenses.ToString("0.00", CultureInfo.InvariantCulture)}.ship";
             return System.IO.Path.Combine(folder, name);
         }
 
@@ -275,14 +289,16 @@ namespace FreePlayPlus
             var shipKey = CurrentShipKey!;
             var preview = ModuleService.Instance.CurrentShipPreview;
             TryGetSalvagePercent(out var percent);
-            var path = ShipSaveStore.NewPath(shipKey, ShipName(shipKey, preview), kind, percent);
+            var runtime = FreePlayRun.Runtime ?? sLastRuntime;
+            var expenses = FreePlayRun.Expenses;
+            var path = ShipSaveStore.NewPath(shipKey, ShipName(shipKey, preview), kind, percent, runtime, expenses);
             sSaving = true;
             try
             {
                 var ok = await preview.WriteToFileAsync(path);
                 ShipSaveStore.Prune(shipKey);
                 Plugin.Log.LogInfo(ok
-                    ? $"Saved FreePlay ship ({kind}, {percent:0.0}% salvaged{SalvageDetail()})."
+                    ? $"Saved FreePlay ship ({kind}, {percent:0.0}% salvaged{SalvageDetail()}, clock {FreePlayRun.FormatRuntime(runtime)}, expenses ${expenses:N2})."
                     : $"FreePlay ship save failed ({kind}).");
                 return ok;
             }
@@ -298,10 +314,15 @@ namespace FreePlayPlus
 
         // Called from Plugin.Update: an autosave each time salvage crosses another AutosavePoints %.
         // The step reached when a ship spawns (fresh or loaded from a save) is the baseline.
+        // Last shift clock seen during FreePlay gameplay, in case the clock is gone by the time an
+        // exit save runs.
+        private static float sLastRuntime;
+
         internal static void Tick()
         {
             if (Time.unscaledTime < sNextCheck) return;
             sNextCheck = Time.unscaledTime + 1f;
+            if (FreePlayDamage.IsFreePlay && FreePlayRun.Runtime is float runtime) sLastRuntime = runtime;
 
             var step = Plugin.AutosavePoints.Value;
             if (step <= 0f || GameSession.CurrentGameState != GameSession.GameState.Gameplay || !CanSave) return;
@@ -401,7 +422,8 @@ namespace FreePlayPlus
 
         private static bool Prefix(SceneLoader __instance, bool bDoQuitFade, ref Task __result)
         {
-            var armed = Time.unscaledTime - PromptPopup_Confirm_Patch.ExitArmedAt < 15f;
+            // Generous window: the Shift Summary sits between the door prompt and this teardown.
+            var armed = Time.unscaledTime - PromptPopup_Confirm_Patch.ExitArmedAt < 1800f;
             PromptPopup_Confirm_Patch.ExitArmedAt = -100f;
             if (sBypass || !armed || GameSession.CurrentGameState == GameSession.GameState.GameOver || !ShipSaver.CanSave) return true;
             __result = SaveThenExit(__instance, bDoQuitFade);

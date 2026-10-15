@@ -53,7 +53,7 @@ Large ships, custom ones especially, can take more than one sitting. FreePlayPlu
 - **Exit save:** confirming Exit at the Hab door saves before leaving. Quitting from the pause menu, abandoning the shift, or dying does not save.
 - Each ship keeps up to 12 saves; past that, the oldest is deleted.
 
-On the FreePlay ship select, a ship with saves shows **Saved 42.3%** (its latest save). Picking it opens the save list: date, type and salvaged % for each save, with **Load** and **Delete**, plus **New ship**, **Delete all** and **Close**. It works with mouse, keyboard and controller.
+On the FreePlay ship select, a ship with saves shows **(42.3% - 12m 34s)** (its latest save). Picking it opens the save list: date, type and salvaged % for each save, with **Load** and **Delete**, plus **New ship**, **Delete all** and **Close**. It works with mouse, keyboard and controller.
 
 Loading restores the ship as it was, cuts included. Your own oxygen, fuel, health and tools start fresh, as on a new ship.
 

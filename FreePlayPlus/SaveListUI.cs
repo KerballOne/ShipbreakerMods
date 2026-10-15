@@ -150,7 +150,8 @@ namespace FreePlayPlus
             {
                 // Keep the column position by fraction across rows with different button counts.
                 var fraction = sGrid[sRow].Count > 1 ? (float)sCol / (sGrid[sRow].Count - 1) : 0f;
-                sRow = Mathf.Clamp(sRow + rows, 0, sGrid.Count - 1);
+                // Wraps: up from the top row goes to the bottom (footer) row, down from it to the top.
+                sRow = ((sRow + rows) % sGrid.Count + sGrid.Count) % sGrid.Count;
                 sCol = sGrid[sRow].Count > 1 ? Mathf.RoundToInt(fraction * (sGrid[sRow].Count - 1)) : 0;
             }
             if (cols != 0) sCol = Mathf.Clamp(sCol + cols, 0, sGrid[sRow].Count - 1);
@@ -241,7 +242,12 @@ namespace FreePlayPlus
             {
                 var save = saves[i];
                 var row = Row(content, striped: i % 2 == 0);
-                Label(row, $"{save.Time:yyyy-MM-dd  HH:mm}    {save.KindLabel}    <color=#FF8C1A>{save.Percent:0.0}%</color> salvaged", 22f, TextAlignmentOptions.Left, Color.white, flexible: true, height: kListRowHeight);
+                // Fixed-width columns so a longer type ("Autosave") doesn't shift the columns after it.
+                Label(row, save.Time.ToString("yyyy-MM-dd_HH:mm", System.Globalization.CultureInfo.InvariantCulture), 22f, TextAlignmentOptions.Left, Color.white, height: kListRowHeight, width: 210f);
+                Label(row, save.KindLabel, 22f, TextAlignmentOptions.Left, Color.white, height: kListRowHeight, width: 130f);
+                Label(row, $"{save.Percent:0.0}%", 22f, TextAlignmentOptions.Right, kAccent, height: kListRowHeight, width: 90f);
+                Label(row, save.Runtime is float runtime ? FreePlayRun.FormatRuntime(runtime) : "", 22f, TextAlignmentOptions.Right, Color.white, height: kListRowHeight, width: 140f);
+                Label(row, "", 22f, TextAlignmentOptions.Left, Color.white, flexible: true, height: kListRowHeight);
                 var captured = save;
                 sGrid.Add(new List<Button>
                 {
@@ -311,6 +317,7 @@ namespace FreePlayPlus
             try { await SavedShipPrimer.PrimeAsync(preview); }
             catch (Exception ex) { Plugin.Log.LogError($"Preparing the saved ship failed: {ex}"); }
             EndPreparing();
+            FreePlayRun.RestoreOnNextShift(save);
             SceneLoader.Instance.TearDownAndLoadLevelWithShipPreviewAsync(level, preview);
         }
 
@@ -416,7 +423,7 @@ namespace FreePlayPlus
             return row;
         }
 
-        private static TextMeshProUGUI Label(RectTransform parent, string text, float size, TextAlignmentOptions align, Color color, bool flexible = false, float height = kRowHeight)
+        private static TextMeshProUGUI Label(RectTransform parent, string text, float size, TextAlignmentOptions align, Color color, bool flexible = false, float height = kRowHeight, float width = 0f)
         {
             var rect = Child("Label", parent);
             var tmp = rect.gameObject.AddComponent<TextMeshProUGUI>();
@@ -431,7 +438,7 @@ namespace FreePlayPlus
             tmp.overflowMode = TextOverflowModes.Ellipsis;
             tmp.raycastTarget = false;
             tmp.text = text;
-            if (flexible) Size(rect.gameObject, height, 0f, flexible: true);
+            if (flexible || width > 0f) Size(rect.gameObject, height, width, flexible);
             return tmp;
         }
 
@@ -471,6 +478,7 @@ namespace FreePlayPlus
         private static bool Prefix(LevelSelectButton __instance)
         {
             if (SaveListUI.Preparing) return false;
+            FreePlayRun.ClearPending(); // a launch from the list is a new ship; Load sets it again
             if (SaveListUI.BypassNextClick) { SaveListUI.BypassNextClick = false; return true; }
             if (SaveListUI.IsOpen) return false;
             if (Time.frameCount <= SaveListUI.ClosedFrame + 2) return false; // same press that closed the popup
@@ -486,7 +494,8 @@ namespace FreePlayPlus
         }
     }
 
-    // "Saved 42.3%" under each FreePlay ship that has saves (latest save's salvage progress).
+    // "(42.3% - 12:34)" under each FreePlay ship that has saves: the latest save's salvage progress
+    // and shift clock.
     internal static class ShipSaveLabels
     {
         private const string kLabelName = "FreePlayPlusSaveLabel";
@@ -532,7 +541,10 @@ namespace FreePlayPlus
                 existing.gameObject.SetActive(true);
                 tmp = existing.GetComponent<TextMeshProUGUI>();
             }
-            var text = $"Saved {saves[0].Percent:0.0}%";
+            var latest = saves[0];
+            var text = latest.Runtime is float runtime
+                ? $"({latest.Percent:0.0}% - {FreePlayRun.FormatRuntime(runtime)})"
+                : $"({latest.Percent:0.0}%)";
             if (tmp.text != text) tmp.text = text;
         }
     }

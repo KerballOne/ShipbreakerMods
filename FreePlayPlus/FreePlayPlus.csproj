@@ -3,7 +3,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>me.kerballone.FreePlayPlus</AssemblyName>
     <RootNamespace>FreePlayPlus</RootNamespace>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <Optimize>true</Optimize>
@@ -13,6 +13,7 @@
   <ItemGroup>
     <Reference Include="BepInEx"                HintPath="$(GameDir)\BepInEx\core\BepInEx.dll"                             Private="false" />
     <Reference Include="0Harmony"               HintPath="$(GameDir)\BepInEx\core\0Harmony.dll"                            Private="false" />
+    <Reference Include="AntiCheatToolKit"       HintPath="$(GameDir)\Shipbreaker_Data\Managed\AntiCheatToolKit.dll"        Private="false" />
     <Reference Include="BBI.Unity.Game"         HintPath="$(GameDir)\Shipbreaker_Data\Managed\BBI.Unity.Game.dll"          Private="false" />
     <Reference Include="Carbon.Core"            HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Core.dll"             Private="false" />
     <Reference Include="Carbon.Localization.Core" HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Localization.Core.dll" Private="false" />

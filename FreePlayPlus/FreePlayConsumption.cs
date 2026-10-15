@@ -182,14 +182,20 @@ namespace FreePlayPlus
     {
         internal static bool InKioskPurchase;
 
-        private static void Prefix(VendingMachineItemUI __instance)
+        private static bool Prefix(VendingMachineItemUI __instance)
         {
+            if (NoCredit.Refuses(__instance))
+            {
+                NoCredit.Deny(__instance);
+                return false;
+            }
             InKioskPurchase = true;
             if (Plugin.DebugLogging.Value)
             {
                 var action = Traverse.Create(__instance).Field("mPurchaseAction").GetValue<VendingMachinePurchaseBase>();
                 Plugin.Debug($"Kiosk purchase via {(action != null ? action.GetType().Name : "inventory item")}.");
             }
+            return true;
         }
 
         private static void Finalizer() => InKioskPurchase = false;
