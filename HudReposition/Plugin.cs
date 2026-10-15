@@ -102,6 +102,6 @@ namespace HudReposition
     {
         public const string PLUGIN_GUID    = "me.kerballone.HudReposition";
         public const string PLUGIN_NAME    = "HudReposition";
-        public const string PLUGIN_VERSION = "1.0.0";
+        public const string PLUGIN_VERSION = "1.0.1";
     }
 }
