@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
 using BBI.Unity.Game;
 using BepInEx;
@@ -13,6 +15,7 @@ namespace NewtonianPhysics
     public class Plugin : BaseUnityPlugin
     {
         internal static ManualLogSource Log = null!;
+        internal static Plugin Instance = null!;
 
         internal static ConfigEntry<bool> ConfigEnabled = null!;
         internal static ConfigEntry<bool> ConfigDebugPrint = null!;
@@ -34,7 +37,7 @@ namespace NewtonianPhysics
         internal static ConfigEntry<float> ConfigAssumedPlayerMassKg = null!;
 
         internal static ConfigEntry<bool> ConfigFlatEarthMode = null!;
-        internal static ConfigEntry<string> ConfigPinningMode = null!;
+        internal static ConfigEntry<bool> ConfigAnglePinning = null!;
         internal static ConfigEntry<float> ConfigTriggerDistanceMeters = null!;
         internal static ConfigEntry<float> ConfigStreamStretchMultiplier = null!;
 
@@ -44,6 +47,7 @@ namespace NewtonianPhysics
         private void Awake()
         {
             Log = Logger;
+            Instance = this;
 
             ConfigEnabled = Config.Bind("General", "Enabled", true,
                 "Turns the mod on or off (requires a restart).");
@@ -102,14 +106,16 @@ namespace NewtonianPhysics
             ConfigFlatEarthMode = Config.Bind("Rendering_Fixes", "FlatEarthMode", false,
                 "Distant background objects stay pinned at a constant offset from you instead of receding/approaching like stock, which breaks down at this mod's extended flight range. Turn this on to disable that pinning and restore stock behavior.");
 
-            ConfigPinningMode = Config.Bind("Rendering_Fixes", "PinningMode", "distance",
-                "How distant flat background cards are kept from going edge-on/invisible at extended flight range. 'angle' locks each card's rotation to the angle it had when pinning activated. 'distance' instead pins each card to a constant distance from you, like celestial bodies, without touching rotation.");
+            ConfigAnglePinning = Config.Bind("Rendering_Fixes", "AnglePinning", false,
+                "How distant flat background cards are kept from going edge-on/invisible at extended flight range. Off (default) pins each card to a constant distance from you, like celestial bodies, without touching rotation. On instead locks each card's rotation to the angle it had when pinning activated. Takes effect on the next shift.");
 
             ConfigTriggerDistanceMeters = Config.Bind("Rendering_Fixes", "TriggerDistance", 250f,
                 "How far (in meters) from the work bay you need to fly before background pinning kicks in.");
 
             ConfigStreamStretchMultiplier = Config.Bind("Rendering_Fixes", "StreamStretchMultiplier", 0f,
                 "Scales the speed-streak effect. 1 is equivalent to stock behavior, 0 is off.");
+
+            MigratePinningMode();
 
             if (!ConfigEnabled.Value)
             {
@@ -119,7 +125,15 @@ namespace NewtonianPhysics
 
             Main.EventSystem.AddHandler<GameStateChangedEvent>(OnGameStateChanged);
 
-            new Harmony(PluginInfo.PLUGIN_GUID).PatchAll();
+            // Per class rather than PatchAll(), so a patch whose target moved in a game update is
+            // logged and skipped instead of aborting every patch after it.
+            var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
+            foreach (var type in AccessTools.GetTypesFromAssembly(typeof(Plugin).Assembly))
+            {
+                if (!type.IsDefined(typeof(HarmonyPatch), inherit: false)) continue;
+                try { harmony.CreateClassProcessor(type).Patch(); }
+                catch (Exception ex) { Log.LogError($"Patch {type.Name} failed; that feature is disabled: {ex.GetBaseException().Message}"); }
+            }
             SetUpConfigFileWatcher();
             Log.LogInfo("NewtonianPhysics loaded.");
         }
@@ -131,11 +145,15 @@ namespace NewtonianPhysics
         // instead, both to marshal safely and to debounce multiple rapid Changed events from one save.
         private volatile bool _configReloadPending;
         private int _configReloadDebounceFramesLeft;
+        // Write time of the .cfg right after the PHYSICS tab saved it, so the watcher can tell that
+        // write apart from a hand edit and skip reloading values that are already live.
+        private static DateTime sOwnWriteTimeUtc;
 
         // BepInEx's ConfigFile never reloads itself when the .cfg is hand-edited on disk - without
         // this, every tuning change required a full game restart to take effect. FileSystemWatcher is
         // OS-level file notification (no polling, no per-tick cost), so this is free at runtime except
-        // for the rare moment an edit is actually saved.
+        // for the rare moment an edit is actually saved. Kept alongside the PHYSICS options tab because
+        // editing the file is quicker than the menu when trying many values in a row.
         private void SetUpConfigFileWatcher()
         {
             string directory = Path.GetDirectoryName(Config.ConfigFilePath)!;
@@ -156,6 +174,37 @@ namespace NewtonianPhysics
         private void OnConfigFileChangedOnDisk(object sender, FileSystemEventArgs e)
         {
             _configReloadPending = true;
+        }
+
+        // Called by the PHYSICS tab right after it saves the .cfg.
+        internal static void NoteOwnConfigWrite()
+        {
+            try { sOwnWriteTimeUtc = File.GetLastWriteTimeUtc(Instance.Config.ConfigFilePath); }
+            catch (Exception) { sOwnWriteTimeUtc = default; }
+        }
+
+        private void ReloadConfigFromDisk()
+        {
+            DateTime writeTime;
+            try { writeTime = File.GetLastWriteTimeUtc(Config.ConfigFilePath); }
+            catch (Exception) { writeTime = default; }
+            if (writeTime != default && writeTime == sOwnWriteTimeUtc) return; // the tab's own save
+
+            Config.Reload();
+            Log.LogInfo("NewtonianPhysics: config file changed on disk, reloaded live.");
+        }
+
+        // 1.2.x had PinningMode = "angle" / "distance"; it's now the AnglePinning toggle (shown on the
+        // PHYSICS options tab). Carry the old value over and drop the old key from the file.
+        private void MigratePinningMode()
+        {
+            var orphans = Traverse.Create(Config).Property("OrphanedEntries").GetValue<Dictionary<ConfigDefinition, string>>();
+            var old = new ConfigDefinition("Rendering_Fixes", "PinningMode");
+            if (orphans == null || !orphans.TryGetValue(old, out var value)) return;
+            orphans.Remove(old);
+            ConfigAnglePinning.Value = value.Trim().Trim('"').Equals("angle", StringComparison.OrdinalIgnoreCase);
+            Config.Save();
+            Log.LogInfo($"NewtonianPhysics: PinningMode '{value}' carried over to AnglePinning={ConfigAnglePinning.Value}.");
         }
 
         private void OnDestroy()
@@ -204,12 +253,12 @@ namespace NewtonianPhysics
 
             if (_configReloadDebounceFramesLeft > 0)
             {
-                _configReloadDebounceFramesLeft--;
+                // Held while the Options menu has unsaved PHYSICS edits open, so a reload can't
+                // overwrite them mid-edit; it runs once the menu closes.
+                if (_configReloadDebounceFramesLeft > 1 || !EditSession.IsOpen)
+                    _configReloadDebounceFramesLeft--;
                 if (_configReloadDebounceFramesLeft == 0)
-                {
-                    Config.Reload();
-                    Log.LogInfo("NewtonianPhysics: config file changed on disk, reloaded live.");
-                }
+                    ReloadConfigFromDisk();
             }
 
             FarClipTuning.Tick();

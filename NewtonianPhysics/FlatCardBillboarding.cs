@@ -35,7 +35,8 @@ namespace NewtonianPhysics
     // VillageSalvageStation instances found) - unlike SunCard, no procedural-replacement
     // workaround is needed here; direct Transform.rotation writes render correctly.
     //
-    // PinningMode ("angle" or "distance", default "distance") - added per user request to offer a
+    // AnglePinning (on = "angle" mode, off = "distance" mode, default off; was the PinningMode
+    // string setting before) - added per user request to offer a
     // second pinning strategy for this SAME object set (GateCard/CardRing/VillageSalvageStation/
     // VillageWaystation only - explicitly NOT Earth/Moon/Sun/glow, which always use
     // BackgroundParallaxTuning's own PlanetPin regardless of this setting). "angle" is the
@@ -90,7 +91,7 @@ namespace NewtonianPhysics
         private static Transform? _bayRoot;
         private static bool _cardsScanned;
 
-        // Cached once per ScanForCards() call (see class-level PinningMode comment above) - which
+        // Cached once per ScanForCards() call (see class-level AnglePinning comment above) - which
         // mode this shift's pins were built for, so Tick() knows which pin arrays/objects to drive
         // without re-reading the config every frame.
         private static bool _useAngleMode;
@@ -217,7 +218,7 @@ namespace NewtonianPhysics
         // used to work around a load-time race.
         private static void ScanForCards()
         {
-            _useAngleMode = Plugin.ConfigPinningMode.Value == "angle";
+            _useAngleMode = Plugin.ConfigAnglePinning.Value;
 
             FxGatePin.Reset();
             FxGateNearPin.Reset();
@@ -394,7 +395,7 @@ namespace NewtonianPhysics
             }
         }
 
-        // "distance" PinningMode - pins an object to a constant distance from the player instead of
+        // "distance" mode (AnglePinning off) - pins an object to a constant distance from the player instead of
         // locking its angle, reusing the same lateral-offset/asymmetric-approach-vs-recede math
         // BackgroundParallaxTuning's PlanetPin uses for Octane/Moon, but with a FIXED depth axis
         // (the straight bay-to-object direction, captured once at Reset() time) rather than a

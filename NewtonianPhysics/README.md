@@ -40,7 +40,9 @@ Stock wasn't built for flying as far or as fast as MaxVelocityMps and WorkAreaRa
 
 ## Settings
 
-The config file is generated on first run at:
+Almost every setting can be changed in game on the **PHYSICS** tab of the Options menu, from the title screen or the pause menu. Changes take effect as soon as you make them, so you can tune recoil or drag mid-shift and feel the difference straight away. **Save** keeps your changes; leaving Options without saving puts the old values back. Two settings take effect later: **Enabled** needs a restart, and **Angle Pinning** applies from the next shift. The tab works alongside other mods that add their own Options tabs, such as ShipbreakerTweaks.
+
+The FireGateBeam key and controller button can only be changed in the config file, which is generated on first run at:
 
 ```
 Hardspace Shipbreaker\BepInEx\config\me.kerballone.NewtonianPhysics.cfg
@@ -48,7 +50,9 @@ Hardspace Shipbreaker\BepInEx\config\me.kerballone.NewtonianPhysics.cfg
 
 Every setting has a plain-language description in the file itself - open it in any text editor to see what each one does and tweak it to taste.
 
-The config file also reloads live - edit and save it while the game is running and your changes apply immediately, no restart needed.
+The config file also reloads live - edit and save it while the game is running and your changes apply immediately, no restart needed. That's the quickest way to try lots of values in a row. While the Options menu is open, a file edit waits until you close it, and saving from the PHYSICS tab rewrites the file with the tab's values.
+
+**PinningMode** from earlier versions is now the **AnglePinning** toggle (off = "distance", on = "angle"). Your old value is carried over automatically.
 
 ## Installation
 
@@ -61,3 +65,7 @@ The config file also reloads live - edit and save it while the game is running a
 ## Compatibility
 
 Works entirely on your own client, via forces on your own player and tools. It doesn't touch save data or ship data, so it's safe to add or remove mid-save. Fully standalone - MagBoots is not required, though the two are designed to complement each other.
+
+## Support
+
+Questions, bugs, or feedback? Join the Shipbreaker Discord: [discord.gg/shipbreakergame](https://discord.gg/shipbreakergame)

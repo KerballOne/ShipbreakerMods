@@ -3,7 +3,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>me.kerballone.NewtonianPhysics</AssemblyName>
     <RootNamespace>NewtonianPhysics</RootNamespace>
-    <Version>1.2.3</Version>
+    <Version>1.2.4</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <Optimize>true</Optimize>
@@ -26,6 +26,9 @@
     <Reference Include="RetroLookProHDRP.Effects" HintPath="$(GameDir)\Shipbreaker_Data\Managed\RetroLookProHDRP.Effects.dll" Private="false" />
     <Reference Include="RetroLookPro.Resources" HintPath="$(GameDir)\Shipbreaker_Data\Managed\RetroLookPro.Resources.dll" Private="false" />
     <Reference Include="Assembly-CSharp"        HintPath="$(GameDir)\Shipbreaker_Data\Managed\Assembly-CSharp.dll"        Private="false" />
+    <Reference Include="Doozy.Engine"           HintPath="$(GameDir)\Shipbreaker_Data\Managed\Doozy.Engine.dll"           Private="false" />
+    <Reference Include="Unity.TextMeshPro"      HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.TextMeshPro.dll"      Private="false" />
+    <Reference Include="UnityEngine.UI"         HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UI.dll"         Private="false" />
     <Reference Include="InControl"                HintPath="$(GameDir)\Shipbreaker_Data\Managed\InControl.dll"                Private="false" />
     <Reference Include="Unity.Addressables"       HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Addressables.dll"       Private="false" />
   </ItemGroup>
