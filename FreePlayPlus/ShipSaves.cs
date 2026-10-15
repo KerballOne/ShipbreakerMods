@@ -363,13 +363,25 @@ namespace FreePlayPlus
     internal static class PromptPopup_OnShow_Patch
     {
         internal static PromptPopup? JackPrompt;
+        private static object? sJackData;
+
+        // PromptPopup is pooled: the door prompt and, say, the pause menu's "Abandon shift" confirmation
+        // can be the same object. So a prompt counts as the door prompt only while it is still showing
+        // the door prompt's own data, and any other prompt being shown clears the mark.
+        internal static bool IsJackPrompt(PromptPopup popup) =>
+            JackPrompt != null && ReferenceEquals(popup, JackPrompt) && sJackData != null &&
+            ReferenceEquals(Traverse.Create(popup).Field("mPromptData").GetValue(), sJackData);
+
+        internal static void ClearJackPrompt() { JackPrompt = null; sJackData = null; }
 
         private static void Postfix(PromptPopup __instance)
         {
+            ClearJackPrompt();
             if (Time.unscaledTime - ProcessMasterJackEntry_ProcessEntry_Patch.OpenedAt > 5f) return;
             ProcessMasterJackEntry_ProcessEntry_Patch.OpenedAt = -100f;
             if (!ShipSaver.CanSave) return;
             JackPrompt = __instance;
+            sJackData = Traverse.Create(__instance).Field("mPromptData").GetValue();
             var label = Traverse.Create(__instance).Field("m_OnDeclineLabel").GetValue<LocalizedTextMeshProUGUI>();
             if (label != null)
             {
@@ -384,9 +396,24 @@ namespace FreePlayPlus
     {
         private static void Prefix(PromptPopup __instance)
         {
-            if (!ReferenceEquals(__instance, PromptPopup_OnShow_Patch.JackPrompt)) return;
-            PromptPopup_OnShow_Patch.JackPrompt = null;
+            if (!PromptPopup_OnShow_Patch.IsJackPrompt(__instance)) return;
+            PromptPopup_OnShow_Patch.ClearJackPrompt();
+            // Esc / Back also close the prompt through Decline; only the Save button itself saves.
+            if (BackedOut()) { Plugin.Debug("Hab door prompt closed with Back/Esc; not saving."); return; }
             ShipSaver.SaveInBackground(SaveKind.Manual);
+        }
+
+        private static bool BackedOut()
+        {
+            if (Input.GetKeyDown(KeyCode.Escape)) return true;
+            var controls = LynxControls.Instance;
+            return controls != null &&
+                   (controls.GetInputWasPressed(NISActions.NISActionSet.Pause) ||
+                    controls.GetInputWasPressed(NISActions.NISActionSet.Back) ||
+                    controls.GetInputWasPressed(PausedActions.PausedActionSet.Back) ||
+                    controls.GetInputWasPressed(PausedActions.PausedActionSet.Unpause) ||
+                    controls.GetInputWasPressed(FrontEndActions.FrontEndActionSet.Back) ||
+                    controls.GetInputWasPressed(FrontEndActions.FrontEndActionSet.Pause));
         }
     }
 
@@ -395,7 +422,7 @@ namespace FreePlayPlus
     {
         private static void Prefix(PromptPopup __instance)
         {
-            if (ReferenceEquals(__instance, PromptPopup_OnShow_Patch.JackPrompt)) PromptPopup_OnShow_Patch.JackPrompt = null;
+            if (ReferenceEquals(__instance, PromptPopup_OnShow_Patch.JackPrompt)) PromptPopup_OnShow_Patch.ClearJackPrompt();
         }
     }
 
@@ -406,13 +433,14 @@ namespace FreePlayPlus
     [HarmonyPatch(typeof(PromptPopup), nameof(PromptPopup.Confirm))]
     internal static class PromptPopup_Confirm_Patch
     {
-        internal static float ExitArmedAt = -100f;
+        internal static float? ExitArmedAt; // null = not armed
 
         private static void Prefix(PromptPopup __instance)
         {
-            if (!ReferenceEquals(__instance, PromptPopup_OnShow_Patch.JackPrompt)) return;
-            PromptPopup_OnShow_Patch.JackPrompt = null;
+            if (!PromptPopup_OnShow_Patch.IsJackPrompt(__instance)) return;
+            PromptPopup_OnShow_Patch.ClearJackPrompt();
             ExitArmedAt = Time.unscaledTime;
+            Plugin.Debug($"Exit save armed by the Hab door prompt (game state {GameSession.CurrentGameState}).");
         }
     }
     [HarmonyPatch(typeof(SceneLoader), nameof(SceneLoader.TearDownAndLoadFrontEndAsync))]
@@ -423,8 +451,10 @@ namespace FreePlayPlus
         private static bool Prefix(SceneLoader __instance, bool bDoQuitFade, ref Task __result)
         {
             // Generous window: the Shift Summary sits between the door prompt and this teardown.
-            var armed = Time.unscaledTime - PromptPopup_Confirm_Patch.ExitArmedAt < 1800f;
-            PromptPopup_Confirm_Patch.ExitArmedAt = -100f;
+            var armedAt = PromptPopup_Confirm_Patch.ExitArmedAt;
+            var armed = armedAt != null && Time.unscaledTime - armedAt.Value < 1800f;
+            PromptPopup_Confirm_Patch.ExitArmedAt = null;
+            if (!sBypass) Plugin.Debug($"Leaving to the menu: exit save {(armed ? "armed" : "not armed")} (game state {GameSession.CurrentGameState}).");
             if (sBypass || !armed || GameSession.CurrentGameState == GameSession.GameState.GameOver || !ShipSaver.CanSave) return true;
             __result = SaveThenExit(__instance, bDoQuitFade);
             return false;
