@@ -40,6 +40,12 @@ Stock FreePlay gives you unlimited oxygen, fuel, demo charges and tethers, so th
 
 Restock at the kiosk. Oxygen, fuel and medkit purchases take **15 seconds** to fill (adjustable, or 0 for instant), so a supply run takes a moment. You pay up front; the refill only runs while the kiosk screen is open, so if you leave it pauses, and it picks up where it left off when you come back, without buying again. Pickups found on the ship still apply instantly.
 
+### Expenses and NoCredit
+
+The kiosk keeps a running total of what you've spent on the current ship: your **expenses**. It carries over when you save and load the ship, and the FreePlay **Shift Summary** shows it at the bottom right.
+
+With **NoCredit** (on by default), you can only spend what the ship has earned you. The kiosk refuses a purchase that would take your expenses past the value you've salvaged from this ship so far, and shows that item as unaffordable. A fresh ship starts with nothing salvaged, so salvage something before your first supply run.
+
 ## Death ends the run
 
 In career, dying costs a clone fee and you respawn on the same ship. FreePlay has no currency, so there's no cost to dying. With FreePlayPlus (on by default), acknowledging the death report takes you back to the **FreePlay ship select** instead of respawning, so you pick your next ship.
@@ -97,6 +103,7 @@ Settings from an older version are carried over to the current names automatical
 - **ExitToMenuOnDeath** (default on): a FreePlay death returns you to the ship select. Turn it off to respawn on the ship as stock.
 - **ConsumeOxygen** / **ConsumeFuel** / **ConsumeDemoCharges** / **ConsumeTethers** (default on): each resource runs out as above. Turn one off to make it unlimited again.
 - **RefillSeconds** (default 15): how long a kiosk oxygen, fuel or medkit purchase takes to fill while the kiosk is open. 0 = instant.
+- **NoCredit** (default on): the kiosk refuses purchases that would take your expenses past the value salvaged from the ship. Turn it off to buy freely.
 
 **[Saves]**
 - **AutosavePoints** (default 10): autosave each time salvage passes another multiple of this percent. 0 = no autosaves.
