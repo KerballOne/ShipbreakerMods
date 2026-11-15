@@ -32,6 +32,8 @@ namespace PartInfoLogger
         internal static ConfigEntry<string> MeshDiagnosticsNamePrefixes = null!;
         internal static ConfigEntry<bool> PositionDriftEnabled = null!;
         internal static ConfigEntry<bool> PickupInspectorEnabled = null!;
+        internal static ConfigEntry<bool> PlacementCheckEnabled = null!;
+        internal static ConfigEntry<float> PlacementCheckDelay = null!;
         internal static Plugin Instance = null!;
 
         private void Awake()
@@ -100,6 +102,16 @@ namespace PartInfoLogger
                 "component-for-component. Zero cost when not pressed; leave off unless actively diagnosing " +
                 "interaction/pickup wiring.");
 
+            PlacementCheckEnabled = Config.Bind(
+                "PlacementCheck", "Enabled", true,
+                "If true, on gameplay start reads placement_manifest.json (written by the Shipbuilder editor, next " +
+                "to OutputPath) and writes placement_check.csv: for each editor-placed addressable part, whether its " +
+                "loader stub exists, its content loaded, and the expected renderer meshes and colliders are present " +
+                "and enabled. Does nothing when the manifest is absent or belongs to a different ship.");
+            PlacementCheckDelay = Config.Bind(
+                "PlacementCheck", "DelaySeconds", 5f,
+                "Seconds after gameplay start before the placement check samples the scene.");
+
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             harmony.PatchAll();
 
@@ -119,6 +131,8 @@ namespace PartInfoLogger
                     }
                     Instance.StartCoroutine(DumpMaterialProperties());
                     Instance.StartCoroutine(DumpJointCensus());
+                    if (PlacementCheckEnabled.Value)
+                        Instance.StartCoroutine(PlacementCheck.Run(PlacementCheckDelay.Value));
                     if (MeshDiagnosticsEnabled.Value || PositionDriftEnabled.Value)
                     {
                         var prefixes = MeshDiagnosticsNamePrefixes.Value
