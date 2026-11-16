@@ -25,6 +25,10 @@ namespace PartInfoLogger
         internal static ConfigEntry<string> OutputPath = null!;
         internal static ConfigEntry<bool> EnrichmentEnabled = null!;
         internal static ConfigEntry<bool> JointCensusEnabled = null!;
+        internal static ConfigEntry<bool> SpawnDiagnosticsEnabled = null!;
+        internal static ConfigEntry<float> SpawnSnapshotDelay = null!;
+        internal static ConfigEntry<float> FireWatchSeconds = null!;
+        internal static ConfigEntry<float> FireWatchInterval = null!;
         internal static ConfigEntry<float> JointCensusDelay = null!;
         internal static ConfigEntry<bool> CampaignProgressEnabled = null!;
         internal static ConfigEntry<bool> SkipDiagnosticsEnabled = null!;
@@ -112,6 +116,21 @@ namespace PartInfoLogger
                 "PlacementCheck", "DelaySeconds", 5f,
                 "Seconds after gameplay start before the placement check samples the scene.");
 
+            SpawnDiagnosticsEnabled = Config.Bind(
+                "SpawnDiagnostics", "Enabled", true,
+                "If true, once per ship load writes joint_census_spawn.csv (every part's jointed neighbours, integrity and " +
+                "fire/electric flags shortly after gameplay starts) and then fire_watch.csv (first time each part is seen " +
+                "burning, electrified, burnt, leaking, damaged, moved or gone). Polling only, no Harmony patches.");
+            SpawnSnapshotDelay = Config.Bind(
+                "SpawnDiagnostics", "SnapshotDelaySeconds", 1.5f,
+                "Seconds after gameplay start before the spawn snapshot is taken.");
+            FireWatchSeconds = Config.Bind(
+                "SpawnDiagnostics", "FireWatchSeconds", 120f,
+                "How long after gameplay start to keep polling for fire / leak / damage / movement events. 0 disables the watch.");
+            FireWatchInterval = Config.Bind(
+                "SpawnDiagnostics", "FireWatchIntervalSeconds", 1f,
+                "Seconds between fire-watch polls.");
+
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             harmony.PatchAll();
 
@@ -131,6 +150,7 @@ namespace PartInfoLogger
                     }
                     Instance.StartCoroutine(DumpMaterialProperties());
                     Instance.StartCoroutine(DumpJointCensus());
+                    SpawnDiagnostics.OnGameplay();
                     if (PlacementCheckEnabled.Value)
                         Instance.StartCoroutine(PlacementCheck.Run(PlacementCheckDelay.Value));
                     if (MeshDiagnosticsEnabled.Value || PositionDriftEnabled.Value)
@@ -145,6 +165,7 @@ namespace PartInfoLogger
                 }
                 else if (ev.GameState == GameSession.GameState.Hab)
                 {
+                    SpawnDiagnostics.OnLeftLevel();
                     if (CampaignProgressEnabled.Value)
                     {
                         Log.LogInfo($"[CampaignProgress] Hab state reached, CampaignProgressEnabled={CampaignProgressEnabled.Value}");
@@ -638,7 +659,7 @@ namespace PartInfoLogger
 
         // Fills connectedNodes with every entity reachable in the runtime ECS structure graph
         // from the given entity, mirroring BreakableJointComponent.TryGetConnections().
-        static void GetConnectedEntities(EntityManager entityManager, Entity entity, NativeList<Entity> connectedNodes)
+        internal static void GetConnectedEntities(EntityManager entityManager, Entity entity, NativeList<Entity> connectedNodes)
         {
             var graphSystem = World.DefaultGameObjectInjectionWorld.GetOrCreateSystem<StructureGraphSystem>();
             if (entityManager.TryGetComponent<StructureGroupMember>(entity, out var groupMember) &&
