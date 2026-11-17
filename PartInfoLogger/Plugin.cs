@@ -133,6 +133,7 @@ namespace PartInfoLogger
 
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             harmony.PatchAll();
+            JointBudget.Install(harmony);     // part-count x largest-mesh overflow guard (logging only)
 
             State.LoadExisting();
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} loaded. Writing to: {OutputPath.Value}");
