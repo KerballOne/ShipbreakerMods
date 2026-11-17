@@ -32,6 +32,10 @@ namespace PartInfoLogger
             public Vector3 Pos0;
             public float Integrity0 = -1f, IntegrityMax = -1f, MaxMoved;
             public bool Burning, Electrified, Burnt, Leaking, Damaged, Moved, Gone;
+            // Classification of the spawn census row (see Verdict()).
+            public bool Active;
+            public int MeshVerts, ChildParts, ChildPartsJointed;
+            public string Flags = "", Path = "", Verdict = "";
         }
 
         const float MovedMeters = 0.15f;
@@ -56,6 +60,33 @@ namespace PartInfoLogger
         }
 
         static string P(Vector3 v) => $"{v.x:F2} {v.y:F2} {v.z:F2}";
+
+        static string PathOf(Transform t)
+        {
+            var parts = new List<string>();
+            for (int i = 0; t != null && i < 5; t = t.parent, i++) parts.Add(t.name.Replace("(Clone)", "").Trim());
+            parts.Reverse();
+            return string.Join("/", parts);
+        }
+
+        // Which rows with no jointed neighbour actually need looking at:
+        //   ok                 has at least one jointed neighbour
+        //   noEntity           no game entity (disabled / never converted): not simulated, cannot joint, not a problem
+        //   wrapper            a StructurePart with no mesh whose child parts ARE jointed (e.g. a prefab root): not a problem
+        //   wrapperUnjointed   no mesh, has child parts, none of them jointed
+        //   noMesh             no mesh and no child parts: can never joint
+        //   looseExpected      has a mesh, no joints, name matches SpawnDiagnostics.LooseExpected (props meant to float)
+        //   ATTENTION          has an entity and a mesh but no jointed neighbour
+        static string Verdict(Rec r, string[] loose)
+        {
+            if (!r.HasEntity) return "noEntity";
+            if (r.NeighbourCount > 0) return "ok";
+            if (r.MeshVerts == 0)
+                return r.ChildParts == 0 ? "noMesh" : (r.ChildPartsJointed > 0 ? "wrapper" : "wrapperUnjointed");
+            foreach (var l in loose)
+                if (r.Name.IndexOf(l, StringComparison.OrdinalIgnoreCase) >= 0) return "looseExpected";
+            return "ATTENTION";
+        }
 
         static IEnumerator Run()
         {
@@ -98,8 +129,10 @@ namespace PartInfoLogger
             var recs = new List<Rec>(parts.Length);
             using var connected = new NativeList<Entity>(Allocator.Temp);
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("PartName,Jsa,WorldPos,Integrity,IntegrityMax,JointedNeighbours,NeighbourNames,Flags");
+            // New columns are appended after Flags so existing readers of the first eight keep working.
+            sb.AppendLine("PartName,Jsa,WorldPos,Integrity,IntegrityMax,JointedNeighbours,NeighbourNames,Flags,Verdict,Active,MeshVerts,ChildParts,ChildPartsJointed,Path");
             int isolated = 0;
+            var byPart = new Dictionary<StructurePart, Rec>(parts.Length);
             foreach (var part in parts)
             {
                 var r = new Rec { Part = part, Name = part.gameObject.name.Replace("(Clone)", "").Trim(), Pos0 = part.transform.position };
@@ -137,11 +170,35 @@ namespace PartInfoLogger
                     if (r.NeighbourCount == 0) isolated++;
                 }
                 else flags.Add("noEntity");
+                r.Flags = string.Join(" ", flags);
+                r.Active = part.gameObject.activeInHierarchy;
+                try { var mf = part.GetComponent<MeshFilter>(); if (mf != null && mf.sharedMesh != null) r.MeshVerts = mf.sharedMesh.vertexCount; } catch { }
+                r.Path = PathOf(part.transform);
                 recs.Add(r);
-                sb.AppendLine($"{Csv(r.Name)},{Csv(r.Jsa)},{P(r.Pos0)},{r.Integrity0:F3},{r.IntegrityMax:F3},{r.NeighbourCount},{Csv(r.Neighbours)},{string.Join(" ", flags)}");
+                byPart[part] = r;
+            }
+            // Second pass: a mesh-less part (prefab root / wrapper) is fine when the parts under it are jointed.
+            var loose = (Plugin.SpawnLooseExpected.Value ?? "").Split(',').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
+            var counts = new Dictionary<string, int>();
+            foreach (var r in recs)
+            {
+                try
+                {
+                    foreach (var c in r.Part!.GetComponentsInChildren<StructurePart>(true))
+                    {
+                        if (c == r.Part || !byPart.TryGetValue(c, out var cr)) continue;
+                        r.ChildParts++;
+                        if (cr.NeighbourCount > 0) r.ChildPartsJointed++;
+                    }
+                }
+                catch { }
+                r.Verdict = Verdict(r, loose);
+                counts[r.Verdict] = counts.TryGetValue(r.Verdict, out var n) ? n + 1 : 1;
+                sb.AppendLine($"{Csv(r.Name)},{Csv(r.Jsa)},{P(r.Pos0)},{r.Integrity0:F3},{r.IntegrityMax:F3},{r.NeighbourCount},{Csv(r.Neighbours)},{r.Flags},{r.Verdict},{(r.Active ? 1 : 0)},{r.MeshVerts},{r.ChildParts},{r.ChildPartsJointed},{Csv(r.Path)}");
             }
             var path = Path.Combine(outDir, "joint_census_spawn.csv");
             File.WriteAllText(path, sb.ToString());
+            Plugin.Log.LogInfo("[SpawnDiagnostics] Verdicts: " + string.Join(", ", counts.OrderByDescending(k => k.Value).Select(k => $"{k.Key} {k.Value}").ToArray()));
             Plugin.Log.LogInfo($"[SpawnDiagnostics] Spawn snapshot: {recs.Count} part(s), {isolated} with no jointed neighbour, " +
                                $"{recs.Count(x => x.Burning)} already burning, {recs.Count(x => x.Electrified)} electrified -> {path}");
             return recs;

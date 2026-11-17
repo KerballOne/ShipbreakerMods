@@ -27,6 +27,7 @@ namespace PartInfoLogger
         internal static ConfigEntry<bool> JointCensusEnabled = null!;
         internal static ConfigEntry<bool> SpawnDiagnosticsEnabled = null!;
         internal static ConfigEntry<float> SpawnSnapshotDelay = null!;
+        internal static ConfigEntry<string> SpawnLooseExpected = null!;
         internal static ConfigEntry<float> FireWatchSeconds = null!;
         internal static ConfigEntry<float> FireWatchInterval = null!;
         internal static ConfigEntry<float> JointCensusDelay = null!;
@@ -124,6 +125,10 @@ namespace PartInfoLogger
             SpawnSnapshotDelay = Config.Bind(
                 "SpawnDiagnostics", "SnapshotDelaySeconds", 1.5f,
                 "Seconds after gameplay start before the spawn snapshot is taken.");
+            SpawnLooseExpected = Config.Bind(
+                "SpawnDiagnostics", "LooseExpected", "",
+                "Comma-separated name fragments of parts that are meant to float free (loose props). A part with a mesh and no " +
+                "jointed neighbour whose name contains one of these gets the verdict looseExpected instead of ATTENTION.");
             FireWatchSeconds = Config.Bind(
                 "SpawnDiagnostics", "FireWatchSeconds", 120f,
                 "How long after gameplay start to keep polling for fire / leak / damage / movement events. 0 disables the watch.");
@@ -134,6 +139,7 @@ namespace PartInfoLogger
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             harmony.PatchAll();
             JointBudget.Install(harmony);     // part-count x largest-mesh overflow guard (logging only)
+            HighlightProbe.Install(harmony);  // names the part when the scanner highlight throws (logging only)
 
             State.LoadExisting();
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} loaded. Writing to: {OutputPath.Value}");
