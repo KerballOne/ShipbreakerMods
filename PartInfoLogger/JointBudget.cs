@@ -44,6 +44,7 @@ namespace PartInfoLogger
         // __0 = largestVertexCount, __1 = numParts
         static void Prefix(int __0, int __1)
         {
+            try { LoadTimer.OnJointing(__0, __1); } catch { }
             try
             {
                 if (__0 == _lastVerts && __1 == _lastParts) return;      // one worker per core: log each distinct pair once

@@ -140,6 +140,7 @@ namespace PartInfoLogger
             harmony.PatchAll();
             JointBudget.Install(harmony);     // part-count x largest-mesh overflow guard (logging only)
             HighlightProbe.Install(harmony);  // names the part when the scanner highlight throws (logging only)
+            LoadTimer.Install(harmony);       // click-to-live load time (logging only)
 
             State.LoadExisting();
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} loaded. Writing to: {OutputPath.Value}");
@@ -148,6 +149,7 @@ namespace PartInfoLogger
             {
                 if (ev.GameState == GameSession.GameState.Gameplay)
                 {
+                    LoadTimer.OnGameplay();
                     Instance.StartCoroutine(FlushJsaDelayed());
                     Instance.StartCoroutine(TryDumpJsaOnGameplay());
                     if (EnrichmentEnabled.Value)
