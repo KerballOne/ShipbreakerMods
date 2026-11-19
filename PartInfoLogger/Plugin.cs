@@ -185,6 +185,7 @@ namespace PartInfoLogger
                     BayGeometry.OnGameplay();
                     if (PlacementCheckEnabled.Value)
                         Instance.StartCoroutine(PlacementCheck.Run(PlacementCheckDelay.Value));
+                    Instance.StartCoroutine(PlaceholderCheck.Run(PlacementCheckDelay.Value));   // any part still on SPA_Placeholder?
                     if (MeshDiagnosticsEnabled.Value || PositionDriftEnabled.Value)
                     {
                         var prefixes = MeshDiagnosticsNamePrefixes.Value
