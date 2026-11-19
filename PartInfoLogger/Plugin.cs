@@ -26,6 +26,11 @@ namespace PartInfoLogger
         internal static ConfigEntry<bool> EnrichmentEnabled = null!;
         internal static ConfigEntry<bool> JointCensusEnabled = null!;
         internal static ConfigEntry<bool> SpawnDiagnosticsEnabled = null!;
+        internal static ConfigEntry<bool> BayGeometryEnabled = null!;
+        internal static ConfigEntry<bool> BayGeometryRenderers = null!;
+        internal static ConfigEntry<float> BayGeometryDelay = null!;
+        internal static ConfigEntry<float> BayGeometryRadius = null!;
+        internal static ConfigEntry<int> BayGeometryMaxVerts = null!;
         internal static ConfigEntry<float> SpawnSnapshotDelay = null!;
         internal static ConfigEntry<string> SpawnLooseExpected = null!;
         internal static ConfigEntry<float> FireWatchSeconds = null!;
@@ -117,6 +122,23 @@ namespace PartInfoLogger
                 "PlacementCheck", "DelaySeconds", 5f,
                 "Seconds after gameplay start before the placement check samples the scene.");
 
+            BayGeometryEnabled = Config.Bind(
+                "BayGeometry", "Enabled", true,
+                "If true, once per ship load writes bay_geometry.csv: every collider that is not part of the ship (bay walls, " +
+                "Master Jack, floating jacks, barge, furnace and processor mouths) with its world bounding box, local shape and " +
+                "local-to-world matrix, plus bay_geometry_meshes.json / .bin holding the actual mesh geometry of every readable mesh.");
+            BayGeometryRenderers = Config.Bind(
+                "BayGeometry", "IncludeRenderers", true,
+                "Also list mesh renderers that have no collider on the same object (purely visual bay structure).");
+            BayGeometryDelay = Config.Bind(
+                "BayGeometry", "DelaySeconds", 3f,
+                "Seconds after gameplay start before the bay is sampled.");
+            BayGeometryRadius = Config.Bind(
+                "BayGeometry", "RadiusMeters", 250f,
+                "Only objects within this distance of the ship's centre are listed.");
+            BayGeometryMaxVerts = Config.Bind(
+                "BayGeometry", "MaxVertices", 6000000,
+                "Upper limit on the total number of mesh vertices written to bay_geometry_meshes.bin (12 bytes each plus triangles).");
             SpawnDiagnosticsEnabled = Config.Bind(
                 "SpawnDiagnostics", "Enabled", true,
                 "If true, once per ship load writes joint_census_spawn.csv (every part's jointed neighbours, integrity and " +
@@ -160,6 +182,7 @@ namespace PartInfoLogger
                     Instance.StartCoroutine(DumpMaterialProperties());
                     Instance.StartCoroutine(DumpJointCensus());
                     SpawnDiagnostics.OnGameplay();
+                    BayGeometry.OnGameplay();
                     if (PlacementCheckEnabled.Value)
                         Instance.StartCoroutine(PlacementCheck.Run(PlacementCheckDelay.Value));
                     if (MeshDiagnosticsEnabled.Value || PositionDriftEnabled.Value)
@@ -175,6 +198,7 @@ namespace PartInfoLogger
                 else if (ev.GameState == GameSession.GameState.Hab)
                 {
                     SpawnDiagnostics.OnLeftLevel();
+                    BayGeometry.OnLeftLevel();
                     if (CampaignProgressEnabled.Value)
                     {
                         Log.LogInfo($"[CampaignProgress] Hab state reached, CampaignProgressEnabled={CampaignProgressEnabled.Value}");
