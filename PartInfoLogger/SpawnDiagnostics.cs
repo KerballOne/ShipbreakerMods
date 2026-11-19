@@ -36,6 +36,8 @@ namespace PartInfoLogger
             public bool Active;
             public int MeshVerts, ChildParts, ChildPartsJointed;
             public string Flags = "", Path = "", Verdict = "";
+            // Exact joint graph: entity index of this part and of every jointed neighbour (names repeat, indices do not).
+            public string NeighbourIds = "";
         }
 
         const float MovedMeters = 0.15f;
@@ -130,7 +132,7 @@ namespace PartInfoLogger
             using var connected = new NativeList<Entity>(Allocator.Temp);
             var sb = new System.Text.StringBuilder();
             // New columns are appended after Flags so existing readers of the first eight keep working.
-            sb.AppendLine("PartName,Jsa,WorldPos,Integrity,IntegrityMax,JointedNeighbours,NeighbourNames,Flags,Verdict,Active,MeshVerts,ChildParts,ChildPartsJointed,Path");
+            sb.AppendLine("PartName,Jsa,WorldPos,Integrity,IntegrityMax,JointedNeighbours,NeighbourNames,Flags,Verdict,Active,MeshVerts,ChildParts,ChildPartsJointed,Path,Id,NeighbourIds");
             int isolated = 0;
             var byPart = new Dictionary<StructurePart, Rec>(parts.Length);
             foreach (var part in parts)
@@ -145,10 +147,13 @@ namespace PartInfoLogger
                     connected.Clear();
                     Plugin.GetConnectedEntities(em, r.Entity, connected);
                     var names = new List<string>();
+                    var ids = new System.Text.StringBuilder();
                     foreach (var e in connected)
                     {
                         if (e == r.Entity || !em.HasComponent<StructurePart>(e)) continue;
                         r.NeighbourCount++;
+                        if (ids.Length > 0) ids.Append(' ');
+                        ids.Append(e.Index);
                         if (names.Count < 8)
                         {
                             var np = em.GetComponentObject<StructurePart>(e);
@@ -156,6 +161,7 @@ namespace PartInfoLogger
                         }
                     }
                     r.Neighbours = string.Join(" | ", names);
+                    r.NeighbourIds = ids.ToString();
                     if (em.HasComponent<ObjectIntegrityComponent>(r.Entity))
                     {
                         var oi = em.GetComponentData<ObjectIntegrityComponent>(r.Entity);
@@ -194,7 +200,7 @@ namespace PartInfoLogger
                 catch { }
                 r.Verdict = Verdict(r, loose);
                 counts[r.Verdict] = counts.TryGetValue(r.Verdict, out var n) ? n + 1 : 1;
-                sb.AppendLine($"{Csv(r.Name)},{Csv(r.Jsa)},{P(r.Pos0)},{r.Integrity0:F3},{r.IntegrityMax:F3},{r.NeighbourCount},{Csv(r.Neighbours)},{r.Flags},{r.Verdict},{(r.Active ? 1 : 0)},{r.MeshVerts},{r.ChildParts},{r.ChildPartsJointed},{Csv(r.Path)}");
+                sb.AppendLine($"{Csv(r.Name)},{Csv(r.Jsa)},{P(r.Pos0)},{r.Integrity0:F3},{r.IntegrityMax:F3},{r.NeighbourCount},{Csv(r.Neighbours)},{r.Flags},{r.Verdict},{(r.Active ? 1 : 0)},{r.MeshVerts},{r.ChildParts},{r.ChildPartsJointed},{Csv(r.Path)},{(r.HasEntity ? r.Entity.Index : -1)},{r.NeighbourIds}");
             }
             var path = Path.Combine(outDir, "joint_census_spawn.csv");
             File.WriteAllText(path, sb.ToString());
