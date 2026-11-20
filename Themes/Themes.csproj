@@ -3,7 +3,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>me.kerballone.Themes</AssemblyName>
     <RootNamespace>Themes</RootNamespace>
-    <Version>0.2.1</Version>
+    <Version>0.3.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
@@ -28,6 +28,9 @@
                Private="false" />
     <Reference Include="UnityEngine.ImageConversionModule"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.ImageConversionModule.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.InputLegacyModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.InputLegacyModule.dll"
                Private="false" />
     <Reference Include="UnityEngine.UI"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UI.dll"

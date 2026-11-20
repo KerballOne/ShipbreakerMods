@@ -57,6 +57,7 @@ Add, replace or delete files in these folders to change what you get. File names
 - The music pauses when the game is paused or loses focus, and resumes from the same place.
 - Your place in a track is kept between shifts, so a long track carries on where it left off.
 - One track runs into the next without a gap. A single track loops.
+- Press `]` to skip to the next track and `[` to go back to the previous one. Both keys can be changed in the settings.
 - It follows the game's own Music and Master volume sliders.
 - The game's own shift music is silenced while your tracks are in use.
 
@@ -100,6 +101,10 @@ Edit it while the game is closed.
 - **Volume** (default 1): loudness of your music, from 0 to 1, on top of the game's own sliders.
 - **GameMusicVolume** (default 0): how much of the game's own shift music stays while yours is in use. 0 silences it. 1 leaves it at full volume underneath.
 - **FadeSeconds** (default 3): how long your music takes to fade in when a shift starts and out when it ends.
+- **PreviousTrackKey** (default `LeftBracket`, the `[` key): go back to the previous track. With no earlier track it restarts the current one.
+- **NextTrackKey** (default `RightBracket`, the `]` key): skip to the next track.
+
+The keys use Unity key names, such as `PageUp` or `F8`. Add modifiers with `+`, such as `RightBracket + LeftAlt`. Set a key to `None` to turn it off.
 
 ## Notes
 

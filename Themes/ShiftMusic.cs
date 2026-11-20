@@ -22,6 +22,9 @@ namespace Themes
     // carries on where it left off. Tracks follow one another without a gap (the next is opened shortly before the
     // current one ends) and a lone track loops straight back to its start. With no tracks in the folder nothing is played
     // and the game's music is left alone.
+    //
+    // Two hotkeys step to the next and the previous track. The tracks heard so far are kept in order, so stepping back
+    // and then forward again goes through the same tracks before the shuffle picks new ones.
     internal static class ShiftMusic
     {
         const int Rate = 44100;
@@ -34,6 +37,11 @@ namespace Themes
         static readonly List<string> sTracks = new List<string>();
         static readonly HashSet<string> sPlayedThisRound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         static string sLast = "";
+        // Every track started so far, in order; the mixer reports which entry it is playing. Stepping back and forward
+        // walks this list, and a track is only drawn from the shuffle once the end of it is reached.
+        static readonly List<string> sHistory = new List<string>();
+        static readonly HashSet<string> sUnplayable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        static int sStep;
         static float sNextScan, sNextDuck;
         static readonly System.Random sRandom = new System.Random();
 
@@ -48,7 +56,7 @@ namespace Themes
             {
                 if (sLoadedMessage != null) { Plugin.Log.LogInfo(sLoadedMessage); sLoadedMessage = null; }
                 if (sLoadError != null) { Plugin.Log.LogError(sLoadError); sLoadError = null; }
-                if (sBadTrack != null) { sTracks.Remove(sBadTrack); sBadTrack = null; }     // not offered again until the next scan
+                if (sBadTrack != null) { sTracks.Remove(sBadTrack); sUnplayable.Add(sBadTrack); sBadTrack = null; }     // not offered again until the next scan
             }
 
             GameSession.GameState state;
@@ -63,11 +71,19 @@ namespace Themes
             if (audible && EnsureDevice())
             {
                 sMixer!.LoopLoneTrack = sTracks.Count == 1;
-                if (!sLoading)
+                if (Pressed(Plugin.MusicNextKey.Value)) sStep = 1;
+                if (Pressed(Plugin.MusicPrevKey.Value)) sStep = -1;
+                if (!sLoading)          // a key pressed while a track is still being opened is acted on once it is open
                 {
-                    if (sMixer.NeedsTrack) LoadNext(false);
+                    if (sMixer.NeedsTrack) Load(Neighbour(1), false);
+                    else if (sStep != 0)
+                    {
+                        sMixer.DropNext();
+                        Load(Neighbour(sStep), false);
+                    }
                     // More than one track: have the next one open before this one runs out, so there is no gap.
-                    else if (sTracks.Count > 1 && !sMixer.HasNext && sMixer.Remaining < PreloadSeconds) LoadNext(true);
+                    else if (sTracks.Count > 1 && !sMixer.HasNext && sMixer.Remaining < PreloadSeconds) Load(Neighbour(1), true);
+                    sStep = 0;
                 }
                 if (!sDevicePlaying) { sDevice!.Play(); sDevicePlaying = true; }
             }
@@ -135,22 +151,37 @@ namespace Themes
             }
         }
 
-        // Opens a track on a worker thread: reading a long MP3's index takes a moment and must not stall the game.
-        // asNext queues it behind the track that is playing; otherwise it starts straight away.
-        static void LoadNext(bool asNext)
+        // Other keys being held (thrusting, say) must not block these, so this does not use KeyboardShortcut.IsDown.
+        static bool Pressed(BepInEx.Configuration.KeyboardShortcut key)
         {
-            // True shuffle: every track in the folder is played once before any is heard again. Working from "not yet
-            // played this round" (rather than a fixed queue) lets tracks be added or removed while it runs.
-            var choices = sTracks.FindAll(t => !sPlayedThisRound.Contains(t));
-            if (choices.Count == 0)
+            if (key.MainKey == KeyCode.None || !Input.GetKeyDown(key.MainKey)) return false;
+            foreach (var modifier in key.Modifiers) if (!Input.GetKey(modifier)) return false;
+            return true;
+        }
+
+        // The place in the history one step after (1) or before (-1) the track that is playing, passing over tracks that
+        // have since left the folder or would not open. Past the end means a new track from the shuffle; with nothing
+        // earlier to go back to, it is the playing track again, from its start.
+        static int Neighbour(int direction)
+        {
+            int current = sMixer!.Index, i = current + direction;
+            while (i >= 0 && i < sHistory.Count && (sUnplayable.Contains(sHistory[i]) || !sTracks.Contains(sHistory[i]))) i += direction;
+            return i < 0 ? Math.Max(0, current) : i;
+        }
+
+        // Opens a track on a worker thread: reading a long MP3's index takes a moment and must not stall the game.
+        // index is its place in the history; at the end of the history a track is drawn from the shuffle and added.
+        // asNext queues it behind the track that is playing; otherwise it starts straight away.
+        static void Load(int index, bool asNext)
+        {
+            string file;
+            if (index < sHistory.Count) file = sHistory[index];
+            else
             {
-                sPlayedThisRound.Clear();
-                choices = new List<string>(sTracks);
-                if (choices.Count > 1) choices.Remove(sLast);       // a new round never opens with the track that just ended
+                file = Shuffled();
+                index = sHistory.Count;
+                sHistory.Add(file);
             }
-            string file = choices[sRandom.Next(choices.Count)];
-            sPlayedThisRound.Add(file);
-            sLast = file;
             bool first = sFirstTrack; sFirstTrack = false;
             double roll = sRandom.NextDouble();
             var mixer = sMixer!;
@@ -173,7 +204,7 @@ namespace Themes
                     else if (reader.WaveFormat.Channels != 2) throw new InvalidDataException($"{reader.WaveFormat.Channels}-channel audio is not supported (mono or stereo only)");
                     if (chain.WaveFormat.SampleRate != Rate) chain = new WdlResamplingSampleProvider(chain, Rate);
 
-                    if (asNext) mixer.SetNext(chain, reader); else mixer.SetTrack(chain, reader);
+                    if (asNext) mixer.SetNext(chain, reader, index); else mixer.SetTrack(chain, reader, index);
                     lock (sLock) sLoadedMessage = $"[Music] {(asNext ? "next up" : "playing")} '{Path.GetFileName(file)}' ({Clock(length)}" + (start > 0 ? $", from {Clock(start)})." : ").");
                 }
                 catch (Exception ex)
@@ -183,6 +214,23 @@ namespace Themes
                 }
                 finally { sLoading = false; }
             });
+        }
+
+        static string Shuffled()
+        {
+            // True shuffle: every track in the folder is played once before any is heard again. Working from "not yet
+            // played this round" (rather than a fixed queue) lets tracks be added or removed while it runs.
+            var choices = sTracks.FindAll(t => !sPlayedThisRound.Contains(t));
+            if (choices.Count == 0)
+            {
+                sPlayedThisRound.Clear();
+                choices = new List<string>(sTracks);
+                if (choices.Count > 1) choices.Remove(sLast);       // a new round never opens with the track that just ended
+            }
+            string file = choices[sRandom.Next(choices.Count)];
+            sPlayedThisRound.Add(file);
+            sLast = file;
+            return file;
         }
 
         static string Clock(double seconds) => $"{(int)(seconds / 60)}:{(int)(seconds % 60):00}";
@@ -215,8 +263,12 @@ namespace Themes
             ISampleProvider? mTrack, mNext;
             AudioFileReader? mFile, mNextFile;
             volatile bool mNeedsTrack = true;
+            volatile int mIndex = -1;
+            int mNextIndex;
 
             public bool NeedsTrack => mNeedsTrack;
+            // Place in the history of the track that is playing, or that played last; -1 before the first.
+            public int Index => mIndex;
             public bool HasNext { get { lock (mSwap) return mNext != null; } }
             public bool Silent => mGain <= 0.0001f;
             public bool Fading => Math.Abs(mGain - Target) > 0.0001f;
@@ -227,22 +279,33 @@ namespace Themes
                 get { lock (mSwap) return mFile == null ? double.MaxValue : (mFile.TotalTime - mFile.CurrentTime).TotalSeconds; }
             }
 
-            public void SetTrack(ISampleProvider track, AudioFileReader file)
+            public void SetTrack(ISampleProvider track, AudioFileReader file, int index)
             {
                 lock (mSwap)
                 {
                     mFile?.Dispose();
-                    mTrack = track; mFile = file;
+                    mTrack = track; mFile = file; mIndex = index;
                     mNeedsTrack = false;
                 }
             }
 
-            public void SetNext(ISampleProvider track, AudioFileReader file)
+            public void SetNext(ISampleProvider track, AudioFileReader file, int index)
+            {
+                lock (mSwap)
+                {
+                    // The playing track ran out while this one was being opened: it starts now instead of waiting.
+                    if (mTrack == null) { mFile?.Dispose(); mTrack = track; mFile = file; mIndex = index; mNeedsTrack = false; return; }
+                    mNextFile?.Dispose();
+                    mNext = track; mNextFile = file; mNextIndex = index;
+                }
+            }
+
+            public void DropNext()
             {
                 lock (mSwap)
                 {
                     mNextFile?.Dispose();
-                    mNext = track; mNextFile = file;
+                    mNext = null; mNextFile = null;
                 }
             }
 
@@ -279,7 +342,7 @@ namespace Themes
                         if (mNext != null)
                         {
                             mFile?.Dispose();
-                            mTrack = mNext; mFile = mNextFile;
+                            mTrack = mNext; mFile = mNextFile; mIndex = mNextIndex;
                             mNext = null; mNextFile = null;
                         }
                         else if (LoopLoneTrack && mFile != null && mFile.Length > 0)

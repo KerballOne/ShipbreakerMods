@@ -35,6 +35,8 @@ namespace Themes
         internal static ConfigEntry<float> MusicVolume = null!;
         internal static ConfigEntry<float> MusicStockVolume = null!;
         internal static ConfigEntry<float> MusicFadeSeconds = null!;
+        internal static ConfigEntry<KeyboardShortcut> MusicPrevKey = null!;
+        internal static ConfigEntry<KeyboardShortcut> MusicNextKey = null!;
 
         private void Awake()
         {
@@ -94,6 +96,12 @@ namespace Themes
             MusicFadeSeconds = Config.Bind("Music", "FadeSeconds", 3f,
                 new ConfigDescription("How long your music takes to fade in when a shift starts and out when it ends. Pausing and resuming " +
                 "is always quick.", new AcceptableValueRange<float>(0f, 15f)));
+            MusicPrevKey = Config.Bind("Music", "PreviousTrackKey", new KeyboardShortcut(UnityEngine.KeyCode.LeftBracket),
+                "Key that goes back to the previous track during a shift. With no earlier track it restarts the current one. " +
+                "Default is [ (LeftBracket). Use Unity key names, such as PageUp or F8; add modifiers with +, such as " +
+                "LeftBracket + LeftAlt. Set to None to turn the key off.");
+            MusicNextKey = Config.Bind("Music", "NextTrackKey", new KeyboardShortcut(UnityEngine.KeyCode.RightBracket),
+                "Key that skips to the next track during a shift. Default is ] (RightBracket). Set to None to turn the key off.");
 
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} {PluginInfo.PLUGIN_VERSION} loaded.");
