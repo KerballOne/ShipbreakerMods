@@ -24,6 +24,11 @@ namespace TheExpanse
         internal static ConfigEntry<float> Clearance = null!;
         internal static ConfigEntry<bool> MovePlayerSpawn = null!;
         internal static ConfigEntry<string> VariantWeights = null!;
+        internal static ConfigEntry<bool> ExportPlanets = null!;
+        internal static ConfigEntry<bool> MarsEnabled = null!;
+        internal static ConfigEntry<string> MarsImage = null!;
+        internal static ConfigEntry<UnityEngine.Color> MarsGlow = null!;
+        internal static ConfigEntry<bool> MarsHideMoon = null!;
 
         private void Awake()
         {
@@ -53,6 +58,20 @@ namespace TheExpanse
                 "GUID of the variant's module prefab (the entry's ModuleDefRef). Weights are relative to the other entries in the same " +
                 "list (a base ship at weight 1 and a variant at 1 is a 50/50 pick). Default entry: Tachi_Gas.");
 
+            MarsEnabled = Config.Bind("Mars", "Enabled", true,
+                "Replace the background Earth with the image named below. Applied after each level load; if the image file is missing the Earth is left as it is.");
+            MarsImage = Config.Bind("Mars", "ImageFile", "Mars.png",
+                "Replacement planet image, in the same folder as this plugin's DLL. A square PNG with transparency laid out like the game's " +
+                "own Earth image (see the PlanetExport folder): 4096 x 4096, the disc centred and about 3200 px across, lit from the upper " +
+                "left with a solid black night side at the lower right, soft transparent edge. Edits are picked up on the next level load.");
+            MarsGlow = Config.Bind("Mars", "GlowColor", new UnityEngine.Color(0.85f, 0.5f, 0.3f, 0.13f),
+                "Colour of the atmosphere glow around the planet, as RRGGBBAA; the last pair is its strength. Stock Earth is 1EB1FF63 (sky blue at 39%).");
+            MarsHideMoon = Config.Bind("Mars", "HideMoon", true, "Hide the Moon while the planet is replaced.");
+
+            ExportPlanets = Config.Bind("Export", "ExportPlanetTextures", false,
+                "When set to true: on the next level load, write the background planet cards' textures (PNG), meshes (OBJ) and a report of their materials " +
+                "to the PlanetExport folder beside this plugin's DLL, as a template for replacement art. Switches itself off after it has run.");
+
             VariantUnlock.Install(new Harmony(PluginInfo.PLUGIN_GUID));
 
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
@@ -70,6 +89,21 @@ namespace TheExpanse
             if (ev.State == LevelLoadEvent.LoadState.Start) { sLevelLoading = true; return; }
             if (ev.State != LevelLoadEvent.LoadState.Complete && ev.State != LevelLoadEvent.LoadState.Error) return;
             sLevelLoading = false;
+            if (ev.State == LevelLoadEvent.LoadState.Complete && ExportPlanets.Value)
+            {
+                try
+                {
+                    string dir = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Instance.Info.Location)!, "PlanetExport");
+                    if (PlanetExport.Run(dir)) ExportPlanets.Value = false;      // one-off: switches itself off once it has run
+                    else Log.LogInfo("[PlanetExport] no planet cards in this level yet; will try again on the next load.");
+                }
+                catch (Exception ex) { Log.LogError("[PlanetExport] " + ex); }
+            }
+            if (ev.State == LevelLoadEvent.LoadState.Complete)
+            {
+                try { PlanetSwap.Apply(); }
+                catch (Exception ex) { Log.LogError("[PlanetSwap] " + ex); }
+            }
             try
             {
                 if (ev.State == LevelLoadEvent.LoadState.Complete && Enabled.Value) JackMover.OnShipLoaded();
