@@ -4,6 +4,6 @@ namespace Themes
     {
         internal const string PLUGIN_GUID    = "me.kerballone.Themes";
         internal const string PLUGIN_NAME    = "Themes";
-        internal const string PLUGIN_VERSION = "0.2.0";
+        internal const string PLUGIN_VERSION = "0.2.1";
     }
 }

@@ -17,8 +17,8 @@ namespace Themes
     // this class does it itself: it follows the game's music and master volume sliders, pauses when the game is paused,
     // in a cutscene or not the focused window, and turns the game's own music down while it is in use.
     //
-    // Tracks are the WAV and MP3 files in the music folder (Audio\Shift beside the DLL), played in random order. Playback
-    // pauses and resumes with the game, and the place in the current track is kept between shifts, so a long track
+    // Tracks are the WAV and MP3 files in the music folder (Audio\Shift beside the DLL), shuffled so that each is played
+    // once before any repeats. Playback pauses and resumes with the game, and the place in the current track is kept between shifts, so a long track
     // carries on where it left off. Tracks follow one another without a gap (the next is opened shortly before the
     // current one ends) and a lone track loops straight back to its start. With no tracks in the folder nothing is played
     // and the game's music is left alone.
@@ -32,6 +32,7 @@ namespace Themes
         static Mixer? sMixer;
         static bool sDeviceFailed, sDevicePlaying, sLoading, sFirstTrack = true, sStockDucked, sWasOutOfShift = true;
         static readonly List<string> sTracks = new List<string>();
+        static readonly HashSet<string> sPlayedThisRound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         static string sLast = "";
         static float sNextScan, sNextDuck;
         static readonly System.Random sRandom = new System.Random();
@@ -138,9 +139,17 @@ namespace Themes
         // asNext queues it behind the track that is playing; otherwise it starts straight away.
         static void LoadNext(bool asNext)
         {
-            var choices = new List<string>(sTracks);
-            if (choices.Count > 1) choices.Remove(sLast);
+            // True shuffle: every track in the folder is played once before any is heard again. Working from "not yet
+            // played this round" (rather than a fixed queue) lets tracks be added or removed while it runs.
+            var choices = sTracks.FindAll(t => !sPlayedThisRound.Contains(t));
+            if (choices.Count == 0)
+            {
+                sPlayedThisRound.Clear();
+                choices = new List<string>(sTracks);
+                if (choices.Count > 1) choices.Remove(sLast);       // a new round never opens with the track that just ended
+            }
             string file = choices[sRandom.Next(choices.Count)];
+            sPlayedThisRound.Add(file);
             sLast = file;
             bool first = sFirstTrack; sFirstTrack = false;
             double roll = sRandom.NextDouble();

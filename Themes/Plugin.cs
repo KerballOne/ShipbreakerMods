@@ -79,7 +79,7 @@ namespace Themes
             PlanetHideMoon = Config.Bind("Planet", "HideMoon", true, "Hide the Moon while the planet is replaced.");
 
             MusicEnabled = Config.Bind("Music", "Enabled", true,
-                "Play your own music during a shift: the MP3 and WAV files in the folder below, in random order. With no tracks in the " +
+                "Play your own music during a shift: the MP3 and WAV files in the folder below, shuffled so each plays once before any repeats. With no tracks in the " +
                 "folder nothing is played and the game's own music is left as it is.");
             MusicFolder = Config.Bind("Music", "Folder", "Audio/Shift",
                 "Folder holding the tracks, beside this plugin's DLL. Playback pauses and resumes with the game, the place in a track is " +

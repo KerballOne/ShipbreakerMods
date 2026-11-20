@@ -3,7 +3,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>me.kerballone.Themes</AssemblyName>
     <RootNamespace>Themes</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
