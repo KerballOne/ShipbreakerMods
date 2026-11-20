@@ -43,6 +43,7 @@ namespace PartInfoLogger
         internal static ConfigEntry<bool> PositionDriftEnabled = null!;
         internal static ConfigEntry<bool> PickupInspectorEnabled = null!;
         internal static ConfigEntry<bool> PlacementCheckEnabled = null!;
+        internal static ConfigEntry<bool> PlaceholderCheckEnabled = null!;
         internal static ConfigEntry<float> PlacementCheckDelay = null!;
         internal static Plugin Instance = null!;
 
@@ -112,6 +113,11 @@ namespace PartInfoLogger
                 "component-for-component. Zero cost when not pressed; leave off unless actively diagnosing " +
                 "interaction/pickup wiring.");
 
+            PlaceholderCheckEnabled = Config.Bind(
+                "PlaceholderCheck", "Enabled", false,
+                "If true, a few seconds after gameplay starts writes placeholder_check.txt next to OutputPath: every " +
+                "StructurePart still on SPA_Placeholder, with no asset, or missing the scanner info or highlight its " +
+                "real asset defines. Uses the PlacementCheck delay.");
             PlacementCheckEnabled = Config.Bind(
                 "PlacementCheck", "Enabled", true,
                 "If true, on gameplay start reads placement_manifest.json (written by the Shipbuilder editor, next " +
@@ -185,7 +191,8 @@ namespace PartInfoLogger
                     BayGeometry.OnGameplay();
                     if (PlacementCheckEnabled.Value)
                         Instance.StartCoroutine(PlacementCheck.Run(PlacementCheckDelay.Value));
-                    Instance.StartCoroutine(PlaceholderCheck.Run(PlacementCheckDelay.Value));   // any part still on SPA_Placeholder?
+                    if (PlaceholderCheckEnabled.Value)
+                        Instance.StartCoroutine(PlaceholderCheck.Run(PlacementCheckDelay.Value));   // any part still on SPA_Placeholder?
                     if (MeshDiagnosticsEnabled.Value || PositionDriftEnabled.Value)
                     {
                         var prefixes = MeshDiagnosticsNamePrefixes.Value
