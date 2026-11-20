@@ -3,15 +3,15 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace TheExpanse
+namespace Themes
 {
     // Replaces the main menu's backdrop picture.
     //
     // The menu has no 3D scene behind it: the hex station over the planet is one flat UI picture, the texture
     // 'TitleScreen_Background_v2' (2048 x 1159). Whatever UI element shows that texture is given a replacement picture
-    // instead, one chosen at random per game launch from the TitleScreens folder beside the DLL; the element itself, and
+    // instead, one chosen at random per game launch from the Menu folder beside the DLL. With no pictures there the stock backdrop stays; the element itself, and
     // so its size and position, is left alone.
-    internal static class TitleScreen
+    internal static class MenuBackdrop
     {
         const string StockTexture = "TitleScreen_Background_v2";
 
@@ -30,7 +30,7 @@ namespace TheExpanse
             if (Time.unscaledTime < sNextScan) return;
             sNextScan = Time.unscaledTime + 1f;
 
-            if (!Plugin.TitleEnabled.Value) { Restore(); return; }
+            if (!Plugin.MenuEnabled.Value) { Restore(); return; }
             if (sTarget != null) { Set(sTarget); return; }             // already found: just make sure it still shows ours
 
             foreach (var g in Resources.FindObjectsOfTypeAll<Graphic>())
@@ -43,7 +43,7 @@ namespace TheExpanse
                 if (!Load()) return;
                 sTarget = g;
                 Set(g);
-                Plugin.Log.LogInfo($"[TitleScreen] menu backdrop '{g.name}' ({g.GetType().Name}) now shows {sPicked} ({sImage!.width}x{sImage.height}).");
+                Plugin.Log.LogInfo($"[Menu] menu backdrop '{g.name}' ({g.GetType().Name}) now shows {sPicked} ({sImage!.width}x{sImage.height}).");
                 return;
             }
         }
@@ -61,7 +61,7 @@ namespace TheExpanse
                     float ppu = stock.pixelsPerUnit * sImage.width / Mathf.Max(1f, stock.rect.width);
                     var pivot = new Vector2(stock.pivot.x / Mathf.Max(1f, stock.rect.width), stock.pivot.y / Mathf.Max(1f, stock.rect.height));
                     sSprite = Sprite.Create(sImage, new Rect(0, 0, sImage.width, sImage.height), pivot, ppu);
-                    sSprite.name = "TheExpanse_TitleScreen";
+                    sSprite.name = "Themes_TitleScreen";
                 }
                 if (im.sprite != sSprite) im.sprite = sSprite;
             }
@@ -72,7 +72,7 @@ namespace TheExpanse
             if (sImage != null) return true;
             if (sLoadFailed) return false;
             // One picture per game launch, picked at random from the folder.
-            string dir = Path.Combine(Path.GetDirectoryName(Plugin.Instance.Info.Location)!, Plugin.TitleFolder.Value);
+            string dir = Path.Combine(Path.GetDirectoryName(Plugin.Instance.Info.Location)!, Plugin.MenuFolder.Value);
             var files = new System.Collections.Generic.List<string>();
             if (Directory.Exists(dir))
                 foreach (var f in Directory.GetFiles(dir))
@@ -82,7 +82,7 @@ namespace TheExpanse
                 }
             if (files.Count == 0)
             {
-                Plugin.Log.LogInfo($"[TitleScreen] no pictures in '{dir}'; menu backdrop left as it is.");
+                Plugin.Log.LogInfo($"[Menu] no pictures in '{dir}'; menu backdrop left as it is.");
                 sLoadFailed = true;
                 return false;
             }
@@ -90,7 +90,7 @@ namespace TheExpanse
             sPicked = $"{Path.GetFileName(path)} (1 of {files.Count})";
             try
             {
-                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false, false) { name = "TheExpanse_TitleScreen" };
+                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false, false) { name = "Themes_TitleScreen" };
                 if (!tex.LoadImage(File.ReadAllBytes(path), true)) throw new InvalidDataException("not a PNG or JPG Unity can decode");
                 tex.wrapMode = TextureWrapMode.Clamp;
                 sImage = tex;
@@ -98,7 +98,7 @@ namespace TheExpanse
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[TitleScreen] could not load '{path}': {ex.Message}");
+                Plugin.Log.LogError($"[Menu] could not load '{path}': {ex.Message}");
                 sLoadFailed = true;
                 return false;
             }

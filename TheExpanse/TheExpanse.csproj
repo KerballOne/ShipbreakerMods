@@ -31,15 +31,6 @@
     <Reference Include="UnityEngine.PhysicsModule"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.PhysicsModule.dll"
                Private="false" />
-    <Reference Include="UnityEngine.ImageConversionModule"
-               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.ImageConversionModule.dll"
-               Private="false" />
-    <Reference Include="UnityEngine.UI"
-               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UI.dll"
-               Private="false" />
-    <Reference Include="UnityEngine.UIModule"
-               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UIModule.dll"
-               Private="false" />
     <Reference Include="Unity.Entities"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Entities.dll"
                Private="false" />
@@ -61,21 +52,5 @@
     <MakeDir Directories="$(GameDir)\BepInEx\plugins\TheExpanse\" />
     <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
           DestinationFolder="$(GameDir)\BepInEx\plugins\TheExpanse\" />
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\Mars.png"
-          DestinationFolder="$(GameDir)\BepInEx\plugins\TheExpanse\"
-          SkipUnchangedFiles="true" />
-    <ItemGroup>
-      <LoadScreenPicture Include="$(MSBuildProjectDirectory)\LoadScreens\*.png;$(MSBuildProjectDirectory)\LoadScreens\*.jpg;$(MSBuildProjectDirectory)\LoadScreens\*.jpeg" />
-    </ItemGroup>
-    <ItemGroup>
-      <TitleScreenPicture Include="$(MSBuildProjectDirectory)\TitleScreens\*.png;$(MSBuildProjectDirectory)\TitleScreens\*.jpg;$(MSBuildProjectDirectory)\TitleScreens\*.jpeg" />
-    </ItemGroup>
-    <Copy SourceFiles="@(TitleScreenPicture)"
-          DestinationFolder="$(GameDir)\BepInEx\plugins\TheExpanse\TitleScreens\"
-          SkipUnchangedFiles="true" />
-    <MakeDir Directories="$(GameDir)\BepInEx\plugins\TheExpanse\LoadScreens\" />
-    <Copy SourceFiles="@(LoadScreenPicture)"
-          DestinationFolder="$(GameDir)\BepInEx\plugins\TheExpanse\LoadScreens\"
-          SkipUnchangedFiles="true" />
   </Target>
 </Project>

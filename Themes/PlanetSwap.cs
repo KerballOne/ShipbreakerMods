@@ -4,17 +4,18 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace TheExpanse
+namespace Themes
 {
-    // Turns the background Earth into Mars.
+    // Replaces the background planet (the Earth) with a picture of the user's.
     //
     // The Earth is a flat card (PRF_PlanetCard_Octane) with an unlit transparent material whose only image is the
     // 4096 x 4096 'PlanetCutout'; a second card (PRF_PlanetGlow) adds the blue atmosphere glow as one additive colour, and
     // a third (PRF_PlanetCard_Moon) is the Moon. All three exist twice, once for the bay and once for the hab view
     // (PRF_Base_Planets / PRF_Base_Planets_HAB), sharing the same materials. None of them is statically batched.
     //
-    // So the swap is: put the replacement image on the Earth material, recolour the glow, and switch the Moon cards off.
-    // Everything is remembered and put back if the swap is turned off or the image goes missing.
+    // So the swap is: put the replacement image on the Earth material, recolour the glow, and (optionally) switch the
+    // Moon cards off. The picture is one chosen at random per game launch from the Planet folder beside the DLL. With no
+    // picture there nothing is touched, and anything changed earlier is put back.
     internal static class PlanetSwap
     {
         const string RootPrefix = "PRF_Base_Planets";
@@ -37,12 +38,11 @@ namespace TheExpanse
         // Called after every level load. Safe to call repeatedly.
         internal static void Apply()
         {
-            string path = Path.Combine(Path.GetDirectoryName(Plugin.Instance.Info.Location)!, Plugin.MarsImage.Value);
-            if (!Plugin.MarsEnabled.Value) { Restore("switched off in the config"); return; }
-            if (!File.Exists(path)) { Restore($"'{path}' not found"); return; }
+            string? path = Plugin.PlanetEnabled.Value ? Pick() : null;
+            if (path == null) { Restore(); return; }            // switched off, or no picture supplied: stock planet
 
             var image = LoadImage(path);
-            if (image == null) { Restore("the image could not be loaded"); return; }
+            if (image == null) { Restore(); return; }
 
             int earths = 0, glows = 0, moons = 0;
             foreach (var r in FindCards())
@@ -72,14 +72,14 @@ namespace TheExpanse
                         {
                             if (!sGlowOriginals.ContainsKey(gm.GetInstanceID()))
                                 sGlowOriginals[gm.GetInstanceID()] = new KeyValuePair<Material, Color>(gm, gm.GetColor(GlowColourProperty));
-                            gm.SetColor(GlowColourProperty, Plugin.MarsGlow.Value);
+                            gm.SetColor(GlowColourProperty, Plugin.PlanetGlow.Value);
                             glows++;
                         }
-                        else Plugin.Log.LogWarning($"[PlanetSwap] glow card '{r.name}' has no '{GlowColourProperty}' colour; glow left as it is.");
+                        else Plugin.Log.LogWarning($"[Planet] glow card '{r.name}' has no '{GlowColourProperty}' colour; glow left as it is.");
                         break;
 
                     case MoonCard:
-                        if (Plugin.MarsHideMoon.Value)
+                        if (Plugin.PlanetHideMoon.Value)
                         {
                             if (r.enabled) { r.enabled = false; sHiddenMoons.Add(r); }
                             moons++;
@@ -89,7 +89,7 @@ namespace TheExpanse
                 }
             }
 
-            if (earths > 0) Plugin.Log.LogInfo($"[PlanetSwap] Mars applied: {earths} planet card(s) now show '{Path.GetFileName(path)}' ({image.width}x{image.height}, {image.format}), " +
+            if (earths > 0) Plugin.Log.LogInfo($"[Planet] {earths} planet card(s) now show '{Path.GetFileName(path)}' ({image.width}x{image.height}, {image.format}), " +
                                     $"{glows} glow card(s) recoloured, {moons} moon card(s) hidden.");
         }
 
@@ -117,7 +117,7 @@ namespace TheExpanse
             Texture2D? tex = null;
             try
             {
-                tex = new Texture2D(2, 2, TextureFormat.RGBA32, true, false) { name = "TheExpanse_" + Path.GetFileNameWithoutExtension(path) };
+                tex = new Texture2D(2, 2, TextureFormat.RGBA32, true, false) { name = "Themes_" + Path.GetFileNameWithoutExtension(path) };
                 if (!tex.LoadImage(File.ReadAllBytes(path), false)) throw new InvalidDataException("not a PNG or JPG Unity can decode");
                 tex.wrapMode = TextureWrapMode.Clamp;
                 tex.anisoLevel = 4;
@@ -129,11 +129,11 @@ namespace TheExpanse
                     catch (Exception ex) { compressed = "left uncompressed (" + ex.Message + ")"; }
                 }
                 tex.Apply(true, true);
-                Plugin.Log.LogInfo($"[PlanetSwap] loaded '{path}': {tex.width}x{tex.height}, {tex.format}, {compressed}.");
+                Plugin.Log.LogInfo($"[Planet] loaded '{path}': {tex.width}x{tex.height}, {tex.format}, {compressed}.");
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[PlanetSwap] could not load '{path}': {ex.Message}");
+                Plugin.Log.LogError($"[Planet] could not load '{path}': {ex.Message}");
                 if (tex != null) UnityEngine.Object.Destroy(tex);
                 return null;
             }
@@ -152,7 +152,25 @@ namespace TheExpanse
             return tex;
         }
 
-        static void Restore(string why)
+        // One picture per game launch, picked at random from the Planet folder; the same one is used for every level
+        // after that (and re-read if the file is edited). Null when the folder holds no picture.
+        static string? Pick()
+        {
+            if (sPicked != null && File.Exists(sPicked)) return sPicked;
+            string dir = Path.Combine(Path.GetDirectoryName(Plugin.Instance.Info.Location)!, Plugin.PlanetFolder.Value);
+            if (!Directory.Exists(dir)) return null;
+            var files = new List<string>();
+            foreach (var f in Directory.GetFiles(dir))
+            {
+                string ext = Path.GetExtension(f).ToLowerInvariant();
+                if (ext == ".png" || ext == ".jpg" || ext == ".jpeg") files.Add(f);
+            }
+            return sPicked = files.Count == 0 ? null : files[new System.Random().Next(files.Count)];
+        }
+
+        static string? sPicked;
+
+        static void Restore()
         {
             int n = 0;
             foreach (var kv in sEarthOriginals.Values)
@@ -165,7 +183,7 @@ namespace TheExpanse
             foreach (var r in sHiddenMoons) if (r != null) { r.enabled = true; n++; }
             sEarthOriginals.Clear(); sGlowOriginals.Clear(); sHiddenMoons.Clear();
             if (sImage != null) { UnityEngine.Object.Destroy(sImage); sImage = null; }
-            Plugin.Log.LogInfo($"[PlanetSwap] Earth left as it is ({why})" + (n > 0 ? $"; {n} earlier change(s) put back." : "."));
+            if (n > 0) Plugin.Log.LogInfo($"[Planet] stock planet restored ({n} change(s) put back).");
         }
     }
 }

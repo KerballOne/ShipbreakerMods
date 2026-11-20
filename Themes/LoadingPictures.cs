@@ -5,7 +5,7 @@ using BBI.Unity.Game;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace TheExpanse
+namespace Themes
 {
     // Shows a picture on the loading screen.
     //
@@ -15,12 +15,12 @@ namespace TheExpanse
     //   'Image - Background - UI'       fixed 1920x1080 panel with the LYNX logo, the word "Salvage" and a few readout marks
     //   loading bar, tooltip box, loading / press prompt along the bottom
     //
-    // Each time the screen appears, one image is picked at random from the LoadScreens folder beside the DLL and shown on
+    // Each time the screen appears, one image is picked at random from the Loading folder beside the DLL and shown on
     // a layer of its own, just above the gradient and below everything else, shown whole or enlarged to cover the screen (see
     // the Zoom setting). The logo panel is hidden while a picture shows. Nothing of the game's own art is modified.
-    internal static class LoadScreenImages
+    internal static class LoadingPictures
     {
-        const string LayerName = "TheExpanse - Image";
+        const string LayerName = "Themes - Image";
         const string GradientName = "Image - Background - Clouds";
         const string LogoName = "Image - Background - UI";
 
@@ -29,14 +29,14 @@ namespace TheExpanse
         static GameObject? sLogo;
         static RawImage? sLayer;
         static RawImage? sBackdrop;
-        const string BackdropName = "TheExpanse - Backdrop";
+        const string BackdropName = "Themes - Backdrop";
         static Texture2D? sTexture;
         static bool sWasShowing, sLogoHidden;
         static string sLast = "";
         static float sNextSearch;
         static readonly System.Random sRandom = new System.Random();
 
-        static string Folder => Path.Combine(Path.GetDirectoryName(Plugin.Instance.Info.Location)!, Plugin.LoadScreenFolder.Value);
+        static string Folder => Path.Combine(Path.GetDirectoryName(Plugin.Instance.Info.Location)!, Plugin.LoadingFolder.Value);
 
         // Called every frame.
         internal static void Tick()
@@ -71,13 +71,13 @@ namespace TheExpanse
                 }
                 if (gradient == null || !(gradient.parent is RectTransform panel))
                 {
-                    Plugin.Log.LogWarning($"[LoadScreenImages] loading screen found but it has no '{GradientName}' layer; pictures disabled.");
+                    Plugin.Log.LogWarning($"[Loading] loading screen found but it has no '{GradientName}' layer; pictures disabled.");
                     sNextSearch = float.MaxValue;
                     return false;
                 }
                 sRoot = root; sPanel = panel; sLogo = logo != null ? logo.gameObject : null;
                 sWasShowing = false;
-                Plugin.Log.LogInfo($"[LoadScreenImages] loading screen found; pictures come from '{Folder}'.");
+                Plugin.Log.LogInfo($"[Loading] loading screen found; pictures come from '{Folder}'.");
                 return true;
             }
             return false;
@@ -85,19 +85,19 @@ namespace TheExpanse
 
         static void OnShown()
         {
-            string? file = Plugin.LoadScreenEnabled.Value ? Pick() : null;
+            string? file = Plugin.LoadingEnabled.Value ? Pick() : null;
             if (file == null) { Clear(); return; }
 
             Texture2D? tex = null;
             try
             {
-                tex = new Texture2D(2, 2, TextureFormat.RGBA32, false, false) { name = "TheExpanse_" + Path.GetFileNameWithoutExtension(file) };
+                tex = new Texture2D(2, 2, TextureFormat.RGBA32, false, false) { name = "Themes_" + Path.GetFileNameWithoutExtension(file) };
                 if (!tex.LoadImage(File.ReadAllBytes(file), true)) throw new InvalidDataException("not a PNG or JPG Unity can decode");
                 tex.wrapMode = TextureWrapMode.Clamp;
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[LoadScreenImages] could not load '{file}': {ex.Message}");
+                Plugin.Log.LogError($"[Loading] could not load '{file}': {ex.Message}");
                 if (tex != null) UnityEngine.Object.Destroy(tex);
                 Clear();
                 return;
@@ -132,7 +132,7 @@ namespace TheExpanse
             int at = gradient != null ? gradient.GetSiblingIndex() + 1 : 0;
             sBackdrop.transform.SetSiblingIndex(at);
             sLayer.transform.SetSiblingIndex(sBackdrop.transform.GetSiblingIndex() + 1);
-            sBackdrop.enabled = Plugin.LoadScreenBlackBackground.Value;
+            sBackdrop.enabled = Plugin.LoadingBlackBackground.Value;
 
             if (sTexture != null) UnityEngine.Object.Destroy(sTexture);
             sTexture = tex;
@@ -140,7 +140,7 @@ namespace TheExpanse
             sLayer.enabled = true;
             Fit();
 
-            if (Plugin.LoadScreenHideLogo.Value && sLogo != null && sLogo.activeSelf) { sLogo.SetActive(false); sLogoHidden = true; }
+            if (Plugin.LoadingHideLogo.Value && sLogo != null && sLogo.activeSelf) { sLogo.SetActive(false); sLogoHidden = true; }
             sLast = file;
         }
 
@@ -181,7 +181,7 @@ namespace TheExpanse
             if (sLayer == null || sTexture == null || sPanel == null) return;
             var panel = sPanel.rect.size;
             if (panel.x < 1f || panel.y < 1f) panel = new Vector2(1080f * Screen.width / Mathf.Max(1, Screen.height), 1080f);
-            if (Plugin.LoadScreenStretch.Value)
+            if (Plugin.LoadingStretch.Value)
             {
                 var full = new Rect(0f, 0f, 1f, 1f);
                 if (sLayer.rectTransform.sizeDelta != panel) sLayer.rectTransform.sizeDelta = panel;
@@ -190,7 +190,7 @@ namespace TheExpanse
             }
             float w = sTexture.width, h = Mathf.Max(1, sTexture.height);
             float fit = Mathf.Min(panel.x / w, panel.y / h), fill = Mathf.Max(panel.x / w, panel.y / h);
-            float scale = Mathf.Lerp(fit, fill, Mathf.Clamp01(Plugin.LoadScreenZoom.Value));
+            float scale = Mathf.Lerp(fit, fill, Mathf.Clamp01(Plugin.LoadingZoom.Value));
             var shown = new Vector2(w * scale, h * scale);                                   // picture size in panel units
             var size = new Vector2(Mathf.Min(shown.x, panel.x), Mathf.Min(shown.y, panel.y));
             var uvSize = new Vector2(size.x / shown.x, size.y / shown.y);

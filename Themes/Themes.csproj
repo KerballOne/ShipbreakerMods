@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>me.kerballone.Themes</AssemblyName>
+    <RootNamespace>Themes</RootNamespace>
+    <Version>0.1.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <GameDir>C:\Program Files (x86)\Steam\steamapps\common\Hardspace Shipbreaker</GameDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx"
+               HintPath="$(GameDir)\BepInEx\core\BepInEx.dll"
+               Private="false" />
+    <Reference Include="BBI.Unity.Game"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\BBI.Unity.Game.dll"
+               Private="false" />
+    <Reference Include="Carbon.Core"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Core.dll"
+               Private="false" />
+    <Reference Include="UnityEngine"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.CoreModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.CoreModule.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.ImageConversionModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.ImageConversionModule.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.UI"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UI.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.UIModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UIModule.dll"
+               Private="false" />
+  </ItemGroup>
+
+  <!-- The pictures ship beside the DLL in the same three folders they have here. -->
+  <Target Name="DeployToBepInEx" AfterTargets="Build">
+    <ItemGroup>
+      <MenuPicture Include="$(MSBuildProjectDirectory)\Menu\*.png;$(MSBuildProjectDirectory)\Menu\*.jpg;$(MSBuildProjectDirectory)\Menu\*.jpeg" />
+      <LoadingPicture Include="$(MSBuildProjectDirectory)\Loading\*.png;$(MSBuildProjectDirectory)\Loading\*.jpg;$(MSBuildProjectDirectory)\Loading\*.jpeg" />
+      <PlanetPicture Include="$(MSBuildProjectDirectory)\Planet\*.png;$(MSBuildProjectDirectory)\Planet\*.jpg;$(MSBuildProjectDirectory)\Planet\*.jpeg" />
+    </ItemGroup>
+    <MakeDir Directories="$(GameDir)\BepInEx\plugins\Themes\;$(GameDir)\BepInEx\plugins\Themes\Menu\;$(GameDir)\BepInEx\plugins\Themes\Loading\;$(GameDir)\BepInEx\plugins\Themes\Planet\" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
+          DestinationFolder="$(GameDir)\BepInEx\plugins\Themes\" />
+    <Copy SourceFiles="@(MenuPicture)" DestinationFolder="$(GameDir)\BepInEx\plugins\Themes\Menu\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(LoadingPicture)" DestinationFolder="$(GameDir)\BepInEx\plugins\Themes\Loading\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(PlanetPicture)" DestinationFolder="$(GameDir)\BepInEx\plugins\Themes\Planet\" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
