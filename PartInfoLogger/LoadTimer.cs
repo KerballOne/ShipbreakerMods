@@ -44,6 +44,8 @@ namespace PartInfoLogger
             {
                 _sw.Reset(); _sw.Start(); _jointAt = -1; _parts = 0; _verts = 0; _armed = true;
                 Plugin.Log.LogInfo($"[LoadTimer] {DateTime.Now:yyyy-MM-dd HH:mm:ss} load started.");
+                // A new level load always re-arms the once-per-ship dumps (going ship -> ship never passes through Hab).
+                SpawnDiagnostics.OnLeftLevel(); BayGeometry.OnLeftLevel();
             }
             catch { }
         }
