@@ -33,7 +33,6 @@ namespace TheExpanse
         static readonly Dictionary<int, KeyValuePair<Material, Color>> sGlowOriginals = new Dictionary<int, KeyValuePair<Material, Color>>();
         static readonly List<Renderer> sHiddenMoons = new List<Renderer>();
 
-        static bool Debug => Plugin.DebugLogging.Value;
 
         // Called after every level load. Safe to call repeatedly.
         internal static void Apply()
@@ -90,8 +89,7 @@ namespace TheExpanse
                 }
             }
 
-            if (earths == 0) Plugin.Log.LogInfo("[PlanetSwap] no planet cards in this level.");
-            else Plugin.Log.LogInfo($"[PlanetSwap] Mars applied: {earths} planet card(s) now show '{Path.GetFileName(path)}' ({image.width}x{image.height}, {image.format}), " +
+            if (earths > 0) Plugin.Log.LogInfo($"[PlanetSwap] Mars applied: {earths} planet card(s) now show '{Path.GetFileName(path)}' ({image.width}x{image.height}, {image.format}), " +
                                     $"{glows} glow card(s) recoloured, {moons} moon card(s) hidden.");
         }
 
@@ -105,7 +103,6 @@ namespace TheExpanse
                 foreach (var r in t.GetComponentsInChildren<MeshRenderer>(true))
                 {
                     cards.Add(r);
-                    if (Debug) Plugin.Log.LogInfo($"[PlanetSwap]   '{t.name}/{r.name}' active={r.gameObject.activeInHierarchy} material='{(r.sharedMaterial != null ? r.sharedMaterial.name : "<none>")}'");
                 }
             }
             return cards;

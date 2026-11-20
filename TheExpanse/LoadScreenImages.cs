@@ -142,8 +142,6 @@ namespace TheExpanse
 
             if (Plugin.LoadScreenHideLogo.Value && sLogo != null && sLogo.activeSelf) { sLogo.SetActive(false); sLogoHidden = true; }
             sLast = file;
-            if (Plugin.DebugLogging.Value)
-                Plugin.Log.LogInfo($"[LoadScreenImages] showing '{Path.GetFileName(file)}' ({tex.width}x{tex.height}), logo {(sLogoHidden ? "hidden" : "left on")}.");
         }
 
         static void OnHidden() => Clear();

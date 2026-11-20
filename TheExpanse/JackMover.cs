@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using BBI.Unity.Game;
@@ -28,7 +27,6 @@ namespace TheExpanse
         static readonly Dictionary<int, Vector3> sOriginal = new Dictionary<int, Vector3>();
         static readonly HashSet<int> sPlayersMoved = new HashSet<int>();
 
-        static bool Debug => Plugin.DebugLogging.Value;
         static string V(Vector3 v) => $"({v.x:0.0}, {v.y:0.0}, {v.z:0.0})";
         static string B(Bounds b) => $"min {V(b.min)} max {V(b.max)}";
 
@@ -50,25 +48,18 @@ namespace TheExpanse
                 rb.detectCollisions = false;
                 sGhosted.Add(rb);
             }
-            if (Debug) Plugin.Log.LogInfo($"[JackMover] ship spawn starting: collisions off on {sGhosted.Count} jack(s) until the level has loaded.");
         }
 
         internal static void RestoreCollisions()
         {
-            int n = 0;
-            foreach (var rb in sGhosted) if (rb != null) { rb.detectCollisions = true; n++; }
+            foreach (var rb in sGhosted) if (rb != null) rb.detectCollisions = true;
             sGhosted.Clear();
-            if (n > 0 && Debug) Plugin.Log.LogInfo($"[JackMover] collisions back on for {n} jack(s).");
         }
 
         internal static void OnShipLoaded()
         {
             ClearRedraws();
-            if (!MeasureShip(out var ship, out int parts))
-            {
-                Plugin.Log.LogInfo("[JackMover] no ship parts found after level load; nothing to do.");
-                return;
-            }
+            if (!MeasureShip(out var ship, out int parts)) return;      // no ship in this level (menu, hab)
 
             var size = ship.size;
             float tx = Plugin.ThresholdX.Value, ty = Plugin.ThresholdY.Value, tz = Plugin.ThresholdZ.Value;
@@ -85,7 +76,6 @@ namespace TheExpanse
             if (lightJacks.Count != 5) Plugin.Log.LogWarning($"[JackMover] expected 5 light jacks, found {lightJacks.Count}.");
 
             float clearance = Plugin.Clearance.Value;
-            var moved = new List<KeyValuePair<Transform, Vector3>>();
 
             // Master Jack: along +Z until its near face is `clearance` past the ship's far end.
             if (masterJack != null)
@@ -93,12 +83,11 @@ namespace TheExpanse
                 var stock = ResetToStock(masterJack);
                 float dz = Mathf.Max(0f, ship.max.z + clearance - BoundsOf(masterJack).min.z);
                 var delta = new Vector3(0f, 0f, dz);
-                Move(masterJack, delta, "Master Jack", moved);
+                Move(masterJack, delta, "Master Jack");
                 if (dz > 0f)
                 {
                     var lights = GameObject.Find(MasterJackLightsPath);
-                    if (lights != null) { ResetToStock(lights.transform); Move(lights.transform, delta, "Master Jack hex lights", moved); }
-                    else if (Debug) Plugin.Log.LogInfo($"[JackMover] {MasterJackLightsPath} not found; skipped.");
+                    if (lights != null) { ResetToStock(lights.transform); Move(lights.transform, delta, "Master Jack hex lights"); }
                     if (Plugin.MovePlayerSpawn.Value) MovePlayer(stock, delta);
                 }
             }
@@ -108,11 +97,10 @@ namespace TheExpanse
             {
                 foreach (var j in lightJacks) ResetToStock(j);
                 float dy = Mathf.Max(0f, ship.max.y + clearance - lightJacks.Min(j => BoundsOf(j).min.y));
-                for (int i = 0; i < lightJacks.Count; i++) Move(lightJacks[i], new Vector3(0f, dy, 0f), $"Light jack {i + 1}", moved);
+                for (int i = 0; i < lightJacks.Count; i++) Move(lightJacks[i], new Vector3(0f, dy, 0f), $"Light jack {i + 1}");
             }
 
             Physics.SyncTransforms();
-            if (Debug && moved.Count > 0) Plugin.Instance.StartCoroutine(VerifyLater(moved));
         }
 
         // ---- ship ---------------------------------------------------------------------------------------------------
@@ -121,7 +109,6 @@ namespace TheExpanse
         {
             ship = default; parts = 0;
             bool any = false;
-            var perRoot = Debug ? new Dictionary<string, Bounds>() : null;
 
             // Bay props such as the barge are built from structure parts too; only parts tagged as ship members count.
             var world = World.DefaultGameObjectInjectionWorld;
@@ -137,7 +124,6 @@ namespace TheExpanse
             }
             if (members.Count == 0 && all.Count > 0)
                 Plugin.Log.LogWarning($"[JackMover] none of the {all.Count} structure parts is tagged as a ship member; measuring all of them.");
-            if (Debug) Plugin.Log.LogInfo($"[JackMover] {members.Count} ship-member part(s) out of {all.Count} structure part(s) in the level.");
 
             foreach (var sp in members.Count > 0 ? members : all)
             {
@@ -148,23 +134,16 @@ namespace TheExpanse
                     var b = r.bounds;
                     if (b.size == Vector3.zero) continue;
                     hadRenderer = true;
-                    Add(ref ship, ref any, b, perRoot, sp);
+                    Add(ref ship, ref any, b);
                 }
-                if (!hadRenderer) Add(ref ship, ref any, new Bounds(sp.transform.position, Vector3.zero), perRoot, sp);
+                if (!hadRenderer) Add(ref ship, ref any, new Bounds(sp.transform.position, Vector3.zero));
             }
-
-            if (perRoot != null)
-                foreach (var kv in perRoot.OrderByDescending(k => k.Value.size.sqrMagnitude).Take(12))
-                    Plugin.Log.LogInfo($"[JackMover]   root '{kv.Key}': size {V(kv.Value.size)}, {B(kv.Value)}");
             return any;
         }
 
-        static void Add(ref Bounds total, ref bool any, Bounds b, Dictionary<string, Bounds>? perRoot, StructurePart sp)
+        static void Add(ref Bounds total, ref bool any, Bounds b)
         {
             if (any) total.Encapsulate(b); else { total = b; any = true; }
-            if (perRoot == null) return;
-            string root = sp.transform.root.name;
-            if (perRoot.TryGetValue(root, out var rb)) { rb.Encapsulate(b); perRoot[root] = rb; } else perRoot[root] = b;
         }
 
         // ---- jacks --------------------------------------------------------------------------------------------------
@@ -225,14 +204,10 @@ namespace TheExpanse
             if (rb != null) rb.position = pos;
         }
 
-        static void Move(Transform t, Vector3 delta, string label, List<KeyValuePair<Transform, Vector3>> moved)
+        static void Move(Transform t, Vector3 delta, string label)
         {
             var from = t.position;
-            if (delta == Vector3.zero)
-            {
-                if (Debug) Plugin.Log.LogInfo($"[JackMover] {label} '{t.name}' at {V(from)} already clear; not moved.");
-                return;
-            }
+            if (delta == Vector3.zero) return;
             // Statically batched renderers are baked into a combined mesh and do not follow their transform; work out which
             // part of that mesh each one draws while it is still at its stock position, then redraw it shifted.
             var renderers = t.GetComponentsInChildren<MeshRenderer>(true);
@@ -246,7 +221,6 @@ namespace TheExpanse
 
             var to = from + delta;
             SetPosition(t, to);
-            moved.Add(new KeyValuePair<Transform, Vector3>(t, to));
             Plugin.Log.LogInfo($"[JackMover] {label} '{t.name}' moved {V(from)} -> {V(to)} (delta {V(delta)})" +
                                (batched > 0 ? $"; {redrawn}/{batched} statically batched renderer(s) redrawn at the new position" : ""));
         }
@@ -296,7 +270,6 @@ namespace TheExpanse
 
             r.enabled = false;
             sDraws.Add(new Draw { Original = r, Mesh = mesh, FirstSubMesh = best, Materials = mats, Matrix = Matrix4x4.Translate(delta) });
-            if (Debug) Plugin.Log.LogInfo($"[JackMover]   '{r.name}': submesh {best}..{best + mats.Length - 1} of '{mesh.name}' (bounds match within {bestErr:0.000} m).");
             return true;
         }
 
@@ -355,21 +328,6 @@ namespace TheExpanse
                 }
                 Plugin.Log.LogInfo($"[JackMover] player start moved {V(from)} -> {V(to)} (respawn entity {(entityUpdated ? "updated" : "not created yet, will pick up the new position")}).");
             }
-        }
-
-        // ---- follow-up ----------------------------------------------------------------------------------------------
-        // Something else (an entity-driven transform, an animation) could put an object back; say so if it did.
-        static IEnumerator VerifyLater(List<KeyValuePair<Transform, Vector3>> moved)
-        {
-            yield return new WaitForSecondsRealtime(3f);
-            int held = 0;
-            foreach (var kv in moved)
-            {
-                if (kv.Key == null) continue;
-                if ((kv.Key.position - kv.Value).magnitude < 0.05f) held++;
-                else Plugin.Log.LogWarning($"[JackMover] '{kv.Key.name}' did NOT stay put: expected {V(kv.Value)}, now at {V(kv.Key.position)}.");
-            }
-            Plugin.Log.LogInfo($"[JackMover] follow-up after 3 s: {held}/{moved.Count} moved objects still at their new position.");
         }
     }
 }

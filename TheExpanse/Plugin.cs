@@ -20,7 +20,6 @@ namespace TheExpanse
         internal static ManualLogSource Log = null!;
 
         internal static ConfigEntry<bool> Enabled = null!;
-        internal static ConfigEntry<bool> DebugLogging = null!;
         internal static ConfigEntry<float> ThresholdX = null!;
         internal static ConfigEntry<float> ThresholdY = null!;
         internal static ConfigEntry<float> ThresholdZ = null!;
@@ -28,7 +27,7 @@ namespace TheExpanse
         internal static ConfigEntry<bool> MovePlayerSpawn = null!;
         internal static ConfigEntry<string> VariantWeights = null!;
         internal static ConfigEntry<bool> TitleEnabled = null!;
-        internal static ConfigEntry<string> TitleImage = null!;
+        internal static ConfigEntry<string> TitleFolder = null!;
         internal static ConfigEntry<bool> LoadScreenEnabled = null!;
         internal static ConfigEntry<string> LoadScreenFolder = null!;
         internal static ConfigEntry<bool> LoadScreenHideLogo = null!;
@@ -46,8 +45,6 @@ namespace TheExpanse
             Log = Logger;
 
             Enabled = Config.Bind("General", "Enabled", true, "Enable or disable TheExpanse.");
-            DebugLogging = Config.Bind("General", "DebugLogging", true,
-                "Log the ship's bounding box per root object, every jack's before/after position and a follow-up check that the moves held.");
 
             const string th = "Size of the ship's overall bounding box along the bay's {0} axis, in metres, above which the jacks are moved. " +
                               "The ship's size is logged on every load, so stock ships can be used to calibrate this.";
@@ -97,10 +94,11 @@ namespace TheExpanse
                 "Hide the LYNX logo panel in the middle of the loading screen while a picture is showing.");
 
             TitleEnabled = Config.Bind("TitleScreen", "Enabled", true,
-                "Replace the main menu's backdrop picture with the image named below. If the file is missing the menu is left as it is.");
-            TitleImage = Config.Bind("TitleScreen", "ImageFile", "TitleScreen.png",
-                "Replacement backdrop, in the same folder as this plugin's DLL. The game's own picture is 2048 x 1159; an image of the " +
-                "same shape is shown exactly where the original was.");
+                "Replace the main menu's backdrop picture with one picked at random, each time the game is started, from the folder below. " +
+                "With no pictures in the folder the menu is left as it is.");
+            TitleFolder = Config.Bind("TitleScreen", "Folder", "TitleScreens",
+                "Folder holding the backdrop pictures (PNG or JPG), beside this plugin's DLL. The game's own picture is 2048 x 1159; " +
+                "a picture of the same shape is shown exactly where the original was.");
 
             VariantUnlock.Install(new Harmony(PluginInfo.PLUGIN_GUID));
 
