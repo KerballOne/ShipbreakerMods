@@ -176,13 +176,14 @@ namespace FreePlayPlus
         }
     }
 
-    // FreePlay's Shift Summary: an "EXPENSES" total at the bottom right, on the Credits Earned line.
-    // It's a copy of the Credits Earned value text (same font and style), placed at the right edge of
-    // the first ancestor wide enough to span the line.
+    // FreePlay's Shift Summary: an "EXPENSES" row under Credits Earned. It's a copy of the Credits
+    // Earned row (Name | Mass | $ | Value) added to the same vertical layout group, so the game's own
+    // layout places it and it can't collide with the earned value however long that gets.
     [HarmonyPatch(typeof(PostMissionScreen), nameof(PostMissionScreen.ActivatePostMissionScreen))]
     internal static class PostMissionScreen_ActivatePostMissionScreen_Patch
     {
         private const string kName = "FreePlayPlusExpenses";
+        private const string kRed = "#FF5A4A";
 
         private static void Postfix(PostMissionScreen __instance)
         {
@@ -191,39 +192,58 @@ namespace FreePlayPlus
             {
                 var earned = Traverse.Create(__instance).Field("m_ValueEarned").GetValue<TextMeshProUGUI>();
                 if (earned == null) return;
-                var earnedRect = (RectTransform)earned.transform;
-                var canvas = earned.canvas != null ? earned.canvas.rootCanvas : null;
-                var canvasWidth = canvas != null ? ((RectTransform)canvas.transform).rect.width : 0f;
 
-                var line = earnedRect.parent as RectTransform;
-                while (line != null && line.parent is RectTransform up && line.rect.width < canvasWidth * 0.5f) line = up;
-                if (line == null) return;
+                // The row is the ancestor that sits directly in a vertical layout group.
+                var row = earned.transform;
+                while (row.parent != null && row.parent.GetComponent<VerticalLayoutGroup>() == null) row = row.parent;
+                if (row.parent == null) return;
+
+                // Left over from the old placement (a label inside the Credits Earned row).
+                var old = row.Find(kName);
+                if (old != null) Object.DestroyImmediate(old.gameObject);
+
+                var copy = row.parent.Find(kName);
+                if (copy == null)
+                {
+                    copy = Object.Instantiate(row.gameObject, row.parent).transform;
+                    copy.name = kName;
+                    copy.SetSiblingIndex(row.GetSiblingIndex() + 1);
+                }
+
+                // Same child path as the earned value has in the original row.
+                var path = new System.Collections.Generic.List<int>();
+                for (var t = earned.transform; t != row; t = t.parent) path.Insert(0, t.GetSiblingIndex());
+                var valueTransform = copy;
+                foreach (var index in path) valueTransform = valueTransform.GetChild(index);
+                var value = valueTransform.GetComponent<TextMeshProUGUI>();
+
+                // The copied localisers would put "CREDITS EARNED" back; the name is the localised
+                // text that isn't the value or the currency sign.
+                TextMeshProUGUI? name = null;
+                foreach (var localized in copy.GetComponentsInChildren<LocalizedTextMeshProUGUI>(true))
+                {
+                    var text = localized.GetComponent<TextMeshProUGUI>();
+                    if (name == null && text != null && text != value && !string.IsNullOrEmpty(localized.LocalizationID)) name = text;
+                    Object.DestroyImmediate(localized);
+                }
+                if (name == null)
+                {
+                    var named = copy.Find("Name");
+                    if (named != null) name = named.GetComponent<TextMeshProUGUI>();
+                }
+                foreach (var text in copy.GetComponentsInChildren<TextMeshProUGUI>(true))
+                {
+                    if (text == value) continue;
+                    if (text == name) text.text = "EXPENSES";
+                    else if (text.text != null && text.text.Contains("$")) text.text = $"<color={kRed}>$</color>";
+                }
+                // Colour by tag: the game's theme sets the vertex colour of these texts itself.
+                if (value != null) value.text = $"<color={kRed}>-{FreePlayRun.Expenses:N2}</color>";
+
                 if (Plugin.DebugLogging.Value)
                 {
-                    for (var t = earnedRect; t != null; t = t.parent as RectTransform)
-                        Plugin.Log.LogInfo($"[Expenses] {t.name} rect={t.rect} anchors={t.anchorMin}-{t.anchorMax}{(t == line ? "  <- placed here" : "")}");
+                    Plugin.Log.LogInfo($"[Expenses] row '{row.name}' in '{row.parent.name}', name text {(name != null ? "found" : "NOT found")}, value {(value != null ? "found" : "NOT found")}.");
                 }
-
-                var existing = line.Find(kName);
-                TextMeshProUGUI label;
-                if (existing != null) label = existing.GetComponent<TextMeshProUGUI>();
-                else
-                {
-                    label = Object.Instantiate(earned, line);
-                    label.name = kName;
-                    var element = label.GetComponent<LayoutElement>() ?? label.gameObject.AddComponent<LayoutElement>();
-                    element.ignoreLayout = true;
-                    var rect = (RectTransform)label.transform;
-                    rect.anchorMin = rect.anchorMax = new Vector2(1f, 0.5f);
-                    rect.pivot = new Vector2(1f, 0.5f);
-                    rect.sizeDelta = new Vector2(520f, Mathf.Max(earnedRect.rect.height, 30f));
-                    var y = line.InverseTransformPoint(earnedRect.TransformPoint(earnedRect.rect.center)).y;
-                    rect.localPosition = new Vector3(line.rect.xMax - 24f, y, 0f);
-                    label.alignment = TextAlignmentOptions.Right;
-                    label.enableWordWrapping = false;
-                    label.color = new Color(0.92f, 0.78f, 0.3f, 1f);
-                }
-                label.text = $"EXPENSES   <color=#FF5A4A>-${FreePlayRun.Expenses:N2}</color>";
             }
             catch (System.Exception ex) { Plugin.Log.LogWarning($"Couldn't add Expenses to the shift summary: {ex.Message}"); }
         }
