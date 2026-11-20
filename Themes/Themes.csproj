@@ -3,9 +3,10 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>me.kerballone.Themes</AssemblyName>
     <RootNamespace>Themes</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <GameDir>C:\Program Files (x86)\Steam\steamapps\common\Hardspace Shipbreaker</GameDir>
   </PropertyGroup>
 
@@ -36,7 +37,17 @@
                Private="false" />
   </ItemGroup>
 
-  <!-- The pictures ship beside the DLL in the same three folders they have here. -->
+  <!-- NAudio plays the music through a Windows output of its own (Unity's audio is switched off in this game); it is a
+       single DLL that ships beside the plugin. Carbon.Audio is the game's Wwise wrapper, used to turn its music down. -->
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="1.10.0" />
+    <Reference Include="Carbon.Audio"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Audio.dll"
+               Private="false" />
+  </ItemGroup>
+
+  <!-- The pictures ship beside the DLL in the same three folders they have here. Audio\Shift is created empty: the
+       tracks are the user's own and are not part of the project. -->
   <Target Name="DeployToBepInEx" AfterTargets="Build">
     <ItemGroup>
       <MenuPicture Include="$(MSBuildProjectDirectory)\Menu\*.png;$(MSBuildProjectDirectory)\Menu\*.jpg;$(MSBuildProjectDirectory)\Menu\*.jpeg" />
@@ -46,6 +57,8 @@
     <MakeDir Directories="$(GameDir)\BepInEx\plugins\Themes\;$(GameDir)\BepInEx\plugins\Themes\Menu\;$(GameDir)\BepInEx\plugins\Themes\Loading\;$(GameDir)\BepInEx\plugins\Themes\Planet\" />
     <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
           DestinationFolder="$(GameDir)\BepInEx\plugins\Themes\" />
+    <Copy SourceFiles="$(OutputPath)NAudio.dll" DestinationFolder="$(GameDir)\BepInEx\plugins\Themes\" />
+    <MakeDir Directories="$(GameDir)\BepInEx\plugins\Themes\Audio\Shift\" />
     <Copy SourceFiles="@(MenuPicture)" DestinationFolder="$(GameDir)\BepInEx\plugins\Themes\Menu\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(LoadingPicture)" DestinationFolder="$(GameDir)\BepInEx\plugins\Themes\Loading\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(PlanetPicture)" DestinationFolder="$(GameDir)\BepInEx\plugins\Themes\Planet\" SkipUnchangedFiles="true" />

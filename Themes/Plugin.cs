@@ -10,6 +10,7 @@ namespace Themes
     //   Menu\       MenuBackdrop      the main menu's backdrop, one picked at random per game launch
     //   Loading\    LoadingPictures   a picture on the loading screen, one picked at random per load
     //   Planet\     PlanetSwap        the background planet, one picked at random per game launch
+    //   Audio\Shift\ ShiftMusic      music played during a shift, in random order
     // An empty or missing folder leaves that part of the game exactly as it ships.
     [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
     public class Plugin : BaseUnityPlugin
@@ -29,6 +30,11 @@ namespace Themes
         internal static ConfigEntry<string> PlanetFolder = null!;
         internal static ConfigEntry<UnityEngine.Color> PlanetGlow = null!;
         internal static ConfigEntry<bool> PlanetHideMoon = null!;
+        internal static ConfigEntry<bool> MusicEnabled = null!;
+        internal static ConfigEntry<string> MusicFolder = null!;
+        internal static ConfigEntry<float> MusicVolume = null!;
+        internal static ConfigEntry<float> MusicStockVolume = null!;
+        internal static ConfigEntry<float> MusicFadeSeconds = null!;
 
         private void Awake()
         {
@@ -72,6 +78,23 @@ namespace Themes
                 "1EB1FF63 (sky blue at 39%).");
             PlanetHideMoon = Config.Bind("Planet", "HideMoon", true, "Hide the Moon while the planet is replaced.");
 
+            MusicEnabled = Config.Bind("Music", "Enabled", true,
+                "Play your own music during a shift: the MP3 and WAV files in the folder below, in random order. With no tracks in the " +
+                "folder nothing is played and the game's own music is left as it is.");
+            MusicFolder = Config.Bind("Music", "Folder", "Audio/Shift",
+                "Folder holding the tracks, beside this plugin's DLL. Playback pauses and resumes with the game, the place in a track is " +
+                "kept between shifts, tracks follow one another without a gap, and a single track loops.");
+            MusicVolume = Config.Bind("Music", "Volume", 1f,
+                new ConfigDescription("Loudness of your music, on top of the game's own Music and Master volume sliders, which it also follows.",
+                new AcceptableValueRange<float>(0f, 1f)));
+            MusicStockVolume = Config.Bind("Music", "GameMusicVolume", 0f,
+                new ConfigDescription("How loud the game's own music stays during a shift while your music is in use, as a fraction of its normal " +
+                "level. 0 silences it; 1 leaves it at full volume underneath yours.",
+                new AcceptableValueRange<float>(0f, 1f)));
+            MusicFadeSeconds = Config.Bind("Music", "FadeSeconds", 3f,
+                new ConfigDescription("How long your music takes to fade in when a shift starts and out when it ends. Pausing and resuming " +
+                "is always quick.", new AcceptableValueRange<float>(0f, 15f)));
+
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} {PluginInfo.PLUGIN_VERSION} loaded.");
         }
@@ -83,6 +106,16 @@ namespace Themes
 
             try { MenuBackdrop.Tick(); }
             catch (Exception ex) { Log.LogError("[Menu] " + ex); }
+
+            try { ShiftMusic.Tick(); }
+            catch (Exception ex) { Log.LogError("[Music] " + ex); }
+        }
+
+        private void OnApplicationQuit() => ShiftMusic.Shutdown();
+
+        private void OnDestroy()
+        {
+            ShiftMusic.Shutdown();
         }
 
         // The planet cards belong to the level, so the swap is applied again each time one has loaded.
