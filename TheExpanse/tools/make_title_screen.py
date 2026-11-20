@@ -1,4 +1,4 @@
-# Builds TheExpanse/TitleScreens/station-recoloured.png from the game's own title picture: recolours the planet behind the hex station to
+# Builds TheExpanse/TitleScreens/Classic.png from the game's own title picture: recolours the planet behind the hex station to
 # Mars tones and leaves the station as it is. Input is the game's TitleScreen_Background_v2 texture (2048 x 1159)
 # saved as a PNG.
 #   python make_title_screen.py <TitleScreen_Background_v2.png> <out.png> [match tolerance=0.05] [closing radius=44]
