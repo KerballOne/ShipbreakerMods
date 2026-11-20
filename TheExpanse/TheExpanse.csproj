@@ -3,7 +3,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>me.kerballone.TheExpanse</AssemblyName>
     <RootNamespace>TheExpanse</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <GameDir>C:\Program Files (x86)\Steam\steamapps\common\Hardspace Shipbreaker</GameDir>

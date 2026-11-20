@@ -45,11 +45,12 @@ namespace TheExpanse
             MovePlayerSpawn = Config.Bind("Jacks", "MovePlayerSpawnWithMasterJack", true,
                 "Shift the player's start / respawn point by the same amount as the Master Jack, so shifts still start at its door.");
 
-            VariantWeights = Config.Bind("Variants", "Weights", "d51a0f78d6974d7881b6d7214326fed2=1",
+            VariantWeights = Config.Bind("Variants", "Weights", VariantUnlock.DefaultWeights,
                 "Ship variants that only spawn with this mod installed. Each is shipped with Weight 0 in its ModuleEntryDefinition, so the " +
-                "game never picks it; this mod gives it the weight listed here. Format: comma-separated guid=weight, where guid is the " +
-                "GUID of the variant's module prefab (the entry's ModuleDefRef). Weights are relative to the other entries in the same " +
-                "list (a base ship at weight 1 and a variant at 1 is a 50/50 pick). Default entry: Tachi_Gas.");
+                "game never picks it; this mod gives it the weight listed here. Format: comma-separated name=weight, where name is the " +
+                "file name of the variant's module prefab without the extension (the prefab its entry spawns), or the name of the entry " +
+                "asset itself. Weights are relative to the other entries in the same list (a base ship at weight 1 and a variant at 1 is " +
+                "a 50/50 pick). Default entry: the Tachi's Gas variant.");
 
             VariantUnlock.Install(new Harmony(PluginInfo.PLUGIN_GUID));
 
