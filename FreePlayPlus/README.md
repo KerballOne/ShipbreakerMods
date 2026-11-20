@@ -42,7 +42,7 @@ Restock at the kiosk. Oxygen, fuel and medkit purchases take **15 seconds** to f
 
 ### Expenses and NoCredit
 
-The kiosk keeps a running total of what you've spent on the current ship: your **expenses**. It carries over when you save and load the ship, and the FreePlay **Shift Summary** shows it at the bottom right.
+The kiosk keeps a running total of what you've spent on the current ship: your **expenses**. It carries over when you save and load the ship, and the FreePlay **Shift Summary** shows it on its own **Expenses** line under Credits Earned.
 
 With **NoCredit** (on by default), you can only spend what the ship has earned you. The kiosk refuses a purchase that would take your expenses past the value you've salvaged from this ship so far, and shows that item as unaffordable. A fresh ship starts with nothing salvaged, so salvage something before your first supply run.
 
