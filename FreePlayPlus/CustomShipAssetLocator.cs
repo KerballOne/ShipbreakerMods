@@ -29,6 +29,13 @@ namespace FreePlayPlus
     // Each bundle's TypeAssets are indexed by AssetGUID once, and served from memory. Bundle
     // internal names are hashes (for the game's bundles too), so matching loaded bundles by name
     // doesn't work. Keys that no locator at all can resolve are logged once (DebugLogging).
+    //
+    // Addressables asks every locator about every key, and the game asks for hundreds of keys that
+    // nothing can resolve (637 while the FreePlay ship list builds). So a miss has to be cheap: the
+    // list of mod bundles is worked out once per set of loaded catalogs rather than on every miss,
+    // and a key found nowhere is remembered so it is answered at once the next time. Both are
+    // dropped whenever a catalog is added or removed, and a key is only remembered as missing once
+    // every mod bundle has been indexed, so a bundle that loads later still gets its turn.
     internal sealed class CustomShipAssetLocator : IResourceLocator
     {
         private const string kProviderId = "FreePlayPlus.CustomShipAssetProvider";
@@ -39,6 +46,9 @@ namespace FreePlayPlus
         private readonly List<AsyncOperationHandle<IAssetBundleResource>> mBundleHandles = new List<AsyncOperationHandle<IAssetBundleResource>>();
         private readonly Dictionary<string, UnityEngine.Object> mAssets = new Dictionary<string, UnityEngine.Object>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> mLoggedMisses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> mKnownMissing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private List<IResourceLocation>? mModBundleLocations;   // null = not worked out for the current catalogs
+        private int mLocatorCount = -1;
 
         public string LocatorId => "FreePlayPlus.CustomShipAssetLocator";
 
@@ -99,10 +109,13 @@ namespace FreePlayPlus
 
             if (!mAssets.TryGetValue(name!, out var asset) || asset == null)
             {
+                ForgetIfCatalogsChanged();
+                if (mKnownMissing.Contains(name!)) return false;        // already searched for, and nothing has changed since
                 if (KnownElsewhere(key, type)) return false; // a real catalog has it; nothing to do
-                IndexModBundles();
+                bool allIndexed = IndexModBundles();
                 if (!mAssets.TryGetValue(name!, out asset) || asset == null)
                 {
+                    if (allIndexed) mKnownMissing.Add(name!);
                     if (Plugin.DebugLogging.Value && mLoggedMisses.Add(name!))
                         Plugin.Log.LogInfo($"[SavedShipAssets] No asset anywhere for key {name} (type {type?.Name ?? "any"}).");
                     return false;
@@ -122,6 +135,17 @@ namespace FreePlayPlus
             return false;
         }
 
+        // A catalog being loaded or unloaded can bring new bundles and new keys: start again.
+        private void ForgetIfCatalogsChanged()
+        {
+            int count = 0;
+            foreach (var _ in Addressables.ResourceLocators) count++;
+            if (count == mLocatorCount) return;
+            mLocatorCount = count;
+            mModBundleLocations = null;
+            mKnownMissing.Clear();
+        }
+
         private static bool LooksLikeGuid(string key)
         {
             if (key.Length != 32) return false;
@@ -132,11 +156,15 @@ namespace FreePlayPlus
 
         private static string NormalizePath(string path) => path.Replace('/', '\\').TrimEnd('\\');
 
-        private void IndexModBundles()
+        // Returns true when every mod bundle has now been indexed, i.e. a key still missing is missing for good.
+        private bool IndexModBundles()
         {
-            foreach (var location in ModBundleLocations())
+            if (mModBundleLocations == null) mModBundleLocations = new List<IResourceLocation>(ModBundleLocations());
+            bool allIndexed = true;
+            foreach (var location in mModBundleLocations)
             {
                 if (mIndexedBundles.Contains(location.InternalId)) continue;
+                allIndexed = false;
                 AsyncOperationHandle<IAssetBundleResource> handle;
                 try { handle = Addressables.ResourceManager.ProvideResource<IAssetBundleResource>(location); }
                 catch (Exception ex) { Plugin.Debug($"[SavedShipAssets] Can't open {Path.GetFileName(location.InternalId)}: {ex.Message}"); continue; }
@@ -151,6 +179,7 @@ namespace FreePlayPlus
                 }
                 mBundleHandles.Add(handle); // keep our reference so the bundle stays loaded
                 mIndexedBundles.Add(location.InternalId);
+                mKnownMissing.Clear();      // this bundle may hold keys that were missing a moment ago
 
                 var bundle = handle.Result.GetAssetBundle();
                 var added = 0;
@@ -167,9 +196,13 @@ namespace FreePlayPlus
                 }
                 Plugin.Debug($"[SavedShipAssets] Indexed {added} asset(s) from {Path.GetFileName(location.InternalId)}.");
             }
+            // Anything indexed just now was not indexed when this call started, so only a pass that found nothing left
+            // to do counts as "all indexed"; the next miss confirms it.
+            return allIndexed;
         }
 
-        // Bundle locations, from every loaded catalog, whose bundle file lives under BepInEx\plugins.
+        // Bundle locations, from every loaded catalog, whose bundle file lives under BepInEx\plugins. This walks every
+        // location of every catalog (tens of thousands for the game's own), so the result is kept by the caller.
         private IEnumerable<IResourceLocation> ModBundleLocations()
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
