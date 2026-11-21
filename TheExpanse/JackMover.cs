@@ -275,7 +275,11 @@ namespace TheExpanse
                 return false;
             }
 
+            // Hidden two ways. The scanner highlight swaps a renderer's materials for its outline material and switches the
+            // renderer back ON, which would draw the outline where the jack used to stand; forceRenderingOff keeps it
+            // undrawn through that, and DrawMoved picks the outline material up from it instead.
             r.enabled = false;
+            r.forceRenderingOff = true;
             sDraws.Add(new Draw { Original = r, Mesh = mesh, FirstSubMesh = best, Materials = mats, Matrix = Matrix4x4.Translate(delta) });
             return true;
         }
@@ -283,11 +287,13 @@ namespace TheExpanse
         // Puts every redrawn renderer back the way the game had it.
         static void ClearRedraws()
         {
-            foreach (var d in sDraws) if (d.Original != null) d.Original.enabled = true;
+            foreach (var d in sDraws) if (d.Original != null) { d.Original.forceRenderingOff = false; d.Original.enabled = true; }
             sDraws.Clear();
         }
 
         // Called every frame.
+        static readonly MaterialPropertyBlock sBlock = new MaterialPropertyBlock();
+
         internal static void DrawMoved()
         {
             for (int i = sDraws.Count - 1; i >= 0; i--)
@@ -296,9 +302,14 @@ namespace TheExpanse
                 if (d.Original == null || d.Mesh == null) { sDraws.RemoveAt(i); continue; }      // level unloaded
                 var go = d.Original.gameObject;
                 if (!go.activeInHierarchy) continue;
-                for (int k = 0; k < d.Materials.Length; k++)
-                    if (d.Materials[k] != null)
-                        Graphics.DrawMesh(d.Mesh, d.Matrix, d.Materials[k], go.layer, null, d.FirstSubMesh + k, null,
+                // Whatever the original would be drawn with right now: its own materials, or the scanner's outline
+                // material and settings while the scanner has it highlighted.
+                var mats = d.Original.sharedMaterials;
+                MaterialPropertyBlock? block = null;
+                if (d.Original.HasPropertyBlock()) { d.Original.GetPropertyBlock(sBlock); block = sBlock; }
+                for (int k = 0; k < d.Materials.Length && k < mats.Length; k++)
+                    if (mats[k] != null)
+                        Graphics.DrawMesh(d.Mesh, d.Matrix, mats[k], go.layer, null, d.FirstSubMesh + k, block,
                                           d.Original.shadowCastingMode, d.Original.receiveShadows);
             }
         }

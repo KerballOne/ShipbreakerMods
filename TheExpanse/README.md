@@ -70,7 +70,7 @@ To make a room slow to pressurize or decompress, set **Pressurization Time** and
 
 - The ship's size is worked out before it spawns, from its parts' meshes and positions. The result is an estimate, so a centred ship can sit a little off. The BepInEx log reports how far after each load.
 - For very long ships, roughly 180 metres and up, the Master Jack ends up beyond the edge of the playable area.
-- The scanner does not highlight the Master Jack or the light jacks while they are moved.
+- While the jacks are moved, their scanner outline is drawn at the new position.
 - Settings from earlier versions for size limits, ship variants and part masses are no longer used and can be deleted from the settings file.
 - For Mars in the sky, your own menu and loading pictures, and music during a shift, see the Themes mod.
 
