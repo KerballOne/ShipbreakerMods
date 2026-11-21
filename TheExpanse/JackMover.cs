@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace TheExpanse
 {
-    // Measures the loaded ship and moves the bay's jacks clear of it when it is oversized.
+    // With ship centering on, measures the loaded ship and moves the bay's jacks clear of it.
     //
     // Stock bay layout this is built around (world space, from PartInfoLogger's bay_geometry.csv):
     //   ship           spawns at (-28.6, -3.5, -8.9) and runs along +Z
@@ -61,15 +61,11 @@ namespace TheExpanse
             ClearRedraws();
             if (!MeasureShip(out var ship, out int parts)) return;      // no ship in this level (menu, hab)
 
+            // Where the ship actually ended up, against where the centering aimed (it worked from an estimate of the box).
             var size = ship.size;
-            float tx = Plugin.ThresholdX.Value, ty = Plugin.ThresholdY.Value, tz = Plugin.ThresholdZ.Value;
-            var over = new List<string>();
-            if (size.x > tx) over.Add($"X {size.x:0.0} > {tx:0.0}");
-            if (size.y > ty) over.Add($"Y {size.y:0.0} > {ty:0.0}");
-            if (size.z > tz) over.Add($"Z {size.z:0.0} > {tz:0.0}");
-            Plugin.Log.LogInfo($"[JackMover] ship: {parts} parts, size {size.x:0.0} x {size.y:0.0} x {size.z:0.0} m, {B(ship)} -> " +
-                               (over.Count == 0 ? "within thresholds, jacks left alone." : "OVERSIZED (" + string.Join(", ", over) + ")."));
-            if (over.Count == 0) return;
+            Plugin.Log.LogInfo($"[JackMover] ship: {parts} parts, size {size.x:0.0} x {size.y:0.0} x {size.z:0.0} m, {B(ship)}; " +
+                               $"off its target by {ship.center.x - ShipCentering.BayCenterX - Plugin.AcrossOffset.Value:0.0} m across and {ship.center.y - Plugin.BayCenterY.Value:0.0} m in height, " +
+                               $"rear end {ship.min.z - ShipCentering.BackWallZ:0.0} m from the back wall.");
 
             FindJacks(out var masterJack, out var lightJacks);
             if (masterJack == null) Plugin.Log.LogWarning("[JackMover] Master Jack not found in this level.");
@@ -77,8 +73,14 @@ namespace TheExpanse
 
             float clearance = Plugin.Clearance.Value;
 
+            // A ship posed entirely above a jack does not need that jack moved (a saved ship that was never centred).
             // Master Jack: along +Z until its near face is `clearance` past the ship's far end.
-            if (masterJack != null)
+            if (masterJack != null && ship.min.y >= BoundsOf(masterJack).max.y)
+            {
+                ResetToStock(masterJack);
+                Plugin.Log.LogInfo("[JackMover] ship is above the Master Jack; left where it is.");
+            }
+            else if (masterJack != null)
             {
                 var stock = ResetToStock(masterJack);
                 float dz = Mathf.Max(0f, ship.max.z + clearance - BoundsOf(masterJack).min.z);
@@ -96,8 +98,13 @@ namespace TheExpanse
             if (lightJacks.Count > 0)
             {
                 foreach (var j in lightJacks) ResetToStock(j);
-                float dy = Mathf.Max(0f, ship.max.y + clearance - lightJacks.Min(j => BoundsOf(j).min.y));
-                for (int i = 0; i < lightJacks.Count; i++) Move(lightJacks[i], new Vector3(0f, dy, 0f), $"Light jack {i + 1}");
+                if (ship.min.y >= lightJacks.Max(j => BoundsOf(j).max.y))
+                    Plugin.Log.LogInfo("[JackMover] ship is above the light jacks; left where they are.");
+                else
+                {
+                    float dy = Mathf.Max(0f, ship.max.y + clearance - lightJacks.Min(j => BoundsOf(j).min.y));
+                    for (int i = 0; i < lightJacks.Count; i++) Move(lightJacks[i], new Vector3(0f, dy, 0f), $"Light jack {i + 1}");
+                }
             }
 
             Physics.SyncTransforms();

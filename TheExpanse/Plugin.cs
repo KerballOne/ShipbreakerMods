@@ -7,9 +7,9 @@ using HarmonyLib;
 
 namespace TheExpanse
 {
-    // Makes the work bay take oversized ships:
-    //   JackMover       measures the ship after each level load and moves the Master Jack and the five light jacks clear of it
-    //   VariantUnlock   gives weight-0 ship variants a spawn weight, so they only appear with this mod installed
+    // Changes to the work bay and to ships for large custom ships:
+    //   ShipCentering   (off by default) places each ship in the middle of the bay, a set distance from the back wall
+    //   JackMover       with centering on, moves the Master Jack and the five light jacks clear of the ship
     //   RoomPressure    makes each room's own pressurization / decompression time count, so big rooms take longer
     // (The Mars planet, loading screen and menu pictures that started here now live in the Themes mod.)
     [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
@@ -19,13 +19,13 @@ namespace TheExpanse
         internal static ManualLogSource Log = null!;
 
         internal static ConfigEntry<bool> Enabled = null!;
-        internal static ConfigEntry<float> ThresholdX = null!;
-        internal static ConfigEntry<float> ThresholdY = null!;
-        internal static ConfigEntry<float> ThresholdZ = null!;
+        internal static ConfigEntry<bool> CenterShip = null!;
+        internal static ConfigEntry<float> BayCenterY = null!;
+        internal static ConfigEntry<float> AcrossOffset = null!;
+        internal static ConfigEntry<float> BackWallGap = null!;
         internal static ConfigEntry<float> Clearance = null!;
         internal static ConfigEntry<bool> MovePlayerSpawn = null!;
         internal static ConfigEntry<bool> RoomPressureTimes = null!;
-        internal static ConfigEntry<string> VariantWeights = null!;
 
         private void Awake()
         {
@@ -34,25 +34,27 @@ namespace TheExpanse
 
             Enabled = Config.Bind("General", "Enabled", true, "Enable or disable TheExpanse.");
 
-            const string th = "Size of the ship's overall bounding box along the bay's {0} axis, in metres, above which the jacks are moved. " +
-                              "The ship's size is logged on every load, so stock ships can be used to calibrate this.";
-            ThresholdX = Config.Bind("Thresholds", "MaxSizeX", 70f, string.Format(th, "X (width)"));
-            ThresholdY = Config.Bind("Thresholds", "MaxSizeY", 45f, string.Format(th, "Y (height)"));
-            ThresholdZ = Config.Bind("Thresholds", "MaxSizeZ", 100f, string.Format(th, "Z (length)"));
+            CenterShip = Config.Bind("Bay", "CenterShip", false,
+                "Place each ship in the middle of the bay and move the jacks to suit. Large custom ships are posed to spawn above the jacks " +
+                "so they can be played without this mod; with this on they are brought down into the bay instead. The ship's size is " +
+                "worked out before it spawns; it is then centred across the bay and on the bay's height, with its rear end " +
+                "BackWallGapMeters in front of the back wall, and the Master Jack and the five light jacks are moved clear of it (see " +
+                "[Jacks]). Off: ships spawn where the game puts them and the jacks are never moved. A ship restored from a save goes " +
+                "back where it was saved, centred or not.");
+            BackWallGap = Config.Bind("Bay", "BackWallGapMeters", 10f,
+                "With CenterShip on: the gap between the back wall and the end of the ship nearest to it.");
+            AcrossOffset = Config.Bind("Bay", "AcrossOffsetMeters", 0f,
+                "With CenterShip on: how far to one side of the bay's middle ships are placed. 0 centres them between the two side " +
+                "walls; a positive or negative number moves them towards one wall or the other.");
+            BayCenterY = Config.Bind("Bay", "BayCenterHeight", 0f,
+                "With CenterShip on: the height ships are centred on. Raise or lower it to sit ships higher or lower in the bay.");
 
             Clearance = Config.Bind("Jacks", "ClearanceMeters", 5f,
-                "Gap kept between an oversized ship's bounding box and the jacks. The Master Jack is pushed along +Z until it is this far past " +
-                "the ship's far end; the five light jacks are raised together along +Y until the lowest is this far above the ship's top. " +
-                "A jack that already has this much room is left where it is.");
+                "With CenterShip on: the gap kept between the ship and the jacks. The Master Jack is pushed along the bay until it is this " +
+                "far past the ship's far end; the five light jacks are raised together until the lowest is this far above the ship's top. " +
+                "A jack that already has this much room is left where it is, and so is one the whole ship is posed above.");
             MovePlayerSpawn = Config.Bind("Jacks", "MovePlayerSpawnWithMasterJack", true,
                 "Shift the player's start / respawn point by the same amount as the Master Jack, so shifts still start at its door.");
-
-            VariantWeights = Config.Bind("Variants", "Weights", VariantUnlock.DefaultWeights,
-                "Ship variants that only spawn with this mod installed. Each is shipped with Weight 0 in its ModuleEntryDefinition, so the " +
-                "game never picks it; this mod gives it the weight listed here. Format: comma-separated name=weight, where name is the " +
-                "file name of the variant's module prefab without the extension (the prefab its entry spawns), or the name of the entry " +
-                "asset itself. Weights are relative to the other entries in the same list (a base ship at weight 1 and a variant at 1 is " +
-                "a 50/50 pick). Default entry: the Tachi's Gas variant.");
 
             RoomPressureTimes = Config.Bind("Rooms", "UsePressureTimes", true,
                 "Make each room's own Pressurization Time and Decompression Time count. The game ignores them and changes every room's " +
@@ -61,7 +63,7 @@ namespace TheExpanse
                 "behave as stock.");
 
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
-            VariantUnlock.Install(harmony);
+            ShipCentering.Install(harmony);
             RoomPressure.Install(harmony);
 
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
@@ -81,12 +83,20 @@ namespace TheExpanse
         // Start is posted before the scenes load; Complete once the ship is spawned and jointed.
         private static void OnLevelLoad(LevelLoadEvent ev)
         {
-            if (ev.State == LevelLoadEvent.LoadState.Start) { sLevelLoading = true; RoomPressure.OnLevelLoadStart(); return; }
+            if (ev.State == LevelLoadEvent.LoadState.Start)
+            {
+                // Pick up edits made to the settings file while the game was running, before the next ship is placed.
+                try { Instance.Config.Reload(); }
+                catch (Exception ex) { Log.LogWarning("Could not re-read the settings file; keeping the current settings: " + ex.Message); }
+                sLevelLoading = true;
+                RoomPressure.OnLevelLoadStart();
+                return;
+            }
             if (ev.State != LevelLoadEvent.LoadState.Complete && ev.State != LevelLoadEvent.LoadState.Error) return;
             sLevelLoading = false;
             try
             {
-                if (ev.State == LevelLoadEvent.LoadState.Complete && Enabled.Value) JackMover.OnShipLoaded();
+                if (ev.State == LevelLoadEvent.LoadState.Complete && Enabled.Value && CenterShip.Value) JackMover.OnShipLoaded();
             }
             catch (Exception ex) { Log.LogError("[JackMover] " + ex); }
             finally { JackMover.RestoreCollisions(); }
@@ -95,7 +105,7 @@ namespace TheExpanse
         // Posted just before the ship starts spawning into the already-loaded bay (new ship or from a save).
         private static void OnShipSpawnWrapper(ShipAllSpawnWrapperEvent ev)
         {
-            if (!sLevelLoading || !Enabled.Value) return;
+            if (!sLevelLoading || !Enabled.Value || !CenterShip.Value) return;
             if (ev.State != ShipAllSpawnWrapperEvent.SpawnState.Start || ev.Type == ShipAllSpawnWrapperEvent.SpawnType.Despawn) return;
             try { JackMover.OnShipSpawnStarting(); }
             catch (Exception ex) { Log.LogError("[JackMover] " + ex); }

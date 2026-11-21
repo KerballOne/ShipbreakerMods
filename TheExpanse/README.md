@@ -1,27 +1,30 @@
 # TheExpanse
 
-Makes room in the Hardspace: Shipbreaker work bay for custom ships that are bigger than the bay was built for. It was made for the Tachi, and works for any oversized ship.
+Changes to the Hardspace: Shipbreaker work bay and to ships, for large custom ships. It was made for the Tachi, and works with any ship.
 
-- **Moves the jacks out of the way.** When a ship is too long or too tall for the bay, the Master Jack and the five light jacks are moved clear of it, so the ship no longer spawns through them.
-- **Unlocks oversized ship variants.** A ship can include a larger variant that only appears while this mod is installed. The Tachi's Gas variant is set up this way.
+- **Brings large ships down into the bay.** Large custom ships are posed to spawn above the bay's jacks, so they can be played without this mod. An optional setting places each ship in the middle of the bay instead and moves the jacks out of its way.
 - **Big rooms take longer to pressurize.** The game fills and empties every room in the same few seconds. With this mod, a room takes as long as its ship's author set it to.
 
-The game's own ships fit the bay and are left alone.
+## Centring the ship
 
-## Moving the jacks
+This is off by default. Turn on **CenterShip** in the settings and each ship is placed for you, wherever its author posed it:
 
-Each time a ship loads, the mod measures it. If it is over the size limit in any direction:
+- centred across the bay, between the two side walls;
+- centred on the bay's height;
+- with its rear end 10 metres in front of the back wall.
+
+The jacks are then moved clear of it:
 
 - The **Master Jack** is pushed further along the bay until it is clear of the ship's far end. Its kiosk and hab door go with it, and so does the spot where you start a shift and respawn.
 - The **five light jacks** above the ship are raised together until the lowest one is clear of the ship's top.
 
-A jack that already has enough room stays where it is. Everything is back in its normal place for the next ship.
+A jack that already has enough room stays where it is, and so does one the whole ship is posed above. Everything is back in its normal place for the next ship.
 
-## Oversized variants
+With the setting off, ships spawn where their author posed them and the jacks are never moved.
 
-Some custom ships come in more than one version. A ship's author can mark a larger version so the game never picks it by itself, and this mod then gives it a chance of appearing. That way the oversized version only turns up for players who have the mod that makes room for it.
+### Saved ships
 
-By default the Tachi's Gas variant is unlocked and is as likely to appear as the standard Tachi.
+A ship loaded from a save goes back where it was when you saved it. If you saved it centred, it loads centred. If you saved it before turning the setting on, it loads where it was and is not moved.
 
 ## Room pressure times
 
@@ -39,51 +42,36 @@ Generated on first run at:
 Hardspace Shipbreaker\BepInEx\config\me.kerballone.TheExpanse.cfg
 ```
 
-Edit it while the game is closed.
+The file is read again each time a ship starts loading, so you can edit it while the game is running and the change applies to the next ship.
 
 **[General]**
 - **Enabled** (default true): turns the whole mod on or off.
 
-**[Thresholds]**
-
-The jacks are moved when the ship is larger than any of these, measured in metres along the bay.
-
-- **MaxSizeX** (default 70): width.
-- **MaxSizeY** (default 45): height.
-- **MaxSizeZ** (default 100): length.
-
-The ship's measured size is written to the BepInEx log on every load, which helps when choosing your own values.
+**[Bay]**
+- **CenterShip** (default false): place each ship in the middle of the bay and move the jacks to suit.
+- **BackWallGapMeters** (default 10): the gap between the back wall and the end of the ship nearest to it.
+- **AcrossOffsetMeters** (default 0): how far to one side of the bay's middle ships are placed. 0 centres them between the side walls.
+- **BayCenterHeight** (default 0): the height ships are centred on. Raise or lower it to sit ships higher or lower in the bay.
 
 **[Jacks]**
-- **ClearanceMeters** (default 5): the gap kept between the ship and the jacks.
+- **ClearanceMeters** (default 5): with CenterShip on, the gap kept between the ship and the jacks.
 - **MovePlayerSpawnWithMasterJack** (default true): move your start and respawn point along with the Master Jack, so shifts still begin at its door.
 
 **[Rooms]**
 - **UsePressureTimes** (default true): make each room's own pressurization and decompression time count.
 
-**[Variants]**
-- **Weights** (default `Tachi_Gas_Mount=1`): the variants to unlock and how likely each is. See below.
-
 ## For ship authors
 
-To make a variant that only appears with this mod installed:
-
-1. In the ship's module list, set the variant's entry to **Weight 0**. The game never picks an entry with no weight, so players without the mod only ever get the other entries.
-2. Note the file name of the variant's module prefab, the one that entry spawns, without the `.prefab` ending. For the Tachi's Gas variant that is `Tachi_Gas_Mount`.
-3. Add `name=weight` to the **Weights** setting. Separate several entries with commas.
-
-The prefab's name is all that ties the setting to the ship, so rebuilding or reorganising the ship doesn't break it as long as that name stays the same. Give variant prefabs names that no other ship is likely to use. The name of the entry asset itself is also accepted.
-
-The weight works like any other entry's weight in the same list. With the standard ship at weight 1, a variant at 1 appears half the time and a variant at 3 appears three times in four.
+A ship too large for the bay can be posed to spawn above the jacks, where it is playable without this mod. With **CenterShip** on, the mod works out the ship's size and brings it down into the bay, so no special setup is needed.
 
 To make a room slow to pressurize or decompress, set **Pressurization Time** and **Decompression Time** on its room container, in seconds. Values of about 5 or less make no difference, since the mod never makes a room faster than the game does.
 
 ## Notes
 
-- The size limits are meant to sit above the game's own ships. If one of those ever triggers a move, raise the limit for that direction.
-- A ship saved in the middle of a shift is loaded back exactly as it was. If you save on an oversized variant and then remove the mod, that save still loads the variant, into a bay where the jacks are no longer moved.
+- The ship's size is worked out before it spawns, from its parts' meshes and positions. The result is an estimate, so a centred ship can sit a little off. The BepInEx log reports how far after each load.
 - For very long ships, roughly 180 metres and up, the Master Jack ends up beyond the edge of the playable area.
 - The scanner does not highlight the Master Jack or the light jacks while they are moved.
+- Settings from earlier versions for size limits, ship variants and part masses are no longer used and can be deleted from the settings file.
 - For Mars in the sky, your own menu and loading pictures, and music during a shift, see the Themes mod.
 
 ## Installation

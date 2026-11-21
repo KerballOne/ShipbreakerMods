@@ -4,6 +4,6 @@ namespace TheExpanse
     {
         internal const string PLUGIN_GUID    = "me.kerballone.TheExpanse";
         internal const string PLUGIN_NAME    = "TheExpanse";
-        internal const string PLUGIN_VERSION = "0.2.0";
+        internal const string PLUGIN_VERSION = "0.3.0";
     }
 }

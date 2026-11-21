@@ -3,7 +3,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>me.kerballone.TheExpanse</AssemblyName>
     <RootNamespace>TheExpanse</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <GameDir>C:\Program Files (x86)\Steam\steamapps\common\Hardspace Shipbreaker</GameDir>
@@ -34,17 +34,20 @@
     <Reference Include="Unity.Entities"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Entities.dll"
                Private="false" />
-    <Reference Include="Unity.Collections"
-               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Collections.dll"
-               Private="false" />
-    <Reference Include="Unity.Mathematics"
-               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Mathematics.dll"
+    <Reference Include="Unity.Transforms"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Transforms.dll"
                Private="false" />
     <Reference Include="Unity.Addressables"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Addressables.dll"
                Private="false" />
     <Reference Include="Unity.ResourceManager"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.ResourceManager.dll"
+               Private="false" />
+    <Reference Include="Unity.Collections"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Collections.dll"
+               Private="false" />
+    <Reference Include="Unity.Mathematics"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Mathematics.dll"
                Private="false" />
   </ItemGroup>
 
