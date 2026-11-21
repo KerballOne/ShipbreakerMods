@@ -46,6 +46,11 @@ namespace PartInfoLogger
         internal static ConfigEntry<bool> PlacementCheckEnabled = null!;
         internal static ConfigEntry<bool> PlaceholderCheckEnabled = null!;
         internal static ConfigEntry<float> PlacementCheckDelay = null!;
+        internal static ConfigEntry<bool> DecalDiagnosticsEnabled = null!;
+        internal static ConfigEntry<float> DecalDiagnosticsDelay = null!;
+        internal static ConfigEntry<string> DecalDiagnosticsNameFilter = null!;
+        internal static ConfigEntry<int> DecalDiagnosticsMaxProjectors = null!;
+        internal static ConfigEntry<int> DecalDiagnosticsMaxParts = null!;
         internal static Plugin Instance = null!;
 
         private void Awake()
@@ -169,6 +174,23 @@ namespace PartInfoLogger
             FireWatchInterval = Config.Bind(
                 "SpawnDiagnostics", "FireWatchIntervalSeconds", 1f,
                 "Seconds between fire-watch polls.");
+            DecalDiagnosticsEnabled = Config.Bind(
+                "DecalDiagnostics", "Enabled", true,
+                "If true, once per ship load writes [DecalDiag] lines to the BepInEx log: every BakedDecalProjector in the scene " +
+                "and, for the parts near it, the material keyword, decal texture slots and UV channels the game's decal baker uses. " +
+                "For finding out why a baked decal does not show. Polling only, no Harmony patches.");
+            DecalDiagnosticsDelay = Config.Bind(
+                "DecalDiagnostics", "DelaySeconds", 3f,
+                "Seconds after gameplay start before the decal dump is taken.");
+            DecalDiagnosticsNameFilter = Config.Bind(
+                "DecalDiagnostics", "NameFilter", "",
+                "Comma-separated fragments of a projector's hierarchy path. Empty = every projector (up to MaxProjectors).");
+            DecalDiagnosticsMaxProjectors = Config.Bind(
+                "DecalDiagnostics", "MaxProjectors", 12,
+                "Most projectors to report per ship load.");
+            DecalDiagnosticsMaxParts = Config.Bind(
+                "DecalDiagnostics", "MaxPartsPerProjector", 6,
+                "Most nearby parts to report per projector.");
 
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             harmony.PatchAll();
@@ -194,6 +216,7 @@ namespace PartInfoLogger
                     Instance.StartCoroutine(DumpMaterialProperties());
                     Instance.StartCoroutine(DumpJointCensus());
                     SpawnDiagnostics.OnGameplay();
+                    DecalDiagnostics.OnGameplay();
                     BayGeometry.OnGameplay();
                     if (PlacementCheckEnabled.Value)
                         Instance.StartCoroutine(PlacementCheck.Run(PlacementCheckDelay.Value));
@@ -212,6 +235,7 @@ namespace PartInfoLogger
                 else if (ev.GameState == GameSession.GameState.Hab)
                 {
                     SpawnDiagnostics.OnLeftLevel();
+                    DecalDiagnostics.OnLeftLevel();
                     BayGeometry.OnLeftLevel();
                     if (CampaignProgressEnabled.Value)
                     {
