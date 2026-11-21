@@ -5,6 +5,7 @@ using System.IO;
 using BBI.Unity.Game;
 using HarmonyLib;
 using UnityEngine.AddressableAssets;
+using UnityEngine.AddressableAssets.ResourceLocators;
 using UnityEngine.ResourceManagement.ResourceLocations;
 
 namespace TheExpanse
@@ -106,6 +107,10 @@ namespace TheExpanse
             {
                 foreach (var locator in Addressables.ResourceLocators)
                 {
+                    // Real catalogs only. Other mods add locators of their own, and asking those about a GUID nobody
+                    // knows can be slow (FreePlayPlus's searches every loaded catalog on a miss); a catalog's own
+                    // lookup is a dictionary hit.
+                    if (!(locator is ResourceLocationMap)) continue;
                     if (!locator.Locate(guid, null, out IList<IResourceLocation> locations) || locations == null) continue;
                     foreach (var loc in locations)
                     {
