@@ -26,6 +26,7 @@ namespace PartInfoLogger
         internal static ConfigEntry<bool> EnrichmentEnabled = null!;
         internal static ConfigEntry<bool> JointCensusEnabled = null!;
         internal static ConfigEntry<bool> SpawnDiagnosticsEnabled = null!;
+        internal static ConfigEntry<bool> DevDumpsEnabled = null!;
         internal static ConfigEntry<bool> BayGeometryEnabled = null!;
         internal static ConfigEntry<bool> BayGeometryRenderers = null!;
         internal static ConfigEntry<float> BayGeometryDelay = null!;
@@ -145,6 +146,11 @@ namespace PartInfoLogger
             BayGeometryMaxVerts = Config.Bind(
                 "BayGeometry", "MaxVertices", 6000000,
                 "Upper limit on the total number of mesh vertices written to bay_geometry_meshes.bin (12 bytes each plus triangles).");
+            DevDumpsEnabled = Config.Bind(
+                "General", "DevDumps", false,
+                "If true, writes the development dumps on every load: [CryoFlags] (one line per machine part), [MatDump] (material " +
+                "properties of two reference parts) and [JsaCompat] (joint compatibility table to jsa_compat.json). Only needed when " +
+                "refreshing that reference data.");
             SpawnDiagnosticsEnabled = Config.Bind(
                 "SpawnDiagnostics", "Enabled", true,
                 "If true, once per ship load writes joint_census_spawn.csv (every part's jointed neighbours, integrity and " +
@@ -327,6 +333,7 @@ namespace PartInfoLogger
 
         static IEnumerator TryDumpJsaFromResources()
         {
+            if (Plugin.DevDumpsEnabled == null || !Plugin.DevDumpsEnabled.Value) yield break;
             // Wait a few frames for addressables to load assets
             yield return new WaitForSeconds(2f);
             var jsaType = AccessTools.TypeByName("BBI.Unity.Game.JointabilityAsset");
@@ -339,6 +346,7 @@ namespace PartInfoLogger
 
         internal static IEnumerator TryDumpJsaOnGameplay()
         {
+            if (Plugin.DevDumpsEnabled == null || !Plugin.DevDumpsEnabled.Value) yield break;
             yield return new WaitForSeconds(1f);
             var jsaType = AccessTools.TypeByName("BBI.Unity.Game.JointabilityAsset");
             if (jsaType == null) { Plugin.Log.LogWarning("[JsaCompat] JointabilityAsset type not found for gameplay scan"); yield break; }
@@ -637,6 +645,7 @@ namespace PartInfoLogger
 
         static IEnumerator DumpMaterialProperties()
         {
+            if (Plugin.DevDumpsEnabled == null || !Plugin.DevDumpsEnabled.Value) yield break;
             yield return new WaitForSeconds(3f);
             var targets = new[] { "HeatExchanger", "CornerTriangle_3Cx2xA" };
             foreach (var keyword in targets)
@@ -693,6 +702,7 @@ namespace PartInfoLogger
 
         static IEnumerator FlushJsaDelayed()
         {
+            if (Plugin.DevDumpsEnabled == null || !Plugin.DevDumpsEnabled.Value) yield break;
             yield return new WaitForSeconds(5f);
             Plugin.Log.LogInfo($"[JsaCompat] Delayed flush triggered, pairs so far: {JsaCompatState.PairCount}");
             JsaCompatState.Flush();
@@ -1572,6 +1582,7 @@ namespace PartInfoLogger
 
         static void Postfix(object __instance)
         {
+            if (Plugin.DevDumpsEnabled == null || !Plugin.DevDumpsEnabled.Value) return;
             try
             {
                 var assetType = __instance.GetType();
@@ -1612,6 +1623,7 @@ namespace PartInfoLogger
 
         static void Postfix(object __instance, object[] __args, bool __result)
         {
+            if (Plugin.DevDumpsEnabled == null || !Plugin.DevDumpsEnabled.Value) return;
             var jsa1 = __args?.Length > 0 ? __args[0] : null;
             var jsa2 = __args?.Length > 1 ? __args[1] : null;
             if (JsaCompatState.PairCount == 0)
