@@ -35,8 +35,10 @@ namespace TheExpanse
     //
     // Restoring a saved ship goes through the same spawn call: the saved parts go back to their saved positions, and
     // whatever is rebuilt is placed from the spawn point. So a restore must use the point the ship was saved with. That
-    // is not recorded anywhere, but the saved parts show it: they sit either where the centred ship would be or where
-    // the uncentred one would, and the spawn point is chosen to match.
+    // is not recorded anywhere, but the saved parts show it: the middle of where they are, against the middle of where
+    // the ship's parts would be as posed, is roughly the shift the ship was saved with, and it is matched to "as posed"
+    // or "centred", whichever is nearer. (Structure parts themselves come back at their saved positions whatever point
+    // is used; the point only matters for what a save does not hold.)
     internal static class ShipCentering
     {
         // The stock work bay, from its geometry: the middle between the two side walls (their inner faces are at
@@ -95,6 +97,7 @@ namespace TheExpanse
             Bounds box = default;
             bool any = false;
             int modules = 0, unloaded = 0;
+            var partPositions = new List<Vector3>();
 
             foreach (var module in shipPreview.ModuleGroup.AllModules)
             {
@@ -109,7 +112,7 @@ namespace TheExpanse
                 }
                 if (prefab == null) { unloaded++; continue; }
                 modules++;
-                Encapsulate(prefab, root * Matrix4x4.TRS(module.RigidTransform.pos, module.RigidTransform.rot, Vector3.one), ref box, ref any);
+                Encapsulate(prefab, root * Matrix4x4.TRS(module.RigidTransform.pos, module.RigidTransform.rot, Vector3.one), ref box, ref any, partPositions);
             }
 
             if (!any)
@@ -123,17 +126,25 @@ namespace TheExpanse
                                     BackWallZ + Plugin.BackWallGap.Value - box.min.z);
             string size = $"estimated {box.size.x:0.0} x {box.size.y:0.0} x {box.size.z:0.0} m" + (unloaded > 0 ? $", {unloaded} module(s) could not be loaded and were left out" : "");
 
-            // A saved ship: use the point it was saved with (see the note at the top).
+            // A saved ship: use the shift it was saved with (see the note at the top).
             bool restoring = ModuleService.Instance != null && ModuleService.Instance.ShipSpawningFromSaveInProgress;
-            if (restoring && SavedPartsCentre(out var saved, out int savedParts))
+            if (restoring && partPositions.Count > 0 && SavedPartPositions(out var saved))
             {
-                float asPosed = (saved - box.center).magnitude, centred = (saved - (box.center + delta)).magnitude;
+                var savedShift = Median(saved) - Median(partPositions);
+                float asPosed = savedShift.magnitude, centred = (savedShift - delta).magnitude;
+                string from = $"'{shipPreview.ShipName}' (from a save, {saved.Count} saved part(s)): {size}; saved parts sit ({savedShift.x:0.0}, {savedShift.y:0.0}, {savedShift.z:0.0}) from where the ship is posed";
+                if (Mathf.Min(asPosed, centred) > Mathf.Max(FarFromBothMeters, delta.magnitude))
+                {
+                    // Clearly neither: it was saved under different settings. Follow the saved parts.
+                    Plugin.Log.LogInfo($"[Centering] {from}; rebuilt there to match.");
+                    return new RigidTransform(spawn.rot, spawn.pos + (float3)savedShift);
+                }
                 if (asPosed <= centred)
                 {
-                    Plugin.Log.LogInfo($"[Centering] '{shipPreview.ShipName}' (from a save, {savedParts} saved part(s)): {size}; it was saved where the game put it, so it is left there.");
+                    Plugin.Log.LogInfo($"[Centering] {from}; it was saved where the game put it, so it is left there.");
                     return spawn;
                 }
-                Plugin.Log.LogInfo($"[Centering] '{shipPreview.ShipName}' (from a save, {savedParts} saved part(s)): {size}; it was saved centred, moved by ({delta.x:0.0}, {delta.y:0.0}, {delta.z:0.0}) to match.");
+                Plugin.Log.LogInfo($"[Centering] {from}; it was saved centred, moved by ({delta.x:0.0}, {delta.y:0.0}, {delta.z:0.0}) to match.");
             }
             else
                 Plugin.Log.LogInfo($"[Centering] '{shipPreview.ShipName}': {modules} module(s), {size}; moved by ({delta.x:0.0}, {delta.y:0.0}, {delta.z:0.0}) to centre it.");
@@ -141,10 +152,15 @@ namespace TheExpanse
             return new RigidTransform(spawn.rot, spawn.pos + (float3)delta);
         }
 
-        // Average position of the ship parts a save has just brought back (their entities exist before the ship is rebuilt).
-        static bool SavedPartsCentre(out Vector3 centre, out int count)
+        // The shift read off the saved parts is rough: a save holds more than the parts the estimate counts, and parts
+        // move during play (it read 5.6 m out on an intact ship). So it is only used to tell "as posed" from "centred",
+        // whichever is nearer, and is followed directly only when it is far from both.
+        const float FarFromBothMeters = 10f;
+
+        // Positions of the ship parts a save has just brought back (their entities exist before the ship is rebuilt).
+        static bool SavedPartPositions(out List<Vector3> positions)
         {
-            centre = default; count = 0;
+            positions = new List<Vector3>();
             var world = World.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated) return false;
             var em = world.EntityManager;
@@ -152,25 +168,36 @@ namespace TheExpanse
             try
             {
                 using var matrices = query.ToComponentDataArray<LocalToWorld>(Allocator.TempJob);
-                if (matrices.Length == 0) return false;
-                double x = 0, y = 0, z = 0;
-                for (int i = 0; i < matrices.Length; i++) { var p = matrices[i].Position; x += p.x; y += p.y; z += p.z; }
-                count = matrices.Length;
-                centre = new Vector3((float)(x / count), (float)(y / count), (float)(z / count));
-                return true;
+                for (int i = 0; i < matrices.Length; i++) positions.Add(matrices[i].Position);
+                return positions.Count > 0;
             }
             finally { query.Dispose(); }
+        }
+
+        // The middle value on each axis: unlike the average, a few parts far from the rest do not move it.
+        static Vector3 Median(List<Vector3> points)
+        {
+            var axis = new float[points.Count];
+            var m = Vector3.zero;
+            for (int a = 0; a < 3; a++)
+            {
+                for (int i = 0; i < points.Count; i++) axis[i] = points[i][a];
+                Array.Sort(axis);
+                m[a] = axis[axis.Length / 2];
+            }
+            return m;
         }
 
         // Adds one module prefab's ship parts to the box, carried through the module's placement in the world. Only what
         // the finished ship is measured by counts: the visible meshes of its structure parts. Helper objects in a prefab
         // (room volumes, triggers, effects, placeholders) can be far larger than the ship and would throw the box off.
-        static void Encapsulate(GameObject prefab, Matrix4x4 moduleToWorld, ref Bounds box, ref bool any)
+        static void Encapsulate(GameObject prefab, Matrix4x4 moduleToWorld, ref Bounds box, ref bool any, List<Vector3> partPositions)
         {
             var rootInverse = prefab.transform.worldToLocalMatrix;
             foreach (var part in prefab.GetComponentsInChildren<StructurePart>(true))
             {
                 if (!ActiveUnder(part.transform, prefab.transform)) continue;
+                partPositions.Add((moduleToWorld * rootInverse * part.transform.localToWorldMatrix).MultiplyPoint3x4(Vector3.zero));
                 bool hadMesh = false;
                 foreach (var renderer in part.GetComponentsInChildren<MeshRenderer>(true))
                 {
