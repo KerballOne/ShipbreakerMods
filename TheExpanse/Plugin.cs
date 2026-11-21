@@ -10,6 +10,7 @@ namespace TheExpanse
     // Makes the work bay take oversized ships:
     //   JackMover       measures the ship after each level load and moves the Master Jack and the five light jacks clear of it
     //   VariantUnlock   gives weight-0 ship variants a spawn weight, so they only appear with this mod installed
+    //   RoomPressure    makes each room's own pressurization / decompression time count, so big rooms take longer
     // (The Mars planet, loading screen and menu pictures that started here now live in the Themes mod.)
     [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
     public class Plugin : BaseUnityPlugin
@@ -23,6 +24,7 @@ namespace TheExpanse
         internal static ConfigEntry<float> ThresholdZ = null!;
         internal static ConfigEntry<float> Clearance = null!;
         internal static ConfigEntry<bool> MovePlayerSpawn = null!;
+        internal static ConfigEntry<bool> RoomPressureTimes = null!;
         internal static ConfigEntry<string> VariantWeights = null!;
 
         private void Awake()
@@ -52,21 +54,34 @@ namespace TheExpanse
                 "asset itself. Weights are relative to the other entries in the same list (a base ship at weight 1 and a variant at 1 is " +
                 "a 50/50 pick). Default entry: the Tachi's Gas variant.");
 
-            VariantUnlock.Install(new Harmony(PluginInfo.PLUGIN_GUID));
+            RoomPressureTimes = Config.Bind("Rooms", "UsePressureTimes", true,
+                "Make each room's own Pressurization Time and Decompression Time count. The game ignores them and changes every room's " +
+                "pressure in the same few seconds; with this on, a room whose time is set longer than the game's takes that long. Connected " +
+                "rooms change together and take the longest time among them. Rooms at or below the game's own time, and hull breaches, " +
+                "behave as stock.");
+
+            var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
+            VariantUnlock.Install(harmony);
+            RoomPressure.Install(harmony);
 
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
             Main.EventSystem.AddHandler<ShipAllSpawnWrapperEvent>(OnShipSpawnWrapper);
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} {PluginInfo.PLUGIN_VERSION} loaded.");
         }
 
-        private void LateUpdate() => JackMover.DrawMoved();
+        private void LateUpdate()
+        {
+            JackMover.DrawMoved();
+            try { RoomPressure.Tick(); }
+            catch (Exception ex) { Log.LogError("[RoomPressure] " + ex); }
+        }
 
         private static bool sLevelLoading;
 
         // Start is posted before the scenes load; Complete once the ship is spawned and jointed.
         private static void OnLevelLoad(LevelLoadEvent ev)
         {
-            if (ev.State == LevelLoadEvent.LoadState.Start) { sLevelLoading = true; return; }
+            if (ev.State == LevelLoadEvent.LoadState.Start) { sLevelLoading = true; RoomPressure.OnLevelLoadStart(); return; }
             if (ev.State != LevelLoadEvent.LoadState.Complete && ev.State != LevelLoadEvent.LoadState.Error) return;
             sLevelLoading = false;
             try

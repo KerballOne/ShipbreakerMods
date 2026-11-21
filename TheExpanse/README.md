@@ -4,6 +4,7 @@ Makes room in the Hardspace: Shipbreaker work bay for custom ships that are bigg
 
 - **Moves the jacks out of the way.** When a ship is too long or too tall for the bay, the Master Jack and the five light jacks are moved clear of it, so the ship no longer spawns through them.
 - **Unlocks oversized ship variants.** A ship can include a larger variant that only appears while this mod is installed. The Tachi's Gas variant is set up this way.
+- **Big rooms take longer to pressurize.** The game fills and empties every room in the same few seconds. With this mod, a room takes as long as its ship's author set it to.
 
 The game's own ships fit the bay and are left alone.
 
@@ -21,6 +22,14 @@ A jack that already has enough room stays where it is. Everything is back in its
 Some custom ships come in more than one version. A ship's author can mark a larger version so the game never picks it by itself, and this mod then gives it a chance of appearing. That way the oversized version only turns up for players who have the mod that makes room for it.
 
 By default the Tachi's Gas variant is unlocked and is as likely to appear as the standard Tachi.
+
+## Room pressure times
+
+Every room in a ship has a pressurization time and a decompression time set by its author, but the game ignores them and changes every room's pressure in about 5 seconds. This mod makes those times count, so a large room can take as long as its size deserves.
+
+- Only rooms set to longer than the game's own time are affected. Everything else, including every ship that leaves them at the default, behaves as before.
+- Rooms connected by open doors change pressure together and take the longest time among them.
+- A hull breach still vents at the game's normal speed.
 
 ## Settings file
 
@@ -49,6 +58,9 @@ The ship's measured size is written to the BepInEx log on every load, which help
 - **ClearanceMeters** (default 5): the gap kept between the ship and the jacks.
 - **MovePlayerSpawnWithMasterJack** (default true): move your start and respawn point along with the Master Jack, so shifts still begin at its door.
 
+**[Rooms]**
+- **UsePressureTimes** (default true): make each room's own pressurization and decompression time count.
+
 **[Variants]**
 - **Weights** (default `Tachi_Gas_Mount=1`): the variants to unlock and how likely each is. See below.
 
@@ -63,6 +75,8 @@ To make a variant that only appears with this mod installed:
 The prefab's name is all that ties the setting to the ship, so rebuilding or reorganising the ship doesn't break it as long as that name stays the same. Give variant prefabs names that no other ship is likely to use. The name of the entry asset itself is also accepted.
 
 The weight works like any other entry's weight in the same list. With the standard ship at weight 1, a variant at 1 appears half the time and a variant at 3 appears three times in four.
+
+To make a room slow to pressurize or decompress, set **Pressurization Time** and **Decompression Time** on its room container, in seconds. Values of about 5 or less make no difference, since the mod never makes a room faster than the game does.
 
 ## Notes
 
