@@ -30,6 +30,7 @@ namespace BayLights
         private ConfigEntry<float>  _shipSpotIntensityMult = null!;
         private ConfigEntry<float>  _shipSpotRangeMult    = null!;
         private ConfigEntry<bool>   _shipLightsNoShadows  = null!;
+        private ConfigEntry<string> _shipLightsExclude    = null!;
 
         private readonly HashSet<int> _boosted = new HashSet<int>();
 
@@ -54,6 +55,8 @@ namespace BayLights
             _shipSpotIntensityMult= Config.Bind("ShipLights", "SpotIntensityMultiplier",   5.0f,   "Multiply ship Spot light intensity by this factor (excludes bay/helmet). 1.0 = unchanged.");
             _shipSpotRangeMult    = Config.Bind("ShipLights", "SpotRangeMultiplier",        2.0f,   "Multiply ship Spot light range by this factor.");
             _shipLightsNoShadows  = Config.Bind("ShipLights", "DisableShadows",            true,   "Disable shadows on all ship lights. Prevents flickering when range is boosted.");
+
+            _shipLightsExclude    = Config.Bind("ShipLights", "ExcludeNameContains",       "AI_Node_Crystal", "Comma-separated name fragments. A ship light whose own name or any parent name contains one is left unchanged (e.g. small accent lights that are tuned by hand).");
 
             _fogMeanFreePath      = Config.Bind("Fog",        "MeanFreePathMultiplier",    1.0f,   "Multiply HDRP fog mean free path by this factor. Higher = clearer. 1.0 = unchanged.");
 
@@ -95,6 +98,18 @@ namespace BayLights
             StartCoroutine(BoostLights(scene.name));
         }
 
+        // True when the light's own name or any ancestor's name contains one of the fragments.
+        private static bool IsExcluded(Transform t, string[] fragments)
+        {
+            for (var p = t; p != null; p = p.parent)
+                foreach (var f in fragments)
+                {
+                    var s = f.Trim();
+                    if (s.Length > 0 && p.name.IndexOf(s, System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                }
+            return false;
+        }
+
         private IEnumerator BoostLights(string sceneName)
         {
             float elapsed = 0f;
@@ -122,10 +137,12 @@ namespace BayLights
             var allLights = GetAllSceneLights();
             int bayCount = 0, helmetCount = 0, shipCount = 0;
 
+            var exclude = _shipLightsExclude.Value.Split(',');
             foreach (var light in allLights)
             {
                 int id = light.GetInstanceID();
                 bool alreadyBoosted = _boosted.Contains(id);
+                if (IsExcluded(light.transform, exclude)) continue;
 
                 if (light.type == LightType.Spot)
                 {
