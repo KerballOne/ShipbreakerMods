@@ -5,17 +5,19 @@ using UnityEngine.SceneManagement;
 
 namespace BiggerBays
 {
-    // Makes the barge longer along the bay, keeping its end by the back wall where it is.
+    // Makes the barge longer and wider to match the bay: longer from its end by the back wall, which stays where it is,
+    // and wider about its own middle.
     //
     // The stock barge (root "PRF_Barge_SmallBay (1)") is 39.5 m wide and 83.9 m long, from z = -2.4 to z = 81.4. It is a
     // holo field top and bottom, a ring top and bottom, chevrons, plus signs and holo sprites, and three box volumes: the
     // entrance trigger that takes salvage, the blocker over a full barge, and the flow that pulls salvage in. Its rim
     // lights are a separate group, PRF_BayAnimatedEmmissiveLighting/BargeEmissiveLights.
     //
-    // Everything is mapped along Z about the barge's back-wall end: a point at distance d from that end goes to d x k,
-    // where k is new length / old length.
-    //   long pieces (fields, rings, the volumes)   are stretched by k
-    //   short pieces (chevrons, plus signs,        keep their size and are moved to their mapped place
+    // Everything is mapped along Z about the barge's back-wall end and across X about its middle: a point at distance d
+    // from there goes to d x k, where k is new size / old size in that direction.
+    //   long or wide pieces (fields, rings,     are stretched by k in that direction
+    //   the volumes)
+    //   small pieces (chevrons, plus signs,     keep their size and are moved to their mapped place
     //   sprites, lights)
     // Statically batched meshes are drawn stretched or moved by BatchedRedraw; everything else has its transform scaled
     // or moved. The children of a scaled object are stretched with it.
@@ -25,13 +27,13 @@ namespace BiggerBays
         const string BargePrefix = "PRF_Barge_SmallBay";
         const string LightsRoot = "PRF_BayAnimatedEmmissiveLighting";
         const string LightsPath = "BargeEmissiveLights";
-        // A piece at least this long along the bay is part of the barge's length and is stretched.
-        const float Long = 30f;
+        // A piece at least this big in a direction is part of the barge's size that way and is stretched.
+        const float Big = 30f;
 
         sealed class Node
         {
             public Transform T = null!;
-            public Vector3 Stock, LocalStock, LocalScaleStock;
+            public Vector3 Stock, LocalStock;
             public Bounds Box;
             public MeshRenderer? Batched;
         }
@@ -41,25 +43,21 @@ namespace BiggerBays
         {
             public Transform T = null!;
             public Vector3 PosDelta, LastPos, LastScale;
-            public int Axis = -1;
-            public float K = 1f;
+            public Vector3 Factor = Vector3.one;        // per local axis
+            public bool Scaled;
         }
 
         static readonly List<Pin> sPins = new List<Pin>();
 
-        static string V(Vector3 v) => $"({v.x:0.0}, {v.y:0.0}, {v.z:0.0})";
-
-        internal static void OnLevelLoadStart()
-        {
-            sPins.Clear();
-        }
+        internal static void OnLevelLoadStart() => sPins.Clear();
 
         internal static void Apply()
         {
-            float extra = Plugin.ExtraBargeLength.Value;
-            if (extra < 0f) extra = BayReshaper.AppliedLength;
-            extra = Mathf.Clamp(extra, 0f, 300f);
-            if (!Plugin.BiggerBay.Value || extra <= 0f) return;
+            if (!Plugin.BiggerBay.Value) return;
+            // The barge follows the bay: as much longer, and as much wider on each side.
+            float longer = BayReshaper.AppliedLength;
+            float wider = BayReshaper.AppliedWidth;
+            if (longer <= 0f && wider <= 0f) return;
 
             GameObject? barge = null, lightsTop = null;
             for (int i = 0; i < SceneManager.sceneCount; i++)
@@ -88,68 +86,69 @@ namespace BiggerBays
             {
                 foreach (var t in root.GetComponentsInChildren<Transform>(true))
                 {
-                    var n = new Node { T = t, Stock = t.position, LocalStock = t.localPosition, LocalScaleStock = t.localScale };
+                    var n = new Node { T = t, Stock = t.position, LocalStock = t.localPosition };
                     n.Box = BayReshaper.BoxOf(t, out n.Batched);
                     nodes.Add(n);
                 }
                 if (root == barge.transform) bargeNodes = nodes.Count;
             }
 
-            // The barge's length is that of its holo field (failing that, of its longest piece).
-            Bounds longest = default;
+            // The barge's size is that of its holo field (failing that, of its longest piece).
+            Bounds field = default;
             for (int i = 0; i < bargeNodes; i++)
                 if (nodes[i].T.name.IndexOf("Holo Field", StringComparison.OrdinalIgnoreCase) >= 0 && nodes[i].T.GetComponent<MeshRenderer>() != null
-                    && nodes[i].Box.size.z > longest.size.z) longest = nodes[i].Box;
-            if (longest.size.z < Long)
+                    && nodes[i].Box.size.z > field.size.z) field = nodes[i].Box;
+            if (field.size.z < Big)
                 for (int i = 0; i < bargeNodes; i++)
-                    if (nodes[i].Box.size.z > longest.size.z) longest = nodes[i].Box;
-            float length = longest.size.z;
-            if (length < Long)
+                    if (nodes[i].Box.size.z > field.size.z) field = nodes[i].Box;
+            float length = field.size.z, width = field.size.x;
+            if (length < Big || width < 1f)
             {
-                Plugin.Log.LogWarning($"[Barge] could not work out the barge's length (longest piece is {length:0.0} m); it is left as it is.");
+                Plugin.Log.LogWarning($"[Barge] could not work out the barge's size (largest piece is {width:0.0} x {length:0.0} m); it is left as it is.");
                 return;
             }
-            float z0 = longest.min.z;
-            float k = (length + extra) / length;
-            float Map(float z) => z0 + (z - z0) * k;
-            var stretch = Matrix4x4.Translate(new Vector3(0f, 0f, z0)) * Matrix4x4.Scale(new Vector3(1f, 1f, k)) * Matrix4x4.Translate(new Vector3(0f, 0f, -z0));
+            float z0 = field.min.z, x0 = field.center.x;
+            float kz = (length + longer) / length;
+            float kx = (width + 2f * wider) / width;
+            Vector3 Map(Vector3 p) => new Vector3(x0 + (p.x - x0) * kx, p.y, z0 + (p.z - z0) * kz);
 
             var inherits = new HashSet<Transform>();     // scaled objects and everything under them
             var one = new List<Matrix4x4>(1);
-            int stretched = 0, moved = 0, redrawn = 0, failed = 0;
+            int stretched = 0, moved = 0, failed = 0;
             foreach (var n in nodes)
             {
                 var t = n.T;
                 if (t.parent != null && inherits.Contains(t.parent)) { inherits.Add(t); continue; }
 
-                bool isLong = n.Box.size.z >= Long;
-                float shift = Map(n.Box.center.z) - n.Box.center.z;
-                var target = n.Stock + new Vector3(0f, 0f, shift);
+                // Stretched in a direction if it is big that way; otherwise only moved to its mapped place.
+                float sx = n.Box.size.x >= Big ? kx : 1f;
+                float sz = n.Box.size.z >= Big ? kz : 1f;
+                var center = n.Box.center;
+                var shift = Map(center) - center;
+                var target = n.Stock + shift;
+                bool scale = sx != 1f || sz != 1f;
 
                 if (n.Batched != null)
                 {
                     one.Clear();
-                    one.Add(isLong ? stretch : Matrix4x4.Translate(new Vector3(0f, 0f, shift)));
-                    if (BatchedRedraw.Set(n.Batched, one)) redrawn++; else failed++;
-                    if (isLong) stretched++; else if (shift != 0f) moved++;
+                    one.Add(Matrix4x4.Translate(center + shift) * Matrix4x4.Scale(new Vector3(sx, 1f, sz)) * Matrix4x4.Translate(-center));
+                    if (!BatchedRedraw.Set(n.Batched, one)) failed++;
+                    else if (scale) stretched++;
+                    else if (shift != Vector3.zero) moved++;
                 }
-                else if (isLong)
+                else if (scale)
                 {
-                    // Scale along whichever of the object's own axes lies along the bay.
-                    int axis = 0; float best = -1f;
-                    for (int a = 0; a < 3; a++)
-                    {
-                        var dir = t.rotation * (a == 0 ? Vector3.right : a == 1 ? Vector3.up : Vector3.forward);
-                        if (Mathf.Abs(dir.z) > best) { best = Mathf.Abs(dir.z); axis = a; }
-                    }
-                    var s = t.localScale;
-                    s[axis] *= k;
+                    // Scale along whichever of the object's own axes lies along the bay, and whichever lies across it.
+                    var factor = Vector3.one;
+                    if (sz != 1f) factor[AxisAlong(t, Vector3.forward)] *= sz;
+                    if (sx != 1f) factor[AxisAlong(t, Vector3.right)] *= sx;
+                    var s = Vector3.Scale(t.localScale, factor);
                     t.localScale = s;
                     inherits.Add(t);
                     stretched++;
-                    sPins.Add(new Pin { T = t, Axis = axis, K = k, LastScale = s });
+                    sPins.Add(new Pin { T = t, Factor = factor, Scaled = true, LastScale = s });
                 }
-                else if (n.Box.size != Vector3.zero && shift != 0f) moved++;
+                else if (n.Box.size != Vector3.zero && shift != Vector3.zero) moved++;
 
                 if ((t.position - target).sqrMagnitude > 1e-8f)
                 {
@@ -176,9 +175,22 @@ namespace BiggerBays
             var marker = new GameObject(MarkerName);
             marker.transform.SetParent(barge.transform, false);
 
-            Plugin.Log.LogInfo($"[Barge] barge made {extra:0.0} m longer: {length:0.0} m -> {length + extra:0.0} m (z {z0:0.0} to {z0 + length + extra:0.0}), " +
-                               $"{stretched} piece(s) stretched, {moved} moved, {redrawn} batched mesh(es) redrawn" +
-                               $"{(failed > 0 ? $", {failed} batched NOT matched (left as they were)" : "")}.");
+            Plugin.Log.LogInfo($"[Barge] barge made {longer:0.0} m longer and {wider:0.0} m wider on each side: {width:0.0} x {length:0.0} m -> " +
+                               $"{width + 2f * wider:0.0} x {length + longer:0.0} m; {stretched} piece(s) stretched, {moved} moved" +
+                               $"{(failed > 0 ? $", {failed} mesh(es) could not be matched and stay as they were" : "")}.");
+        }
+
+        // Which of an object's own axes (0 = x, 1 = y, 2 = z) lies closest to a world direction.
+        static int AxisAlong(Transform t, Vector3 world)
+        {
+            int axis = 0; float best = -1f;
+            for (int a = 0; a < 3; a++)
+            {
+                var dir = t.rotation * (a == 0 ? Vector3.right : a == 1 ? Vector3.up : Vector3.forward);
+                float d = Mathf.Abs(Vector3.Dot(dir, world));
+                if (d > best) { best = d; axis = a; }
+            }
+            return axis;
         }
 
         // Called every frame, after animations have run.
@@ -199,12 +211,12 @@ namespace BiggerBays
                         p.LastPos = lp;
                     }
                 }
-                if (p.Axis >= 0)
+                if (p.Scaled)
                 {
                     var ls = p.T.localScale;
                     if ((ls - p.LastScale).sqrMagnitude > 1e-10f)
                     {
-                        ls[p.Axis] *= p.K;
+                        ls = Vector3.Scale(ls, p.Factor);
                         p.T.localScale = ls;
                         p.LastScale = ls;
                     }

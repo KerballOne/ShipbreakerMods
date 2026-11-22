@@ -26,7 +26,6 @@ namespace BiggerBays
         // Where each moved object stood before this mod touched it, so a repeat pass starts from the stock position.
         static readonly Dictionary<int, Vector3> sOriginal = new Dictionary<int, Vector3>();
         static readonly HashSet<int> sPlayersMoved = new HashSet<int>();
-        static readonly HashSet<int> sPlayersBaseMoved = new HashSet<int>();
 
         static string V(Vector3 v) => $"({v.x:0.0}, {v.y:0.0}, {v.z:0.0})";
         static string B(Bounds b) => $"min {V(b.min)} max {V(b.max)}";
@@ -65,7 +64,7 @@ namespace BiggerBays
             // Where the ship actually ended up, against where the centering aimed (it worked from an estimate of the box).
             var size = ship.size;
             Plugin.Log.LogInfo($"[JackMover] ship: {parts} parts, size {size.x:0.0} x {size.y:0.0} x {size.z:0.0} m, {B(ship)}; " +
-                               $"off its target by {ship.center.x - ShipCentering.BayCenterX - Plugin.AcrossOffset.Value:0.0} m across and {ship.center.y - Plugin.BayCenterY.Value:0.0} m in height, " +
+                               $"off its target by {ship.center.x - ShipCentering.BayCenterX:0.0} m across and {ship.center.y - Plugin.BayCenterY.Value:0.0} m in height, " +
                                $"rear end {ship.min.z - ShipCentering.BackWallZ:0.0} m from the back wall.");
 
             FindJacks(out var masterJack, out var lightJacks);
@@ -76,7 +75,7 @@ namespace BiggerBays
 
             // A ship posed entirely above a jack does not need that jack moved (a saved ship that was never centered).
             // Master Jack: along +Z until its near face is `clearance` past the ship's far end.
-            if (masterJack != null && ship.min.y >= BoundsOf(masterJack, sBaseShift).max.y)
+            if (masterJack != null && ship.min.y >= BoundsOf(masterJack).max.y)
             {
                 ResetToStock(masterJack);
                 Plugin.Log.LogInfo("[JackMover] ship is above the Master Jack; left where it is.");
@@ -84,14 +83,14 @@ namespace BiggerBays
             else if (masterJack != null)
             {
                 var stock = ResetToStock(masterJack);
-                float dz = Mathf.Max(0f, ship.max.z + clearance - BoundsOf(masterJack, sBaseShift).min.z);
+                float dz = Mathf.Max(0f, ship.max.z + clearance - BoundsOf(masterJack).min.z);
                 var delta = new Vector3(0f, 0f, dz);
                 Move(masterJack, delta, "Master Jack");
                 if (dz > 0f)
                 {
                     var lights = GameObject.Find(MasterJackLightsPath);
                     if (lights != null) { ResetToStock(lights.transform); Move(lights.transform, delta, "Master Jack hex lights"); }
-                    if (Plugin.MovePlayerSpawn.Value) MovePlayer(stock, delta, sPlayersMoved);
+                    MovePlayer(stock, delta);
                 }
             }
 
@@ -184,9 +183,7 @@ namespace BiggerBays
             lightJacks.Sort((a, b) => a.position.z != b.position.z ? a.position.z.CompareTo(b.position.z) : a.position.x.CompareTo(b.position.x));
         }
 
-        // Statically batched renderers keep reporting the box they were built at; `batchedShift` is how far the object has
-        // been moved since (the longer-bay shift), so their boxes can be brought along.
-        static Bounds BoundsOf(Transform root, Vector3 batchedShift = default)
+        static Bounds BoundsOf(Transform root)
         {
             Bounds total = new Bounds(root.position, Vector3.zero);
             bool any = false;
@@ -194,7 +191,6 @@ namespace BiggerBays
             {
                 var b = r.bounds;
                 if (b.size == Vector3.zero) continue;
-                if (r.isPartOfStaticBatch) b.center += batchedShift;
                 if (any) total.Encapsulate(b); else { total = b; any = true; }
             }
             return total;
@@ -215,7 +211,7 @@ namespace BiggerBays
             if (rb != null) rb.position = pos;
         }
 
-        static void Move(Transform t, Vector3 delta, string label, bool remember = true)
+        static void Move(Transform t, Vector3 delta, string label)
         {
             var from = t.position;
             if (delta == Vector3.zero) return;
@@ -229,7 +225,7 @@ namespace BiggerBays
                 batched++;
                 if (!BatchedRedraw.Shift(r, delta)) continue;
                 redrawn++;
-                if (remember) sShifted.Add(new KeyValuePair<MeshRenderer, Vector3>(r, delta));
+                sShifted.Add(new KeyValuePair<MeshRenderer, Vector3>(r, delta));
             }
 
             var to = from + delta;
@@ -253,37 +249,18 @@ namespace BiggerBays
         internal static void OnLevelLoadStart()
         {
             sShifted.RemoveAll(kv => kv.Key == null);
-            sBaseShift = Vector3.zero;
-        }
-
-        // ---- lengthened bay -----------------------------------------------------------------------------------------
-        // When the bay is made longer, the Master Jack, its hex lights and the player's start go out with the far end.
-        // This happens before the ship is measured, so the clearance pass above treats the result as the stock position.
-        static Vector3 sBaseShift;
-
-        internal static void BaseShift(Vector3 delta)
-        {
-            if (delta == Vector3.zero) return;
-            FindJacks(out var masterJack, out _);
-            if (masterJack == null) { Plugin.Log.LogWarning("[JackMover] Master Jack not found; it stays where it is in the longer bay."); return; }
-            var stock = masterJack.position;
-            sBaseShift = delta;
-            Move(masterJack, delta, "Master Jack (longer bay)", remember: false);
-            var lights = GameObject.Find(MasterJackLightsPath);
-            if (lights != null) Move(lights.transform, delta, "Master Jack hex lights (longer bay)", remember: false);
-            if (Plugin.MovePlayerSpawn.Value) MovePlayer(stock, delta, sPlayersBaseMoved);
         }
 
         // ---- player -------------------------------------------------------------------------------------------------
         // The player object is placed in the scene at the Master Jack's door and respawns there; keep it at the door.
-        static void MovePlayer(Vector3 masterJackStock, Vector3 delta, HashSet<int> done)
+        static void MovePlayer(Vector3 masterJackStock, Vector3 delta)
         {
             foreach (var player in Resources.FindObjectsOfTypeAll<Player>())
             {
                 if (player == null || !player.gameObject.scene.IsValid()) continue;
                 var t = player.transform;
                 var from = t.position;
-                if (!done.Add(player.GetInstanceID())) continue;
+                if (!sPlayersMoved.Add(player.GetInstanceID())) continue;
                 if ((from - masterJackStock).magnitude > 30f)
                 {
                     Plugin.Log.LogInfo($"[JackMover] player at {V(from)} is not at the Master Jack's stock position; start point left alone.");

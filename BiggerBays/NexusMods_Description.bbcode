@@ -1,0 +1,86 @@
+[center][size=6][b]Bigger Bays[/b][/size]
+[size=4]A work bay that grows to fit the ship[/size]
+[size=3]A mod for Hardspace: Shipbreaker · v1.0.0[/size][/center]
+
+[line]
+
+Big custom ships do not fit the work bay. They clip the side walls, run past the Master Jack, and sit far from the furnaces and processors.
+
+This mod sizes the bay to the ship. Each time a ship loads it is measured, and the bay is changed only as far as that ship needs. A ship that fits leaves the bay exactly as the game has it, so the tutorial and story play as normal.
+
+
+[size=5][b]What it does[/b][/size]
+[list]
+[*][b]Wider bay.[/b] If the ship is close to the side walls, both sides of the bay move apart just far enough to leave room beside it. The back wall and the barge widen to match.
+[*][b]Longer bay.[/b] If the ship is long, the bay grows by 76 meters. Each side gets a second furnace and processor, so there is always one close to where you are cutting. The barge grows with it.
+[*][b]Brighter bay.[/b] The bay's spotlights can be given more range and brightness, and are raised further when the bay is widened so the middle stays lit.
+[*][b]Custom ships are placed for you.[/b] A custom ship posed at an angle is turned square to the bay, centered, and set a fixed distance from the back wall.
+[*][b]Jacks move clear.[/b] For a custom ship, the Master Jack is pushed just past the ship's far end, with its kiosk, hab door and your start point. The five light jacks are raised above the ship.
+[/list]
+
+The second furnace and processor work like the originals: salvage thrown into them is paid or scrapped the same way.
+
+
+[size=5][b]Which ships get what[/b][/size]
+[list]
+[*][b]Every ship, the game's own included:[/b] the bay is widened or lengthened if the ship needs it, and the spotlight settings apply.
+[*][b]Custom ships only:[/b] straightening, centering and moving the jacks. The game's own ships are never moved.
+[/list]
+
+
+[size=5][b]Saved ships[/b][/size]
+The bay a ship was given is remembered, so loading a save gives you the same bay again, however much of the ship is left.
+
+
+[size=5][b]Settings[/b][/size]
+Open the game's Options menu and pick the [b]BAYS[/b] tab. It works from the title screen and the pause menu. Light settings change as you move the sliders; everything else applies to the next ship you load.
+
+[b]Bay[/b]
+[list]
+[*][b]Bigger Bay[/b] (default on): resize the bay for ships that need it.
+[*][b]Side Clearance Meters[/b] (default 20): the room kept between the ship and each side wall. Raise it for a wider bay, lower it for a tighter one.
+[*][b]Length Trigger Meters[/b] (default 25): how far a ship has to reach past the stock processor before the bay is made longer. Lower it to lengthen the bay for shorter ships.
+[/list]
+
+[b]Lights[/b]
+[list]
+[*][b]Bay Lights[/b] (default on): adjust the bay's spotlights.
+[*][b]Range Multiplier[/b] (default 1): how far the spotlights reach.
+[*][b]Brightness Multiplier[/b] (default 1): how bright they are.
+[/list]
+
+[b]Custom Ships[/b]
+[list]
+[*][b]Center In Bay[/b] (default on): center custom ships and move the jacks clear of them.
+[*][b]Straighten[/b] (default on): turn custom ships square to the bay first.
+[*][b]Back Wall Gap Meters[/b] (default 15): the gap between the back wall and the ship.
+[*][b]Height Offset Meters[/b] (default 0): sit ships higher or lower in the bay.
+[*][b]Jack Clearance Meters[/b] (default 5): the gap kept between the ship and the jacks.
+[/list]
+
+The same settings are in [font=Courier New]BepInEx\config\me.kerballone.BiggerBays.cfg[/font], which is read again whenever you save it. Three settings are only in the file:
+[list]
+[*][b]StraightenRatio[/b] (default 1.5): lower it toward 1.1 if a ship that is clearly crooked is not being straightened.
+[*][b]HelmetRangeMultiplier[/b] and [b]HelmetIntensityMultiplier[/b] (default 1): the range and brightness of your helmet light.
+[/list]
+
+
+[size=5][b]Good to know[/b][/size]
+[list]
+[*]The bay gets one extra furnace and processor per side, however long the ship is.
+[*]Made for the [url=https://www.nexusmods.com/hardspaceshipbreaker/mods/41]MCRN Corvette[/url] (the Tachi, the Rocinante and the Beratnas Gas Hauler), and works with any ship.
+[/list]
+
+
+[size=5][b]Installation[/b][/size]
+[list=1]
+[*]Download the latest 64-bit (x64) version of BepInEx 5 (not 6 or above) from [url=https://github.com/BepInEx/BepInEx/releases]github.com/BepInEx/BepInEx/releases[/url]
+[*]Extract it into the same folder as Shipbreaker.exe
+[*]Run the game, load the main menu and quit
+[*]Extract the mod into [font=Courier New]BepInEx\plugins\[/font], so you end up with [font=Courier New]BepInEx\plugins\BiggerBays\me.kerballone.BiggerBays.dll[/font]
+[/list]
+
+[line]
+
+[size=4]Support[/size]
+Questions, bugs, or feedback? Join the Shipbreaker Discord: [url=https://discord.gg/shipbreakergame]discord.gg/shipbreakergame[/url]

@@ -66,6 +66,14 @@ namespace BiggerBays
         // A stretched piece overlaps the piece it was copied from, face on face; this much apart they do not flicker.
         const float Nudge = 0.04f;
         internal const float StockHalfWidth = 39.8f;
+        // The furthest each side of the bay is ever moved out.
+        const float MaxExtraWidth = 40f;
+        // How much longer the bay is made: the length of the furnace and processor section, so a copy of it fits exactly.
+        const float ExtraLength = 76f;
+        // The position along the bay where the furnace and processor section ends and the dry dock begins.
+        const float Cut = 50f;
+        // Pieces whose middle lies within this distance of the bay's center line stay put when the bay is widened.
+        const float MiddleStrip = 10f;
 
         static readonly string[] Roots =
         {
@@ -104,6 +112,10 @@ namespace BiggerBays
             "FX_Salvagetest_Light_01/Anim_Furnace_Processor_Root",
             "FX_Salvagetest_Light_01/AnimSalvageDoorIntroSequence/Anim_SalvageMouthDoor_Root_01",
         };
+
+        // The visible middle of the back wall: one panel with the three doors, as wide as the gap between the two recesses'
+        // side walls. When the arms move out it is stretched sideways to keep filling that gap.
+        const string BackWallPanel = "Work Bays/PRF_HexStation_Composite/PRF_HexStation_Bay/BackBoard/SM_HexStation_Bay_Backboard_ThreeDoor";
 
         // Left exactly as the game has them: they belong to the barge and the Master Jack, which are not part of an arm,
         // or are switched off.
@@ -188,8 +200,8 @@ namespace BiggerBays
             if (workBays.transform.Find(MarkerName) != null) return;            // this bay has been done already
 
             float cx = ShipCentering.BayCenterX;
-            float strip = Mathf.Max(1f, Plugin.MiddleStrip.Value);
-            float cut = Plugin.LengthCut.Value;
+            float strip = MiddleStrip;
+            float cut = Cut;
 
             // The bay is only made as big as the ship in it needs.
             //   width    each arm moves out just far enough to leave SideClearanceMeters between the ship and the side wall
@@ -198,9 +210,9 @@ namespace BiggerBays
             if (!JackMover.MeasureShip(out var ship, out _)) return;            // no ship in this level
             float reach = Mathf.Max(ship.max.x - cx, cx - ship.min.x);
             float gap = StockHalfWidth - reach;
-            float W = Mathf.Clamp(Plugin.SideClearance.Value - gap, 0f, Mathf.Max(0f, Plugin.MaxExtraWidth.Value));
+            float W = Mathf.Clamp(Plugin.SideClearance.Value - gap, 0f, MaxExtraWidth);
             float past = ship.max.z - cut;
-            float L = past > Plugin.LengthTrigger.Value ? Mathf.Clamp(Plugin.ExtraLength.Value, 0f, 300f) : 0f;
+            float L = past > Plugin.LengthTrigger.Value ? ExtraLength : 0f;
             // A ship loaded from a save gets the bay it had when it was new (see BayMemory); a new ship's is written down.
             bool recalled = BayMemory.TryRecall(out float savedW, out float savedL);
             if (recalled)
@@ -210,7 +222,6 @@ namespace BiggerBays
             }
             else BayMemory.Remember(W, L);
             if (W <= 0f && L <= 0f) return;
-            bool secondBays = Plugin.SecondSalvageBays.Value;
             var started = DateTime.UtcNow;
 
             // 1. Every transform of the station, parents before children, with where it is and what it holds.
@@ -232,7 +243,7 @@ namespace BiggerBays
                 else unitRoots[t] = i;
             }
             var wholeRoots = new List<Transform>();
-            if (L > 0f && secondBays)
+            if (L > 0f)
                 foreach (var path in WholeClones)
                 {
                     var found = ResolveAll(rootObjects, path);
@@ -289,13 +300,13 @@ namespace BiggerBays
                     bool recess = n.Unit == MouthUnitA || n.Unit == MouthUnitB;
                     n.Spans = !recess && n.Box.max.z > cut + DryDockLead;
                     if (!recess && n.Box.min.z >= cut - (n.Spans ? DryDockLead : Tol)) { n.Z = Along.Move; n.Spans = false; }
-                    else if (CopyRoots.Contains(n.Root) && (secondBays || n.Spans) && !LeftOut(n, cx)) n.Z = Along.Copy;
+                    else if (CopyRoots.Contains(n.Root) && !LeftOut(n, cx)) n.Z = Along.Copy;
                 }
             }
 
             // Where each side's copied section goes.
             var sections = new Dictionary<int, Section>();
-            if (L > 0f && secondBays)
+            if (L > 0f)
                 foreach (int side in new[] { 1, -1 }) sections[side] = MakeSection(side, W, L, rootObjects, byT);
 
             // 4. Whole-set copies, made while everything still stands where the game put it. A set that has pieces on both
@@ -401,6 +412,12 @@ namespace BiggerBays
                 }
             }
 
+            if (W > 0f)
+            {
+                try { StretchBackWall(Resolve(rootObjects, BackWallPanel), W); }
+                catch (Exception ex) { Plugin.Log.LogError("[Bay] could not widen the back wall's door panel: " + ex); }
+            }
+
             // 7. Anything under an Animator may have its position written back by an animation; those are watched. Copies
             //    follow their originals from where those now stand.
             foreach (var n in nodes)
@@ -412,12 +429,6 @@ namespace BiggerBays
             try { ExtendPlayableArea(W, L, cx, strip, cut); }
             catch (Exception ex) { Plugin.Log.LogError("[Bay] could not extend the playable area: " + ex); }
 
-            if (L > 0f && Plugin.MoveMasterJack.Value)
-            {
-                try { JackMover.BaseShift(new Vector3(0f, 0f, L)); }
-                catch (Exception ex) { Plugin.Log.LogError("[Bay] could not move the Master Jack out with the longer bay: " + ex); }
-            }
-
             var marker = new GameObject(MarkerName);
             marker.transform.SetParent(workBays.transform, false);
             AppliedWidth = W;
@@ -425,7 +436,7 @@ namespace BiggerBays
 
             Plugin.Log.LogInfo($"[Bay] ship reaches {reach:0.0} m from the bay's center line and {past:0.0} m past the processor section" +
                                $"{(recalled ? " (loaded from a save: the bay recorded for it is used)" : "")}: each arm moved out {W:0.0} m, bay made {L:0.0} m longer" +
-                               $"{(L > 0f && secondBays ? " with a second furnace and processor on each side" : "")}" +
+                               $"{(L > 0f ? " with a second furnace and processor on each side" : "")}" +
                                $"{(BatchedRedraw.Failures > 0 ? $"; {BatchedRedraw.Failures} mesh(es) could not be matched and stay where they were" : "")}.");
         }
 
@@ -444,6 +455,37 @@ namespace BiggerBays
             return inner < WedgeReach;
         }
 
+        // Widens the back wall's door panel by `W` on each side, about its own middle. Its collider is on the same object
+        // and widens with it; the wall behind it is already solid across the whole station.
+        static void StretchBackWall(Transform? panel, float W)
+        {
+            if (panel == null) { Plugin.Log.LogWarning("[Bay] the back wall's door panel was not found; there is a gap on each side of it."); return; }
+            var box = BoxOf(panel, out var batched);
+            float half = box.size.x * 0.5f;
+            if (half < 1f) return;
+            float k = (half + W) / half;
+            if (batched != null)
+            {
+                var c = box.center;
+                var m = Matrix4x4.Translate(c) * Matrix4x4.Scale(new Vector3(k, 1f, 1f)) * Matrix4x4.Translate(-c);
+                BatchedRedraw.Set(batched, new[] { m });
+                return;
+            }
+            // Scale along whichever of the panel's own axes lies across the bay.
+            int axis = 0; float best = -1f;
+            for (int a = 0; a < 3; a++)
+            {
+                var dir = panel.rotation * (a == 0 ? Vector3.right : a == 1 ? Vector3.up : Vector3.forward);
+                if (Mathf.Abs(dir.x) > best) { best = Mathf.Abs(dir.x); axis = a; }
+            }
+            var s = panel.localScale;
+            s[axis] *= k;
+            panel.localScale = s;
+            // Keep the middle of the panel where it was, in case it is not built around its own origin.
+            var after = BoxOf(panel, out _);
+            panel.position += new Vector3(box.center.x - after.center.x, 0f, 0f);
+        }
+
         // A stretched piece's copy: straight along, and a hair off the original so their faces do not flicker.
         static Vector3 Stretched(Node n, float W, float L) => new Vector3(n.Side * (W + Nudge), Nudge, L);
 
@@ -452,7 +494,7 @@ namespace BiggerBays
         // the ship. The angle is the one between the bay's axis and the line from the furnace to the processor.
         static Section MakeSection(int side, float W, float L, Dictionary<string, Transform> roots, Dictionary<Transform, Node> byT)
         {
-            var sec = new Section { Offset = new Vector3(side * (W + Plugin.SecondBaysAcross.Value), 0f, L) };
+            var sec = new Section { Offset = new Vector3(side * W, 0f, L) };
             Transform? furnace = null, processor = null;
             foreach (var path in SalvageSets)
             {
@@ -461,15 +503,12 @@ namespace BiggerBays
                 furnace = set.Find("Trigger_Furnace");
                 processor = set.Find("Trigger_Processor");
             }
-            float degrees = -side * Plugin.SecondBaysTurn.Value;
+            float degrees = 0f;
             if (furnace != null && processor != null)
             {
                 sec.Pivot = processor.position;
-                if (Plugin.StraightenSecondBays.Value)
-                {
-                    var line = processor.position - furnace.position;
-                    degrees -= Mathf.Atan2(line.x, line.z) * Mathf.Rad2Deg;
-                }
+                var line = processor.position - furnace.position;
+                degrees = -Mathf.Atan2(line.x, line.z) * Mathf.Rad2Deg;
             }
             else Plugin.Log.LogWarning($"[Bay] the {(side > 0 ? "left" : "right")} side's furnace and processor triggers were not found; its copied section is not turned.");
             sec.Rot = Quaternion.AngleAxis(degrees, Vector3.up);

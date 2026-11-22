@@ -1,0 +1,14 @@
+Changelog for the BiggerBays page on NexusMods. One block per version: the first line is the version to
+enter, the lines under it are the changelog lines.
+
+
+1.0.0
+First release.
+The work bay is sized to each ship as it loads; a ship that fits leaves the bay stock.
+Wide ships: both sides of the bay move apart to keep a set gap beside the ship, and the back wall and barge widen to match.
+Long ships: the bay grows by 76 meters, with a second furnace and processor on each side and a longer barge.
+Bay spotlights have range and brightness multipliers, and are raised further when the bay is widened.
+Helmet light range and brightness multipliers, in the settings file.
+Custom ships are straightened and centered, and the Master Jack and light jacks are moved clear of them.
+The bay a ship was given is remembered, so a loaded save gets the same bay.
+BAYS tab in the game's Options menu for every setting.

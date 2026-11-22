@@ -7,8 +7,8 @@ namespace BiggerBays
     // The bay's spotlights, taken over from the BayLights mod's "bay" group and made adjustable while the game runs.
     //
     // Which lights: Spot lights that are not part of a ship (no ModuleDefinition above them) and have a narrow cone or a
-    // default name ("Spot Light...", "Point Light..."). Every other light is left alone; the helmet light, ship lights
-    // and fog stay with BayLights.
+    // default name ("Spot Light...", "Point Light..."), and, with its own two multipliers, the helmet light. Every other
+    // light is left alone; ship lights and fog stay with BayLights.
     //
     // Each light's own range, intensity and cone are remembered the first time it is seen, and what is set is always
     // worked out from those, so settings can be changed any number of times without the changes piling up.
@@ -21,8 +21,13 @@ namespace BiggerBays
         {
             public Light Light = null!;
             public float Range, Intensity, Angle;
-            public bool InShip, Changed;
+            public bool InShip, Helmet, Changed;
         }
+
+        const string HelmetLightName = "Helmet Spotlight";
+
+        // A spotlight with a cone no wider than this (or a default name) and not part of a ship is a bay spotlight.
+        const float MaxAngle = 60f;
 
         static readonly Dictionary<int, Entry> sSeen = new Dictionary<int, Entry>();
         static bool sActive;
@@ -66,14 +71,15 @@ namespace BiggerBays
                 foreach (var root in scene.GetRootGameObjects())
                     foreach (var light in root.GetComponentsInChildren<Light>(true))
                     {
-                        if (light == null || light.type != LightType.Spot || light.name == "Helmet Spotlight") continue;
+                        if (light == null || light.type != LightType.Spot) continue;
                         int id = light.GetInstanceID();
                         if (sSeen.ContainsKey(id)) continue;
                         sSeen[id] = new Entry
                         {
                             Light = light, Range = light.range, Intensity = light.intensity, Angle = light.spotAngle,
-                            InShip = IsInsideShip(light.transform),
+                            Helmet = light.name == HelmetLightName,
                         };
+                        if (!sSeen[id].Helmet) sSeen[id].InShip = IsInsideShip(light.transform);
                         added++;
                     }
             }
@@ -96,15 +102,14 @@ namespace BiggerBays
 
         static bool IsBay(Entry e)
         {
-            if (e.InShip) return false;
+            if (e.InShip || e.Helmet) return false;
             var name = e.Light.name;
-            return e.Angle <= Plugin.LightMaxAngle.Value
+            return e.Angle <= MaxAngle
                    || name.StartsWith("Spot Light", System.StringComparison.OrdinalIgnoreCase)
                    || name.StartsWith("Point Light", System.StringComparison.OrdinalIgnoreCase);
         }
 
-        internal static float CoverageFactor =>
-            Plugin.LightKeepCoverage.Value ? (BayReshaper.StockHalfWidth + BayReshaper.AppliedWidth) / BayReshaper.StockHalfWidth : 1f;
+        internal static float CoverageFactor => (BayReshaper.StockHalfWidth + BayReshaper.AppliedWidth) / BayReshaper.StockHalfWidth;
 
         static void Apply(bool log)
         {
@@ -112,18 +117,28 @@ namespace BiggerBays
             float k = CoverageFactor;
             float range = Mathf.Max(0f, Plugin.LightRange.Value) * k;
             float intensity = Mathf.Max(0f, Plugin.LightIntensity.Value) * k * k;
-            float cone = Plugin.LightConeAngle.Value;
-            bool setCone = cone >= 1f && cone <= 179f;
 
             int changed = 0, restored = 0;
             foreach (var e in sSeen.Values)
             {
                 if (e.Light == null) continue;
+                if (e.Helmet)
+                {
+                    // The helmet light has its own two multipliers (settings file only) and is not counted below.
+                    float hr = Mathf.Max(0f, Plugin.HelmetRange.Value), hi = Mathf.Max(0f, Plugin.HelmetIntensity.Value);
+                    bool helmetOn = Plugin.Enabled.Value && (hr != 1f || hi != 1f);
+                    if (helmetOn || e.Changed)
+                    {
+                        e.Light.range = e.Range * (helmetOn ? hr : 1f);
+                        e.Light.intensity = e.Intensity * (helmetOn ? hi : 1f);
+                        e.Changed = helmetOn;
+                    }
+                    continue;
+                }
                 if (on && IsBay(e))
                 {
                     e.Light.range = e.Range * range;
                     e.Light.intensity = e.Intensity * intensity;
-                    e.Light.spotAngle = setCone ? cone : e.Angle;
                     e.Changed = true;
                     changed++;
                 }
@@ -131,14 +146,13 @@ namespace BiggerBays
                 {
                     e.Light.range = e.Range;
                     e.Light.intensity = e.Intensity;
-                    e.Light.spotAngle = e.Angle;
                     e.Changed = false;
                     restored++;
                 }
             }
-            if (log)
+            if (log && (changed > 0 || restored > 0))
                 Plugin.Log.LogInfo($"[Lights] {changed} bay spotlight(s) set to range x{range:0.00}, intensity x{intensity:0.00}" +
-                                   $"{(setCone ? $", cone {cone:0} degrees" : "")} (coverage factor {k:0.00} for {BayReshaper.AppliedWidth:0.0} m of extra width)" +
+                                   $" (coverage factor {k:0.00} for {BayReshaper.AppliedWidth:0.0} m of extra width)" +
                                    $"{(restored > 0 ? $"; {restored} put back to the game's values" : "")}.");
         }
     }

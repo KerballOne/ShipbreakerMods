@@ -209,7 +209,7 @@ namespace BiggerBays
 
         // The shift that puts a box in the middle of the bay, its rear end the set distance in front of the back wall.
         static Vector3 DeltaFor(Bounds box) =>
-            new Vector3(BayCenterX + Plugin.AcrossOffset.Value - box.center.x,
+            new Vector3(BayCenterX - box.center.x,
                         Plugin.BayCenterY.Value - box.center.y,
                         BackWallZ + Plugin.BackWallGap.Value - box.min.z);
 

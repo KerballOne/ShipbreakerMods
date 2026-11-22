@@ -3,7 +3,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>me.kerballone.BiggerBays</AssemblyName>
     <RootNamespace>BiggerBays</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>1.0.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <GameDir>C:\Program Files (x86)\Steam\steamapps\common\Hardspace Shipbreaker</GameDir>
@@ -33,6 +33,27 @@
                Private="false" />
     <Reference Include="UnityEngine.VFXModule"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.VFXModule.dll"
+               Private="false" />
+    <Reference Include="Carbon.Localization.Core"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Carbon.Localization.Core.dll"
+               Private="false" />
+    <Reference Include="Doozy.Engine"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Doozy.Engine.dll"
+               Private="false" />
+    <Reference Include="InControl"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\InControl.dll"
+               Private="false" />
+    <Reference Include="Unity.TextMeshPro"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.TextMeshPro.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.UI"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UI.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.UIModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.UIModule.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.TextRenderingModule.dll"
                Private="false" />
     <Reference Include="UnityEngine.PhysicsModule"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.PhysicsModule.dll"
