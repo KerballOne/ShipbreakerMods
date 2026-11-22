@@ -4,6 +4,7 @@ Changes to the Hardspace: Shipbreaker work bay and to ships, for large custom sh
 
 - **Brings large ships down into the bay.** Large custom ships are posed to spawn above the bay's jacks, or at an angle, so they fit and can be played without this mod. With it, each one is straightened, placed in the middle of the bay, and the jacks are moved out of its way.
 - **Big rooms take longer to pressurize.** The game fills and empties every room in the same few seconds. With this mod, a room takes as long as its ship's author set it to.
+- **Heavy parts come free gently.** On custom ships, large parts that were thrown off at speed when cut or yanked free are eased apart instead.
 
 ## Centring the ship
 
@@ -48,6 +49,18 @@ Every room in a ship has a pressurization time and a decompression time set by i
 - Rooms connected by open doors change pressure together and take the longest time among them.
 - A hull breach still vents at the game's normal speed.
 
+## Gentle separation
+
+Every part collides as the convex shape around its mesh. On custom ships built from large, hollow or curved hull pieces, that shape reaches into neighbouring parts. While the parts are joined this does not matter. The moment one is cut or yanked free, the game pushes the overlapping parts apart at up to 10 metres per second, which throws a part of several tonnes faster than a tether can hold.
+
+With this on, that push is limited by the part's mass:
+
+- parts of 5 tonnes or more are eased apart at 0.3 metres per second;
+- parts up to 100 kg keep the game's own speed, so small pieces still pop free;
+- parts in between fall on a smooth slide (about 2.4 m/s at 500 kg, 1.3 m/s at 1 tonne).
+
+Only the push between overlapping parts changes. The grapple, tethers, explosions and decompression move parts as before. It applies while a custom ship is in the bay; the game's own ships are left alone.
+
 ## Settings file
 
 Generated on first run at:
@@ -75,6 +88,9 @@ The file is read again each time a ship starts loading, so you can edit it while
 
 **[Rooms]**
 - **UsePressureTimes** (default true): make each room's own pressurization and decompression time count.
+
+**[Parts]**
+- **GentleSeparation** (default true): on custom ships, limit how fast overlapping parts are pushed apart when they separate, by mass.
 
 ## For ship authors
 

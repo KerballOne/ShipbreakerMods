@@ -11,6 +11,7 @@ namespace TheExpanse
     //   ShipCentering   places each custom ship in the middle of the bay, a set distance from the back wall (and can straighten it)
     //   JackMover       with centering on, moves the Master Jack and the five light jacks clear of the ship
     //   RoomPressure    makes each room's own pressurization / decompression time count, so big rooms take longer
+    //   PartSeparation  on custom ships, heavy parts that overlap their neighbours come free gently instead of being thrown
     // (The Mars planet, loading screen and menu pictures that started here now live in the Themes mod.)
     [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
     public class Plugin : BaseUnityPlugin
@@ -28,6 +29,7 @@ namespace TheExpanse
         internal static ConfigEntry<float> Clearance = null!;
         internal static ConfigEntry<bool> MovePlayerSpawn = null!;
         internal static ConfigEntry<bool> RoomPressureTimes = null!;
+        internal static ConfigEntry<bool> GentleSeparation = null!;
 
         private void Awake()
         {
@@ -73,6 +75,13 @@ namespace TheExpanse
                 "rooms change together and take the longest time among them. Rooms at or below the game's own time, and hull breaches, " +
                 "behave as stock.");
 
+            GentleSeparation = Config.Bind("Parts", "GentleSeparation", true,
+                "On custom ships, stop heavy parts being thrown when they are cut or yanked free. Parts collide as the convex shape " +
+                "around their mesh, so on many custom ships neighbouring parts overlap, and the game pushes overlapping parts apart at " +
+                "up to 10 m/s the moment they separate. With this on, that push is limited by mass: parts of 5 tonnes or more are " +
+                "eased apart at 0.3 m/s, parts up to 100 kg keep the game's speed, and parts in between fall on a smooth slide. The " +
+                "grapple, tethers, explosions and decompression are not changed. The game's own ships are left alone.");
+
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             ShipCentering.Install(harmony);
             RoomPressure.Install(harmony);
@@ -87,6 +96,8 @@ namespace TheExpanse
             JackMover.DrawMoved();
             try { RoomPressure.Tick(); }
             catch (Exception ex) { Log.LogError("[RoomPressure] " + ex); }
+            try { PartSeparation.Tick(); }
+            catch (Exception ex) { Log.LogError("[Parts] " + ex); }
         }
 
         private static bool sLevelLoading;
@@ -97,6 +108,7 @@ namespace TheExpanse
             if (ev.State == LevelLoadEvent.LoadState.Start)
             {
                 ShipCentering.Centred = false;
+                PartSeparation.CustomShip = false;
                 // Pick up edits made to the settings file while the game was running, before the next ship is placed.
                 try { Instance.Config.Reload(); }
                 catch (Exception ex) { Log.LogWarning("Could not re-read the settings file; keeping the current settings: " + ex.Message); }

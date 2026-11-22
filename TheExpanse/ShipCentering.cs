@@ -68,6 +68,12 @@ namespace TheExpanse
         static bool Prefix(ShipPreview shipPreview, AssetReferenceJointabilityAsset jointingInfoAssetRef, RigidTransform spawnTransform,
                            ShipRandomizationHelper.SpawnModuleGroupCallback onComplete, Action<float> loadingProgressCallback, ref Task<GameObject> __result)
         {
+            if (!sInside && shipPreview?.ModuleGroup != null)
+            {
+                // Noted for PartSeparation whether or not the ship is centred.
+                try { PartSeparation.CustomShip = IsCustom(shipPreview); }
+                catch (Exception ex) { PartSeparation.CustomShip = false; Plugin.Log.LogWarning("[Parts] could not tell whether this ship is a custom one: " + ex.Message); }
+            }
             if (sInside || !Plugin.Enabled.Value || !Plugin.CenterShip.Value || shipPreview?.ModuleGroup == null) return true;
             __result = SpawnCentered(shipPreview, jointingInfoAssetRef, spawnTransform, onComplete, loadingProgressCallback);
             return false;

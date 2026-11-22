@@ -1,12 +1,12 @@
 [center][size=6][b]TheExpanse[/b][/size]
 [size=4]Room in the bay for oversized custom ships[/size]
-[size=3]A mod for Hardspace: Shipbreaker · v0.4.0[/size][/center]
+[size=3]A mod for Hardspace: Shipbreaker · v0.5.0[/size][/center]
 
 [line]
 
 Some custom ships are too big for the work bay. To fit, they are posed to spawn above the bay's jacks, or at an angle. That works, but the ship hangs crooked or out of reach of the jacks.
 
-This mod corrects it. Each custom ship is straightened, placed in the middle of the bay, and the jacks are moved out of its way. It also makes big rooms take longer to pressurize.
+This mod corrects it. Each custom ship is straightened, placed in the middle of the bay, and the jacks are moved out of its way. It also makes big rooms take longer to pressurize, and stops heavy parts being thrown when they come free.
 
 It was made for the [url=https://www.nexusmods.com/hardspaceshipbreaker/mods/41]MCRN Corvette[/url] (the Tachi, the Rocinante and the Beratnas Gas Hauler), and works with any custom ship. The game's own ships are never touched, so the tutorial and story play as normal.
 
@@ -17,6 +17,7 @@ It was made for the [url=https://www.nexusmods.com/hardspaceshipbreaker/mods/41]
 [*][b]Centres the ship.[/b] It is placed midway between the side walls, centred on the bay's height, with its rear end 10 metres in front of the back wall.
 [*][b]Moves the jacks.[/b] The Master Jack is pushed along the bay until it is clear of the ship's far end. Its kiosk, its hab door and your start and respawn point go with it. The five light jacks are raised together until they clear the ship's top.
 [*][b]Big rooms take longer to pressurize.[/b] The game fills and empties every room in about 5 seconds. With this mod, a room takes as long as the ship's author set it to.
+[*][b]Heavy parts come free gently.[/b] On custom ships, large parts that were thrown off at speed when cut or yanked free are eased apart instead.
 [/list]
 
 Everything is back in its normal place for the next ship.
@@ -43,6 +44,18 @@ A ship loaded from a save goes back where it was when you saved it. If you saved
 [*]Rooms connected by open doors change pressure together and take the longest time among them.
 [*]A hull breach still vents at the game's normal speed.
 [/list]
+
+
+[size=5][b]Gentle separation[/b][/size]
+Every part collides as the convex shape around its mesh. On custom ships built from large, hollow or curved hull pieces, that shape reaches into neighbouring parts. The moment such a part is cut or yanked free, the game pushes the overlapping parts apart at up to 10 metres per second, which throws a part of several tonnes faster than a tether can hold.
+
+With this mod, that push is limited by the part's mass:
+[list]
+[*]Parts of 5 tonnes or more are eased apart at 0.3 metres per second.
+[*]Parts up to 100 kg keep the game's own speed, so small pieces still pop free.
+[*]Parts in between fall on a smooth slide: about 2.4 m/s at 500 kg and 1.3 m/s at 1 tonne.
+[/list]
+Only the push between overlapping parts changes. The grapple, tethers, explosions and decompression move parts as before. It applies while a custom ship is in the bay.
 
 [line]
 
@@ -77,6 +90,7 @@ It is read again each time a ship starts loading, so you can edit it while the g
 [*][b]ClearanceMeters[/b] (default 5): the gap kept between the ship and the jacks.
 [*][b]MovePlayerSpawnWithMasterJack[/b] (default true): move your start and respawn point along with the Master Jack.
 [*][b]UsePressureTimes[/b] (default true): make each room's own pressurization and decompression time count.
+[*][b]GentleSeparation[/b] (default true): on custom ships, limit by mass how fast overlapping parts are pushed apart when they separate.
 [/list]
 
 

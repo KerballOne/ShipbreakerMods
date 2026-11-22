@@ -2,6 +2,11 @@ Changelog for the TheExpanse page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+0.5.0
+New GentleSeparation setting, on by default. On custom ships, heavy parts are no longer thrown off at speed when cut or yanked free.
+The push between overlapping parts is limited by mass: 0.3 m/s for parts of 5 tonnes or more, the game's own speed for parts up to 100 kg.
+The grapple, tethers, explosions and decompression are unchanged, and so are the game's own ships.
+
 0.4.0
 New StraightenShip setting, on by default. A custom ship posed at an angle is turned square to the bay before it is centred.
 The ship's length comes from the tightest box around it, and its roll from its mirror symmetry where width and height are too alike.
