@@ -9,6 +9,7 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
+using UnityEngine.AddressableAssets.ResourceLocators;
 using UnityEngine.ResourceManagement.AsyncOperations;
 
 namespace TheExpanse
@@ -32,6 +33,9 @@ namespace TheExpanse
     //   across (X)   centred between the two side walls
     //   up (Y)       centred on the bay's height
     //   along (Z)    the end nearest the back wall sits a set distance in front of it
+    //
+    // Which ships: custom ones only (their modules come from a mod's bundle). The game's own ships are left exactly where
+    // the game puts them.
     //
     // Restoring a saved ship goes through the same spawn call: the saved parts go back to their saved positions, and
     // whatever is rebuilt is placed from the spawn point. So a restore must use the point the ship was saved with. That
@@ -93,6 +97,11 @@ namespace TheExpanse
         // The spawn point that puts the ship's estimated box where the settings ask for it.
         static async Task<RigidTransform> Place(ShipPreview shipPreview, RigidTransform spawn, List<AsyncOperationHandle<GameObject>> held)
         {
+            // Only custom ships are placed. The game's own ships stay exactly where the game puts them, so nothing scripted
+            // around them (tutorial, story events) is disturbed.
+            if (!IsCustom(shipPreview)) return spawn;       // a stock ship: nothing to do, nothing to log
+            Centred = true;
+
             var root = Matrix4x4.TRS(spawn.pos, spawn.rot, Vector3.one);
             Bounds box = default;
             bool any = false;
@@ -150,6 +159,33 @@ namespace TheExpanse
                 Plugin.Log.LogInfo($"[Centering] '{shipPreview.ShipName}': {modules} module(s), {size}; moved by ({delta.x:0.0}, {delta.y:0.0}, {delta.z:0.0}) to centre it.");
 
             return new RigidTransform(spawn.rot, spawn.pos + (float3)delta);
+        }
+
+        // True once the ship now loading has been taken on by this class; the jacks are only moved for those ships.
+        internal static bool Centred;
+
+        // A custom ship is one whose modules come out of a mod's bundle, i.e. a bundle file under BepInEx\plugins.
+        static bool IsCustom(ShipPreview shipPreview)
+        {
+            string plugins = BepInEx.Paths.PluginPath.Replace('/', '\\').TrimEnd('\\');
+            foreach (var module in shipPreview.ModuleGroup.AllModules)
+            {
+                string guid = module?.ModulePrefabRef?.AssetGUID ?? "";
+                if (guid.Length == 0) continue;
+                foreach (var locator in Addressables.ResourceLocators)
+                {
+                    // Real catalogs only: other mods' own locators can be slow to answer (see FreePlayPlus's).
+                    if (!(locator is ResourceLocationMap) || !locator.Locate(guid, null, out var locations) || locations == null) continue;
+                    foreach (var location in locations)
+                    {
+                        if (!location.HasDependencies) continue;
+                        foreach (var bundle in location.Dependencies)
+                            if (!string.IsNullOrEmpty(bundle.InternalId) &&
+                                bundle.InternalId.Replace('/', '\\').StartsWith(plugins, StringComparison.OrdinalIgnoreCase)) return true;
+                    }
+                }
+            }
+            return false;
         }
 
         // The shift read off the saved parts is rough: a save holds more than the parts the estimate counts, and parts

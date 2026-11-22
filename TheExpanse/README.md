@@ -7,7 +7,9 @@ Changes to the Hardspace: Shipbreaker work bay and to ships, for large custom sh
 
 ## Centring the ship
 
-This is off by default. Turn on **CenterShip** in the settings and each ship is placed for you, wherever its author posed it:
+This is on by default and applies to custom ships, the ones that come from a mod. The game's own ships are never moved, and the jacks are never moved for them, so the tutorial and story play as normal.
+
+Each custom ship is placed for you, wherever its author posed it:
 
 - centred across the bay, between the two side walls;
 - centred on the bay's height;
@@ -20,7 +22,7 @@ The jacks are then moved clear of it:
 
 A jack that already has enough room stays where it is, and so does one the whole ship is posed above. Everything is back in its normal place for the next ship.
 
-With the setting off, ships spawn where their author posed them and the jacks are never moved.
+With the setting off, every ship spawns where its author posed it and the jacks are never moved.
 
 ### Saved ships
 
@@ -48,7 +50,7 @@ The file is read again each time a ship starts loading, so you can edit it while
 - **Enabled** (default true): turns the whole mod on or off.
 
 **[Bay]**
-- **CenterShip** (default false): place each ship in the middle of the bay and move the jacks to suit.
+- **CenterShip** (default true): place custom ships in the middle of the bay and move the jacks to suit. The game's own ships are left alone.
 - **BackWallGapMeters** (default 10): the gap between the back wall and the end of the ship nearest to it.
 - **AcrossOffsetMeters** (default 0): how far to one side of the bay's middle ships are placed. 0 centres them between the side walls.
 - **BayCenterHeight** (default 0): the height ships are centred on. Raise or lower it to sit ships higher or lower in the bay.

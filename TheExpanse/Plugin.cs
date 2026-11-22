@@ -34,13 +34,13 @@ namespace TheExpanse
 
             Enabled = Config.Bind("General", "Enabled", true, "Enable or disable TheExpanse.");
 
-            CenterShip = Config.Bind("Bay", "CenterShip", false,
-                "Place each ship in the middle of the bay and move the jacks to suit. Large custom ships are posed to spawn above the jacks " +
-                "so they can be played without this mod; with this on they are brought down into the bay instead. The ship's size is " +
-                "worked out before it spawns; it is then centred across the bay and on the bay's height, with its rear end " +
+            CenterShip = Config.Bind("Bay", "CenterShip", true,
+                "Place custom ships in the middle of the bay and move the jacks to suit. Large custom ships are posed to spawn above the " +
+                "jacks so they can be played without this mod; with this on they are brought down into the bay instead. The ship's size " +
+                "is worked out before it spawns; it is then centred across the bay and on BayCenterHeight, with its rear end " +
                 "BackWallGapMeters in front of the back wall, and the Master Jack and the five light jacks are moved clear of it (see " +
-                "[Jacks]). Off: ships spawn where the game puts them and the jacks are never moved. A ship restored from a save goes " +
-                "back where it was saved, centred or not.");
+                "[Jacks]). The game's own ships are never moved, and neither are the jacks for them. Off: nothing is moved for any " +
+                "ship. A ship restored from a save goes back where it was saved, centred or not.");
             BackWallGap = Config.Bind("Bay", "BackWallGapMeters", 10f,
                 "With CenterShip on: the gap between the back wall and the end of the ship nearest to it.");
             AcrossOffset = Config.Bind("Bay", "AcrossOffsetMeters", 0f,
@@ -85,6 +85,7 @@ namespace TheExpanse
         {
             if (ev.State == LevelLoadEvent.LoadState.Start)
             {
+                ShipCentering.Centred = false;
                 // Pick up edits made to the settings file while the game was running, before the next ship is placed.
                 try { Instance.Config.Reload(); }
                 catch (Exception ex) { Log.LogWarning("Could not re-read the settings file; keeping the current settings: " + ex.Message); }
@@ -96,7 +97,7 @@ namespace TheExpanse
             sLevelLoading = false;
             try
             {
-                if (ev.State == LevelLoadEvent.LoadState.Complete && Enabled.Value && CenterShip.Value) JackMover.OnShipLoaded();
+                if (ev.State == LevelLoadEvent.LoadState.Complete && Enabled.Value && CenterShip.Value && ShipCentering.Centred) JackMover.OnShipLoaded();
             }
             catch (Exception ex) { Log.LogError("[JackMover] " + ex); }
             finally { JackMover.RestoreCollisions(); }
