@@ -1,0 +1,21 @@
+Changelog for the TheExpanse page on NexusMods. One block per version: the first line is the version to
+enter, the lines under it are the changelog lines.
+
+
+0.4.0
+New StraightenShip setting, on by default. A custom ship posed at an angle is turned square to the bay before it is centred.
+The ship's length comes from the tightest box around it, and its roll from its mirror symmetry where width and height are too alike.
+New StraightenRatio setting, for how clear a ship's shape must be before it is trusted.
+Saved ships load as they were saved: as posed, centred, or straightened and centred.
+
+0.3.2
+CenterShip is on by default, for custom ships only. The game's own ships and their jacks are never moved.
+
+0.3.1
+Better choice of placement when restoring a saved ship.
+The Master Jack's scanner outline follows it to its new position.
+
+0.3.0
+New CenterShip setting. Places the ship in the middle of the bay and moves the jacks clear of it.
+The settings file is re-read on every ship load.
+Removed variant unlock, size thresholds and mass override.
