@@ -1,56 +1,50 @@
-# BayLights: change from blacklist to whitelist (to do)
+# BayLights 1.1: whitelist (built, needs one in-game check)
 
-Requested by KerballOne on 21 November 2026. Not started. This file is the hand-over for whoever picks it up.
+Requested by KerballOne on 21 November 2026 and built the same day. This file is the hand-over for whoever continues.
 
-## What the mod does now
+## What changed
 
-`Plugin.cs`, `BoostLights()`: after each scene load it walks every `Light` in every loaded scene and multiplies range and intensity by light type.
+Version 1.0 walked every light and multiplied it by type, so any light on any ship was changed. Version 1.1 changes four named groups and nothing else.
 
-| Lights | Config section | Defaults in code |
+| Group | Which lights | Config section |
 |---|---|---|
-| Bay spotlights (Spot lights with a cone at or below `MaxAngle`) | `BayLights` | range x2, intensity x1 |
-| Helmet light (a Spot light named `Helmet Spotlight`) | `Helmet` | range x2, intensity x1 |
-| Every other Spot light | `ShipLights` | range x2, intensity x5 |
-| Every Area light (the interior sodium lights) | `ShipLights` | range x2, intensity x5 |
-| Every Point light | `ShipLights` | range x2, intensity x5 |
+| Helmet | The Spot light named `Helmet Spotlight` | `Helmet` |
+| Bay | Spot lights that are not inside a ship, with a cone at or below `MaxAngle` or a default name (`Spot Light...`, `Point Light...`) | `BayLights` |
+| Sodium | Lights inside a ship whose own name or a parent's name matches `NamePatterns` (default `*Sodium*`) | `SodiumLights` |
+| Custom | Lights matching a rule in `Rules`, each rule with its own multipliers | `Custom` |
 
-So any light on any ship is changed unless something stops it.
+Every other light keeps the values it was authored with.
 
-## The problem
+- **Inside a ship** means some object above the light carries the game's `ModuleDefinition` or `RootModuleDefinition` component. The check is by type name, so the mod still has no reference to the game DLL. Code: `IsInsideShip()`.
+- **Name patterns** use `*` for any text and are not case sensitive. A pattern without `*` must match the whole name. Code: `ToRegex()`, `NameMatches()`.
+- **Custom rules** are `NamePattern|IntensityMultiplier|RangeMultiplier`, separated by semicolons, for example `*Console*|2|1.5; PRF_Light_Emergency*|3|2`. The first matching rule wins, and a custom rule wins over the built-in groups. A malformed rule is skipped with a warning in the log.
+- Each group has an `Enabled` switch.
+- The blacklist setting `ShipLights / ExcludeNameContains` is gone. It is not needed: a light nobody named is not touched.
+- `General / LogLights` now works. It lists every light after each scene load with its type, path, scene, range and intensity before and after, and the group it fell into.
 
-A custom part with a small hand-tuned Point light (an accent light on an AI node, 3 cd, 1 m range) was multiplied by 5 with double range and looked blinding. The stop-gap added the same day is a blacklist:
+## What 1.0 did that 1.1 does not
 
-- Config `ShipLights` / `ExcludeNameContains`, default `AI_Node_Crystal`.
-- Comma-separated fragments. A light is skipped when its own name or any parent's name contains one.
-- Code: `IsExcluded()` and the `continue` at the top of the loop in `BoostLights()`.
+1.0 multiplied every Point light and every remaining Spot light on a ship by 5, with double range. 1.1 leaves those alone. Ship interiors lit mainly by such lights will look darker than under 1.0. To get any of them back, name them in a `Custom` rule.
 
-A blacklist means every new hand-tuned light has to be added to it. The owner wants the opposite.
+1.0 also treated any narrow Spot light as a bay light, including ones on a ship. 1.1 does not.
 
-## What is wanted
+## Moving an existing config
 
-Only lights that are named in the config are changed. Everything else is left exactly as authored.
+`python migrate_config.py` (in this folder) rewrites the config file in the game's BepInEx `config` folder and keeps a `.bak` copy. It copies the old Area multipliers and `DisableShadows` value into `SodiumLights`, removes the old `ShipLights` section and adds an empty `Custom` section. It was run on the owner's config on 21 November 2026.
 
-1. **Bay spotlights:** keep, as their own config section. They are identified by being bay lights, not by a name the user types.
-2. **Helmet light:** keep, as its own config section.
-3. **Interior sodium lights:** keep, as their own config section, separate from the other two. Today they are caught by "every Area light"; they should be identified as sodium lights specifically.
-4. **All other lights:** not affected unless explicitly named in the config. The owner suggested name patterns with wildcards.
-5. The blacklist setting `ExcludeNameContains` goes away once the whitelist exists.
+## Still to check in game
 
-## Suggested shape (not agreed, check with the owner)
+None of this has been run in the game yet. With `LogLights = true`, load a ship and read `BepInEx/LogOutput.log`:
 
-- A section per built-in group (`BayLights`, `Helmet`, `SodiumLights`), each with its own multipliers and an on/off switch.
-- One section for user-named groups, for example `Custom`: a list of patterns, each with its own range and intensity multiplier. Match against the light's name and its parents' names, as `IsExcluded()` does now, with `*` as a wildcard.
-- Decide how to recognise a sodium light. Candidates: the light's type is Area and a parent's name contains the sodium fixture's prefab name (`PRF_Light_LowSodium_Industrial` in the ship project). Confirm in game with `LogLights = true`, which already logs every light.
-- Defaults should reproduce today's look for bay, helmet and sodium lights, so existing users see no change there.
+1. **Bay lights** show `| bay` and their range and intensity changed. If none do, the bay's lights are inside something with a `ModuleDefinition` and `IsInsideShip()` needs another test.
+2. **Sodium fixtures** show `| sodium`. If they show `| untouched (ship)`, look at the logged path for the fixture's real name and set `SodiumLights / NamePatterns` to match. The default assumes the fixture or a parent has "Sodium" in its name.
+3. **A hand-tuned light**, for example the small light on a custom AI node, shows `| untouched (ship)` with the same values before and after.
+4. The summary line reads `N bay, N helmet, N sodium, N custom-rule lights changed; N lights left untouched`.
+
+Then set `LogLights = false`. It writes one line per light on every scene load.
 
 ## Things to keep
 
-- `_boosted` remembers which lights were already multiplied, so a second scene load does not multiply them again. Keep that.
-- `DisableShadows` exists because boosted range made shadows flicker.
-- The mod reads its config once at start-up; lights are changed about 3 seconds after the light count stops changing.
-
-## How to check it
-
-1. Set `LogLights = true` and load a ship.
-2. The log lists every light with its type, name, range and intensity.
-3. Confirm that bay, helmet and sodium lights changed, and that a light not named in the config has the same values as with the mod disabled.
+- `_boosted` remembers which lights were already multiplied, so a second scene load does not multiply them again.
+- Lights are changed about 3 seconds after the light count stops changing, up to 30 seconds after a scene load.
+- The mod reads its config once at start-up.

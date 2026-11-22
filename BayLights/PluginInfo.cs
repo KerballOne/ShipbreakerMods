@@ -4,6 +4,6 @@ namespace BayLights
     {
         internal const string PLUGIN_GUID    = "me.kerballone.BayLights";
         internal const string PLUGIN_NAME    = "BayLights";
-        internal const string PLUGIN_VERSION = "1.0.0";
+        internal const string PLUGIN_VERSION = "1.1.0";
     }
 }
