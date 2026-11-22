@@ -11,7 +11,7 @@ namespace TheExpanse
     //   ShipCentering   places each custom ship in the middle of the bay, a set distance from the back wall (and can straighten it)
     //   JackMover       with centering on, moves the Master Jack and the five light jacks clear of the ship
     //   RoomPressure    makes each room's own pressurization / decompression time count, so big rooms take longer
-    //   PartSeparation  on custom ships, heavy parts that overlap their neighbours come free gently instead of being thrown
+    //   PartSeparation  on custom ships, heavy parts that overlap their neighbors come free gently instead of being thrown
     // (The Mars planet, loading screen and menu pictures that started here now live in the Themes mod.)
     [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
     public class Plugin : BaseUnityPlugin
@@ -41,19 +41,19 @@ namespace TheExpanse
             CenterShip = Config.Bind("Bay", "CenterShip", true,
                 "Place custom ships in the middle of the bay and move the jacks to suit. Large custom ships are posed to spawn above the " +
                 "jacks so they can be played without this mod; with this on they are brought down into the bay instead. The ship's size " +
-                "is worked out before it spawns; it is then centred across the bay and on BayCenterHeight, with its rear end " +
+                "is worked out before it spawns; it is then centered across the bay and on BayCenterHeight, with its rear end " +
                 "BackWallGapMeters in front of the back wall, and the Master Jack and the five light jacks are moved clear of it (see " +
                 "[Jacks]). The game's own ships are never moved, and neither are the jacks for them. Off: nothing is moved for any " +
-                "ship. A ship restored from a save goes back where it was saved, centred or not.");
+                "ship. A ship restored from a save goes back where it was saved, centered or not.");
             BackWallGap = Config.Bind("Bay", "BackWallGapMeters", 10f,
                 "With CenterShip on: the gap between the back wall and the end of the ship nearest to it.");
             AcrossOffset = Config.Bind("Bay", "AcrossOffsetMeters", 0f,
-                "With CenterShip on: how far to one side of the bay's middle ships are placed. 0 centres them between the two side " +
+                "With CenterShip on: how far to one side of the bay's middle ships are placed. 0 centers them between the two side " +
                 "walls; a positive or negative number moves them towards one wall or the other.");
             BayCenterY = Config.Bind("Bay", "BayCenterHeight", 0f,
-                "With CenterShip on: the height ships are centred on. Raise or lower it to sit ships higher or lower in the bay.");
+                "With CenterShip on: the height ships are centered on. Raise or lower it to sit ships higher or lower in the bay.");
             StraightenShip = Config.Bind("Bay", "StraightenShip", true,
-                "With CenterShip on: before centring a custom ship, turn it square to the bay. The ship's own shape is the guide: the " +
+                "With CenterShip on: before centering a custom ship, turn it square to the bay. The ship's own shape is the guide: the " +
                 "tightest box that fits around it is found, and the ship is turned by the smallest amount that lines that box up with " +
                 "the bay. A ship that is already square is not touched. See StraightenRatio for ships this cannot work on.");
             StraightenRatio = Config.Bind("Bay", "StraightenRatio", 1.5f,
@@ -77,7 +77,7 @@ namespace TheExpanse
 
             GentleSeparation = Config.Bind("Parts", "GentleSeparation", true,
                 "On custom ships, stop heavy parts being thrown when they are cut or yanked free. Parts collide as the convex shape " +
-                "around their mesh, so on many custom ships neighbouring parts overlap, and the game pushes overlapping parts apart at " +
+                "around their mesh, so on many custom ships neighboring parts overlap, and the game pushes overlapping parts apart at " +
                 "up to 10 m/s the moment they separate. With this on, that push is limited by mass: parts of 5 tonnes or more are " +
                 "eased apart at 0.3 m/s, parts up to 100 kg keep the game's speed, and parts in between fall on a smooth slide. The " +
                 "grapple, tethers, explosions and decompression are not changed. The game's own ships are left alone.");
@@ -107,7 +107,7 @@ namespace TheExpanse
         {
             if (ev.State == LevelLoadEvent.LoadState.Start)
             {
-                ShipCentering.Centred = false;
+                ShipCentering.Centered = false;
                 PartSeparation.CustomShip = false;
                 // Pick up edits made to the settings file while the game was running, before the next ship is placed.
                 try { Instance.Config.Reload(); }
@@ -120,7 +120,7 @@ namespace TheExpanse
             sLevelLoading = false;
             try
             {
-                if (ev.State == LevelLoadEvent.LoadState.Complete && Enabled.Value && CenterShip.Value && ShipCentering.Centred) JackMover.OnShipLoaded();
+                if (ev.State == LevelLoadEvent.LoadState.Complete && Enabled.Value && CenterShip.Value && ShipCentering.Centered) JackMover.OnShipLoaded();
             }
             catch (Exception ex) { Log.LogError("[JackMover] " + ex); }
             finally { JackMover.RestoreCollisions(); }

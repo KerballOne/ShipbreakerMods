@@ -30,8 +30,8 @@ namespace TheExpanse
     // transform. This is an estimate of the finished ship, good to within the size of its outermost parts.
     //
     // The bay, in world space (ships run along +Z from the back wall; +Y is up):
-    //   across (X)   centred between the two side walls
-    //   up (Y)       centred on the bay's height
+    //   across (X)   centered between the two side walls
+    //   up (Y)       centered on the bay's height
     //   along (Z)    the end nearest the back wall sits a set distance in front of it
     //
     // With StraightenShip on, the ship is first turned square to the bay, about the middle of its box (see Straighten).
@@ -43,7 +43,7 @@ namespace TheExpanse
     // whatever is rebuilt is placed from the spawn point. So a restore must use the point the ship was saved with. That
     // is not recorded anywhere, but the saved parts show it: the middle of where they are, against the middle of where
     // the ship's parts would be as posed, is roughly the shift the ship was saved with, and it is matched to "as posed"
-    // or "centred", whichever is nearer. (Structure parts themselves come back at their saved positions whatever point
+    // or "centered", whichever is nearer. (Structure parts themselves come back at their saved positions whatever point
     // is used; the point only matters for what a save does not hold.)
     internal static class ShipCentering
     {
@@ -70,7 +70,7 @@ namespace TheExpanse
         {
             if (!sInside && shipPreview?.ModuleGroup != null)
             {
-                // Noted for PartSeparation whether or not the ship is centred.
+                // Noted for PartSeparation whether or not the ship is centered.
                 try { PartSeparation.CustomShip = IsCustom(shipPreview); }
                 catch (Exception ex) { PartSeparation.CustomShip = false; Plugin.Log.LogWarning("[Parts] could not tell whether this ship is a custom one: " + ex.Message); }
             }
@@ -108,13 +108,13 @@ namespace TheExpanse
             // Only custom ships are placed. The game's own ships stay exactly where the game puts them, so nothing scripted
             // around them (tutorial, story events) is disturbed.
             if (!IsCustom(shipPreview)) return spawn;       // a stock ship: nothing to do, nothing to log
-            Centred = true;
+            Centered = true;
 
             var root = Matrix4x4.TRS(spawn.pos, spawn.rot, Vector3.one);
             int modules = 0, unloaded = 0;
             var points = new List<Vector3>();           // every corner of every part's mesh box: the ship's outline
             var partPositions = new List<Vector3>();
-            var centres = new List<Vector3>();          // the middle of each mesh: where a part is, whatever its pivot
+            var centers = new List<Vector3>();          // the middle of each mesh: where a part is, whatever its pivot
 
             foreach (var module in shipPreview.ModuleGroup.AllModules)
             {
@@ -129,7 +129,7 @@ namespace TheExpanse
                 }
                 if (prefab == null) { unloaded++; continue; }
                 modules++;
-                Encapsulate(prefab, root * Matrix4x4.TRS(module.RigidTransform.pos, module.RigidTransform.rot, Vector3.one), points, partPositions, centres);
+                Encapsulate(prefab, root * Matrix4x4.TRS(module.RigidTransform.pos, module.RigidTransform.rot, Vector3.one), points, partPositions, centers);
             }
 
             if (points.Count == 0)
@@ -138,17 +138,17 @@ namespace TheExpanse
                 return spawn;
             }
 
-            // As posed, and centred without being turned (what versions before StraightenShip did).
+            // As posed, and centered without being turned (what versions before StraightenShip did).
             var posedBox = BoxOf(points, Matrix4x4.identity);
             var plainDelta = DeltaFor(posedBox);
 
-            // Turned square to the bay first, if asked for: about the middle of its box, then centred like any other ship.
+            // Turned square to the bay first, if asked for: about the middle of its box, then centered like any other ship.
             var turn = Quaternion.identity;
             string turned = "";
             if (Plugin.StraightenShip.Value)
             {
                 var watch = System.Diagnostics.Stopwatch.StartNew();
-                try { turn = Straighten(points, centres, out turned); }
+                try { turn = Straighten(points, centers, out turned); }
                 catch (Exception ex) { turn = Quaternion.identity; turned = ""; Plugin.Log.LogError("[Centering] could not straighten the ship; it keeps the angle it is posed at: " + ex); }
                 if (turned.Length > 0) turned += $", worked out in {watch.ElapsedMilliseconds} ms";
             }
@@ -159,7 +159,7 @@ namespace TheExpanse
             var turnedSpawn = isTurned
                 ? new RigidTransform(turn * (Quaternion)spawn.rot, turnMatrix.MultiplyPoint3x4(spawn.pos))
                 : spawn;
-            var centredSpawn = new RigidTransform(turnedSpawn.rot, turnedSpawn.pos + (float3)delta);
+            var centeredSpawn = new RigidTransform(turnedSpawn.rot, turnedSpawn.pos + (float3)delta);
 
             string size = $"estimated {box.size.x:0.0} x {box.size.y:0.0} x {box.size.z:0.0} m" + turned + (unloaded > 0 ? $", {unloaded} module(s) could not be loaded and were left out" : "");
 
@@ -167,13 +167,13 @@ namespace TheExpanse
             bool restoring = ModuleService.Instance != null && ModuleService.Instance.ShipSpawningFromSaveInProgress;
             if (restoring && isTurned && partPositions.Count > 0 && SavedPartPositions(out var savedParts))
             {
-                // Three places it can have been saved: as posed, centred, or straightened and centred. A turn barely moves
+                // Three places it can have been saved: as posed, centered, or straightened and centered. A turn barely moves
                 // the middle of the parts, so they are told apart by how closely the saved parts sit to where each one
                 // would put the ship's parts.
                 float posedFit = Fit(partPositions, Matrix4x4.identity, savedParts);
                 float plainFit = Fit(partPositions, Matrix4x4.Translate(plainDelta), savedParts);
                 float turnedFit = Fit(partPositions, Matrix4x4.Translate(delta) * turnMatrix, savedParts);
-                string from = $"'{shipPreview.ShipName}' (from a save, {savedParts.Count} saved part(s)): {size}; saved parts are within {posedFit:0.0} m of the ship as posed, {plainFit:0.0} m of it centred, {turnedFit:0.0} m of it straightened and centred";
+                string from = $"'{shipPreview.ShipName}' (from a save, {savedParts.Count} saved part(s)): {size}; saved parts are within {posedFit:0.0} m of the ship as posed, {plainFit:0.0} m of it centered, {turnedFit:0.0} m of it straightened and centered";
                 if (posedFit <= plainFit && posedFit <= turnedFit)
                 {
                     Plugin.Log.LogInfo($"[Centering] {from}; it was saved where the game put it, so it is left there.");
@@ -181,33 +181,33 @@ namespace TheExpanse
                 }
                 if (plainFit <= turnedFit)
                 {
-                    Plugin.Log.LogInfo($"[Centering] {from}; it was saved centred but not straightened, moved by ({plainDelta.x:0.0}, {plainDelta.y:0.0}, {plainDelta.z:0.0}) to match.");
+                    Plugin.Log.LogInfo($"[Centering] {from}; it was saved centered but not straightened, moved by ({plainDelta.x:0.0}, {plainDelta.y:0.0}, {plainDelta.z:0.0}) to match.");
                     return new RigidTransform(spawn.rot, spawn.pos + (float3)plainDelta);
                 }
-                Plugin.Log.LogInfo($"[Centering] {from}; it was saved straightened and centred, placed to match.");
+                Plugin.Log.LogInfo($"[Centering] {from}; it was saved straightened and centered, placed to match.");
             }
             else if (restoring && partPositions.Count > 0 && SavedPartPositions(out var saved))
             {
                 var savedShift = Median(saved) - Median(partPositions);
-                float asPosed = savedShift.magnitude, centred = (savedShift - delta).magnitude;
+                float asPosed = savedShift.magnitude, centered = (savedShift - delta).magnitude;
                 string from = $"'{shipPreview.ShipName}' (from a save, {saved.Count} saved part(s)): {size}; saved parts sit ({savedShift.x:0.0}, {savedShift.y:0.0}, {savedShift.z:0.0}) from where the ship is posed";
-                if (Mathf.Min(asPosed, centred) > Mathf.Max(FarFromBothMeters, delta.magnitude))
+                if (Mathf.Min(asPosed, centered) > Mathf.Max(FarFromBothMeters, delta.magnitude))
                 {
                     // Clearly neither: it was saved under different settings. Follow the saved parts.
                     Plugin.Log.LogInfo($"[Centering] {from}; rebuilt there to match.");
                     return new RigidTransform(spawn.rot, spawn.pos + (float3)savedShift);
                 }
-                if (asPosed <= centred)
+                if (asPosed <= centered)
                 {
                     Plugin.Log.LogInfo($"[Centering] {from}; it was saved where the game put it, so it is left there.");
                     return spawn;
                 }
-                Plugin.Log.LogInfo($"[Centering] {from}; it was saved centred, moved by ({delta.x:0.0}, {delta.y:0.0}, {delta.z:0.0}) to match.");
+                Plugin.Log.LogInfo($"[Centering] {from}; it was saved centered, moved by ({delta.x:0.0}, {delta.y:0.0}, {delta.z:0.0}) to match.");
             }
             else
-                Plugin.Log.LogInfo($"[Centering] '{shipPreview.ShipName}': {modules} module(s), {size}; moved by ({delta.x:0.0}, {delta.y:0.0}, {delta.z:0.0}) to centre it.");
+                Plugin.Log.LogInfo($"[Centering] '{shipPreview.ShipName}': {modules} module(s), {size}; moved by ({delta.x:0.0}, {delta.y:0.0}, {delta.z:0.0}) to center it.");
 
-            return centredSpawn;
+            return centeredSpawn;
         }
 
         // The shift that puts a box in the middle of the bay, its rear end the set distance in front of the back wall.
@@ -238,15 +238,15 @@ namespace TheExpanse
         //
         // That only means something for a side that is clearly longer or shorter than the others. On a ship that is about
         // as wide as it is long, the tightest box can sit at almost any angle. So an axis is only trusted when its length
-        // differs from its neighbour's by StraightenRatio:
+        // differs from its neighbor's by StraightenRatio:
         //   long and short axes both clear   the ship is squared up completely
         //   only one of them clear           that axis is laid along the nearest bay axis; the ship is not rolled about it
         //   neither                          the ship keeps the angle it is posed at
         //
-        // Only the outline counts (like centring), so a ship with more parts on one side is not pulled off true.
+        // Only the outline counts (like centering), so a ship with more parts on one side is not pulled off true.
 
         // The turn (about any point) that squares the ship to the bay; identity when it is left alone.
-        static Quaternion Straighten(List<Vector3> points, List<Vector3> centres, out string what)
+        static Quaternion Straighten(List<Vector3> points, List<Vector3> centers, out string what)
         {
             what = "";
             float ratio = Mathf.Max(1.01f, Plugin.StraightenRatio.Value);
@@ -321,7 +321,7 @@ namespace TheExpanse
                 how = longClear ? " (long axis only)" : " (short axis only)";
 
                 // The box says nothing about the roll about that axis, but a ship built in two mirrored halves does.
-                if (MirrorRoll(centres, turn, nearest, out var roll, out string mirror))
+                if (MirrorRoll(centers, turn, nearest, out var roll, out string mirror))
                 {
                     turn = roll * turn;
                     how = " (roll from its mirror symmetry: " + mirror + ")";
@@ -350,16 +350,16 @@ namespace TheExpanse
         // lies on it. Every pair of parts (from a sample) casts a vote for the plane it would be twins across. Pairs
         // that are not twins vote all over the place; the real twins all vote for the same plane, and it wins by a
         // wide margin. Only planes that run along the ship are counted - any angle about its length, up to a few
-        // degrees of lean (the box only finds the length to within a degree or so), a few metres off its middle.
+        // degrees of lean (the box only finds the length to within a degree or so), a few meters off its middle.
         //
         // The winner is then closed in on by mirroring the parts in it and nudging it until they land best. The turn
         // returned stands that plane on the nearest bay axis. False when no plane stands out (a ship that is not
         // symmetric, or is equally so at every angle).
-        static bool MirrorRoll(List<Vector3> centres, Quaternion turn, int axis, out Quaternion roll, out string what)
+        static bool MirrorRoll(List<Vector3> centers, Quaternion turn, int axis, out Quaternion roll, out string what)
         {
             roll = Quaternion.identity;
             what = "too few parts to look for a mirror plane";
-            if (centres.Count < 50) return false;
+            if (centers.Count < 50) return false;
 
             int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;       // the plane across the ship; a1 x a2 = axis
             Vector3 e1 = Vector3.zero, e2 = Vector3.zero, along = Vector3.zero;
@@ -367,9 +367,9 @@ namespace TheExpanse
 
             // The parts, turned, in a grid of cells so the part nearest to a point is quick to find.
             const float Cell = 2f, Twin = 0.5f;
-            var parts = new List<Vector3>(centres.Count);
-            Vector3 min = turn * centres[0], max = min;
-            foreach (var c in centres)
+            var parts = new List<Vector3>(centers.Count);
+            Vector3 min = turn * centers[0], max = min;
+            foreach (var c in centers)
             {
                 var p = turn * c;
                 parts.Add(p);
@@ -387,7 +387,7 @@ namespace TheExpanse
             }
 
             // For the plane whose normal is 'degrees' from a1 towards a2, leaning 'lean' degrees towards the ship's length,
-            // passing 'offset' metres from the middle of the ship: how far a mirrored part typically lands from the nearest
+            // passing 'offset' meters from the middle of the ship: how far a mirrored part typically lands from the nearest
             // part (anything past a cell counts as a cell, so stray parts do not swamp the rest), and the share of parts
             // that land right on a twin.
             float Miss(float degrees, float offset, float lean, int samples, out float twins)
@@ -436,7 +436,7 @@ namespace TheExpanse
             }
 
             // The vote. Planes are counted in steps of 1 degree about the ship's length, half a degree of lean (up to
-            // MaxLean either way) and half a metre from the ship's middle (up to MaxOffset either way).
+            // MaxLean either way) and half a meter from the ship's middle (up to MaxOffset either way).
             const float MaxLean = 3f, MaxOffset = 4f;
             const int Angles = 180, Leans = 12, Offsets = 16;
             var votes = new int[Angles * Leans * Offsets];
@@ -576,7 +576,7 @@ namespace TheExpanse
         }
 
         // True once the ship now loading has been taken on by this class; the jacks are only moved for those ships.
-        internal static bool Centred;
+        internal static bool Centered;
 
         // A custom ship is one whose modules come out of a mod's bundle, i.e. a bundle file under BepInEx\plugins.
         static bool IsCustom(ShipPreview shipPreview)
@@ -603,7 +603,7 @@ namespace TheExpanse
         }
 
         // The shift read off the saved parts is rough: a save holds more than the parts the estimate counts, and parts
-        // move during play (it read 5.6 m out on an intact ship). So it is only used to tell "as posed" from "centred",
+        // move during play (it read 5.6 m out on an intact ship). So it is only used to tell "as posed" from "centered",
         // whichever is nearer, and is followed directly only when it is far from both.
         const float FarFromBothMeters = 10f;
 
@@ -641,7 +641,7 @@ namespace TheExpanse
         // Adds one module prefab's ship parts to the box, carried through the module's placement in the world. Only what
         // the finished ship is measured by counts: the visible meshes of its structure parts. Helper objects in a prefab
         // (room volumes, triggers, effects, placeholders) can be far larger than the ship and would throw the box off.
-        static void Encapsulate(GameObject prefab, Matrix4x4 moduleToWorld, List<Vector3> points, List<Vector3> partPositions, List<Vector3> centres)
+        static void Encapsulate(GameObject prefab, Matrix4x4 moduleToWorld, List<Vector3> points, List<Vector3> partPositions, List<Vector3> centers)
         {
             var rootInverse = prefab.transform.worldToLocalMatrix;
             foreach (var part in prefab.GetComponentsInChildren<StructurePart>(true))
@@ -655,7 +655,7 @@ namespace TheExpanse
                     var filter = renderer.GetComponent<MeshFilter>();
                     if (filter == null || filter.sharedMesh == null) continue;
                     AddBox(filter.sharedMesh.bounds, moduleToWorld * rootInverse * renderer.transform.localToWorldMatrix, points);
-                    centres.Add((moduleToWorld * rootInverse * renderer.transform.localToWorldMatrix).MultiplyPoint3x4(filter.sharedMesh.bounds.center));
+                    centers.Add((moduleToWorld * rootInverse * renderer.transform.localToWorldMatrix).MultiplyPoint3x4(filter.sharedMesh.bounds.center));
                     hadMesh = true;
                 }
                 // A part whose mesh only arrives when it is instantiated still counts, by where it is.
@@ -663,7 +663,7 @@ namespace TheExpanse
                 {
                     var at = (moduleToWorld * rootInverse * part.transform.localToWorldMatrix).MultiplyPoint3x4(Vector3.zero);
                     points.Add(at);
-                    centres.Add(at);
+                    centers.Add(at);
                 }
             }
         }

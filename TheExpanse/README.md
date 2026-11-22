@@ -6,16 +6,16 @@ Changes to the Hardspace: Shipbreaker work bay and to ships, for large custom sh
 - **Big rooms take longer to pressurize.** The game fills and empties every room in the same few seconds. With this mod, a room takes as long as its ship's author set it to.
 - **Heavy parts come free gently.** On custom ships, large parts that were thrown off at speed when cut or yanked free are eased apart instead.
 
-## Centring the ship
+## Centering the ship
 
 This is on by default and applies to custom ships, the ones that come from a mod. The game's own ships are never moved, and the jacks are never moved for them, so the tutorial and story play as normal.
 
 Each custom ship is placed for you, wherever its author posed it:
 
 - straightened, if it is posed at an angle (see below);
-- centred across the bay, between the two side walls;
-- centred on the bay's height;
-- with its rear end 10 metres in front of the back wall.
+- centered across the bay, between the two side walls;
+- centered on the bay's height;
+- with its rear end 10 meters in front of the back wall.
 
 The jacks are then moved clear of it:
 
@@ -28,7 +28,7 @@ With the setting off, every ship spawns where its author posed it and the jacks 
 
 ### Straightening
 
-Some ships are posed at an angle so that they fit in the bay. Before a custom ship is centred, it is turned square to the bay. This is on by default.
+Some ships are posed at an angle so that they fit in the bay. Before a custom ship is centered, it is turned square to the bay. This is on by default.
 
 There is no record of which way a ship should face, so its own shape is used:
 
@@ -39,7 +39,7 @@ The ship is always turned by the smallest amount that squares it up, and a ship 
 
 ### Saved ships
 
-A ship loaded from a save goes back where it was when you saved it. If you saved it straightened and centred, it loads that way. If you saved it before turning these settings on, it loads where it was and is not moved.
+A ship loaded from a save goes back where it was when you saved it. If you saved it straightened and centered, it loads that way. If you saved it before turning these settings on, it loads where it was and is not moved.
 
 ## Room pressure times
 
@@ -51,11 +51,11 @@ Every room in a ship has a pressurization time and a decompression time set by i
 
 ## Gentle separation
 
-Every part collides as the convex shape around its mesh. On custom ships built from large, hollow or curved hull pieces, that shape reaches into neighbouring parts. While the parts are joined this does not matter. The moment one is cut or yanked free, the game pushes the overlapping parts apart at up to 10 metres per second, which throws a part of several tonnes faster than a tether can hold.
+Every part collides as the convex shape around its mesh. On custom ships built from large, hollow or curved hull pieces, that shape reaches into neighboring parts. While the parts are joined this does not matter. The moment one is cut or yanked free, the game pushes the overlapping parts apart at up to 10 meters per second, which throws a part of several tonnes faster than a tether can hold.
 
 With this on, that push is limited by the part's mass:
 
-- parts of 5 tonnes or more are eased apart at 0.3 metres per second;
+- parts of 5 tonnes or more are eased apart at 0.3 meters per second;
 - parts up to 100 kg keep the game's own speed, so small pieces still pop free;
 - parts in between fall on a smooth slide (about 2.4 m/s at 500 kg, 1.3 m/s at 1 tonne).
 
@@ -77,9 +77,9 @@ The file is read again each time a ship starts loading, so you can edit it while
 **[Bay]**
 - **CenterShip** (default true): place custom ships in the middle of the bay and move the jacks to suit. The game's own ships are left alone.
 - **BackWallGapMeters** (default 10): the gap between the back wall and the end of the ship nearest to it.
-- **AcrossOffsetMeters** (default 0): how far to one side of the bay's middle ships are placed. 0 centres them between the side walls.
-- **BayCenterHeight** (default 0): the height ships are centred on. Raise or lower it to sit ships higher or lower in the bay.
-- **StraightenShip** (default true): before centring a custom ship, turn it square to the bay. The tightest box that fits around the ship is found, and the ship is turned by the smallest amount that lines that box up with the bay.
+- **AcrossOffsetMeters** (default 0): how far to one side of the bay's middle ships are placed. 0 centers them between the side walls.
+- **BayCenterHeight** (default 0): the height ships are centered on. Raise or lower it to sit ships higher or lower in the bay.
+- **StraightenShip** (default true): before centering a custom ship, turn it square to the bay. The tightest box that fits around the ship is found, and the ship is turned by the smallest amount that lines that box up with the bay.
 - **StraightenRatio** (default 1.5): how much longer one side of the ship has to be than the next before its direction is trusted. A ship about as wide as it is long keeps the angle it is posed at. Where only the ship's length stands out, its roll is taken from its mirror symmetry (its left and right halves), if it has one.
 
 **[Jacks]**
@@ -100,8 +100,8 @@ To make a room slow to pressurize or decompress, set **Pressurization Time** and
 
 ## Notes
 
-- The ship's size is worked out before it spawns, from its parts' meshes and positions. The result is an estimate, so a centred ship can sit a little off. The BepInEx log reports how far after each load.
-- For very long ships, roughly 180 metres and up, the Master Jack ends up beyond the edge of the playable area.
+- The ship's size is worked out before it spawns, from its parts' meshes and positions. The result is an estimate, so a centered ship can sit a little off. The BepInEx log reports how far after each load.
+- For very long ships, roughly 180 meters and up, the Master Jack ends up beyond the edge of the playable area.
 - While the jacks are moved, their scanner outline is drawn at the new position.
 - Settings from earlier versions for size limits, ship variants and part masses are no longer used and can be deleted from the settings file.
 - For Mars in the sky, your own menu and loading pictures, and music during a shift, see the Themes mod.

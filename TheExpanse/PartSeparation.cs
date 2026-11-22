@@ -5,7 +5,7 @@ namespace TheExpanse
     // Heavy parts of a custom ship come free gently instead of being thrown.
     //
     // Every part collides as the convex shape around its mesh, so on a custom ship built from large concave hull pieces
-    // many neighbouring parts overlap each other. While they are one body that does not matter. The moment one is cut or
+    // many neighboring parts overlap each other. While they are one body that does not matter. The moment one is cut or
     // yanked free, the physics engine pushes the overlapping bodies apart, at up to 10 m/s (the game's
     // Physics.defaultMaxDepenetrationVelocity). Measured on a 6.6 tonne part: 0.8 -> 9.7 m/s in a single physics step,
     // too fast for a tether to hold.

@@ -73,7 +73,7 @@ namespace TheExpanse
 
             float clearance = Plugin.Clearance.Value;
 
-            // A ship posed entirely above a jack does not need that jack moved (a saved ship that was never centred).
+            // A ship posed entirely above a jack does not need that jack moved (a saved ship that was never centered).
             // Master Jack: along +Z until its near face is `clearance` past the ship's far end.
             if (masterJack != null && ship.min.y >= BoundsOf(masterJack).max.y)
             {

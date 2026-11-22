@@ -8,10 +8,10 @@ The push between overlapping parts is limited by mass: 0.3 m/s for parts of 5 to
 The grapple, tethers, explosions and decompression are unchanged, and so are the game's own ships.
 
 0.4.0
-New StraightenShip setting, on by default. A custom ship posed at an angle is turned square to the bay before it is centred.
+New StraightenShip setting, on by default. A custom ship posed at an angle is turned square to the bay before it is centered.
 The ship's length comes from the tightest box around it, and its roll from its mirror symmetry where width and height are too alike.
 New StraightenRatio setting, for how clear a ship's shape must be before it is trusted.
-Saved ships load as they were saved: as posed, centred, or straightened and centred.
+Saved ships load as they were saved: as posed, centered, or straightened and centered.
 
 0.3.2
 CenterShip is on by default, for custom ships only. The game's own ships and their jacks are never moved.
