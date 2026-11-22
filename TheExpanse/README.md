@@ -1,11 +1,9 @@
 # TheExpanse
 
-Changes to ships in Hardspace: Shipbreaker, for large custom ships. It was made for the Tachi, and works with any ship.
+A companion mod for the MCRN Corvette ships in Hardspace: Shipbreaker (the Tachi, the Rocinante and the Beratnas Gas Hauler). It handles two things that come from how those ships are designed and built. Both also apply to any other custom ship.
 
-- **Big rooms take longer to pressurize.** The game fills and empties every room in the same few seconds. With this mod, a room takes as long as its ship's author set it to.
-- **Heavy parts come free gently.** On custom ships, large parts that were thrown off at speed when cut or yanked free are eased apart instead.
-
-Centering and straightening ships in the bay, and moving the jacks clear of them, were part of this mod up to version 0.5.0. They are now in the BiggerBays mod.
+- **Heavy parts come free gently.** The ships' hull panels and large objects are built from a 3D model, so neighboring parts overlap, and the game threw them off at speed when cut or yanked free. They are eased apart instead.
+- **Big rooms take longer to pressurize.** The game fills and empties every room in the same few seconds. With this mod, a room takes as long as the ship sets for it, and the regulator's hiss and vent effect last as long as the change does.
 
 ## Room pressure times
 
@@ -14,6 +12,7 @@ Every room in a ship has a pressurization time and a decompression time set by i
 - Only rooms set to longer than the game's own time are affected. Everything else, including every ship that leaves them at the default, behaves as before.
 - Rooms connected by open doors change pressure together and take the longest time among them.
 - A hull breach still vents at the game's normal speed.
+- An atmosphere regulator's hiss and vent effect are only about two seconds long. During a slowed change they are started again at even intervals, so they last until the pressure has finished changing. The spoken line plays once.
 
 ## Gentle separation
 
@@ -54,7 +53,7 @@ To make a room slow to pressurize or decompress, set **Pressurization Time** and
 
 ## Notes
 
-- Settings from earlier versions for centering ships, jacks, size limits, ship variants and part masses are no longer used and can be deleted from the settings file.
+- Settings left in the settings file by earlier versions, other than the ones listed above, are no longer used and can be deleted.
 - For Mars in the sky, your own menu and loading pictures, and music during a shift, see the Themes mod.
 
 ## Installation

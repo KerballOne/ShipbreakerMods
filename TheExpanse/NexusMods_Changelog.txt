@@ -2,6 +2,11 @@ Changelog for the TheExpanse page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+0.6.0
+The atmosphere regulator's hiss and vent effect now last for the whole of a slowed pressure change. New settings: ExtendPressureEffects and PressureEffectSeconds.
+This mod now only handles what is specific to the design of the MCRN Corvette ships: gentle part separation and room pressure times.
+Removed: centering and straightening ships in the bay, and moving the jacks.
+
 0.5.0
 New GentleSeparation setting, on by default. On custom ships, heavy parts are no longer thrown off at speed when cut or yanked free.
 The push between overlapping parts is limited by mass: 0.3 m/s for parts of 5 tonnes or more, the game's own speed for parts up to 100 kg.
