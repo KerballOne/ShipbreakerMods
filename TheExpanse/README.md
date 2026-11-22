@@ -2,7 +2,7 @@
 
 Changes to the Hardspace: Shipbreaker work bay and to ships, for large custom ships. It was made for the Tachi, and works with any ship.
 
-- **Brings large ships down into the bay.** Large custom ships are posed to spawn above the bay's jacks, so they can be played without this mod. An optional setting places each ship in the middle of the bay instead and moves the jacks out of its way.
+- **Brings large ships down into the bay.** Large custom ships are posed to spawn above the bay's jacks, or at an angle, so they fit and can be played without this mod. With it, each one is straightened, placed in the middle of the bay, and the jacks are moved out of its way.
 - **Big rooms take longer to pressurize.** The game fills and empties every room in the same few seconds. With this mod, a room takes as long as its ship's author set it to.
 
 ## Centring the ship
@@ -11,6 +11,7 @@ This is on by default and applies to custom ships, the ones that come from a mod
 
 Each custom ship is placed for you, wherever its author posed it:
 
+- straightened, if it is posed at an angle (see below);
 - centred across the bay, between the two side walls;
 - centred on the bay's height;
 - with its rear end 10 metres in front of the back wall.
@@ -24,9 +25,20 @@ A jack that already has enough room stays where it is, and so does one the whole
 
 With the setting off, every ship spawns where its author posed it and the jacks are never moved.
 
+### Straightening
+
+Some ships are posed at an angle so that they fit in the bay. Before a custom ship is centred, it is turned square to the bay. This is on by default.
+
+There is no record of which way a ship should face, so its own shape is used:
+
+- The tightest box that fits around the ship is found. Its long side is the ship's length, and the ship is turned so that this lies along the bay.
+- If the ship's width and height are too alike to tell which way is up, its roll is taken from its mirror symmetry: the plane between its matching left and right halves is found and stood upright.
+
+The ship is always turned by the smallest amount that squares it up, and a ship that is already square is not touched. A ship with no clear shape to go by (about as wide as it is long, and not symmetric) keeps the angle it is posed at.
+
 ### Saved ships
 
-A ship loaded from a save goes back where it was when you saved it. If you saved it centred, it loads centred. If you saved it before turning the setting on, it loads where it was and is not moved.
+A ship loaded from a save goes back where it was when you saved it. If you saved it straightened and centred, it loads that way. If you saved it before turning these settings on, it loads where it was and is not moved.
 
 ## Room pressure times
 
@@ -54,6 +66,8 @@ The file is read again each time a ship starts loading, so you can edit it while
 - **BackWallGapMeters** (default 10): the gap between the back wall and the end of the ship nearest to it.
 - **AcrossOffsetMeters** (default 0): how far to one side of the bay's middle ships are placed. 0 centres them between the side walls.
 - **BayCenterHeight** (default 0): the height ships are centred on. Raise or lower it to sit ships higher or lower in the bay.
+- **StraightenShip** (default true): before centring a custom ship, turn it square to the bay. The tightest box that fits around the ship is found, and the ship is turned by the smallest amount that lines that box up with the bay.
+- **StraightenRatio** (default 1.5): how much longer one side of the ship has to be than the next before its direction is trusted. A ship about as wide as it is long keeps the angle it is posed at. Where only the ship's length stands out, its roll is taken from its mirror symmetry (its left and right halves), if it has one.
 
 **[Jacks]**
 - **ClearanceMeters** (default 5): with CenterShip on, the gap kept between the ship and the jacks.
@@ -64,7 +78,7 @@ The file is read again each time a ship starts loading, so you can edit it while
 
 ## For ship authors
 
-A ship too large for the bay can be posed to spawn above the jacks, where it is playable without this mod. With **CenterShip** on, the mod works out the ship's size and brings it down into the bay, so no special setup is needed.
+A ship too large for the bay can be posed to spawn above the jacks, where it is playable without this mod. It can also be posed at an angle to fit. With **CenterShip** and **StraightenShip** on, the mod works out the ship's size and shape, squares it up and brings it down into the bay, so no special setup is needed.
 
 To make a room slow to pressurize or decompress, set **Pressurization Time** and **Decompression Time** on its room container, in seconds. Values of about 5 or less make no difference, since the mod never makes a room faster than the game does.
 

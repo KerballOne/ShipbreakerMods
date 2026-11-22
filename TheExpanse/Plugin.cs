@@ -8,7 +8,7 @@ using HarmonyLib;
 namespace TheExpanse
 {
     // Changes to the work bay and to ships for large custom ships:
-    //   ShipCentering   (off by default) places each ship in the middle of the bay, a set distance from the back wall
+    //   ShipCentering   places each custom ship in the middle of the bay, a set distance from the back wall (and can straighten it)
     //   JackMover       with centering on, moves the Master Jack and the five light jacks clear of the ship
     //   RoomPressure    makes each room's own pressurization / decompression time count, so big rooms take longer
     // (The Mars planet, loading screen and menu pictures that started here now live in the Themes mod.)
@@ -23,6 +23,8 @@ namespace TheExpanse
         internal static ConfigEntry<float> BayCenterY = null!;
         internal static ConfigEntry<float> AcrossOffset = null!;
         internal static ConfigEntry<float> BackWallGap = null!;
+        internal static ConfigEntry<bool> StraightenShip = null!;
+        internal static ConfigEntry<float> StraightenRatio = null!;
         internal static ConfigEntry<float> Clearance = null!;
         internal static ConfigEntry<bool> MovePlayerSpawn = null!;
         internal static ConfigEntry<bool> RoomPressureTimes = null!;
@@ -48,6 +50,15 @@ namespace TheExpanse
                 "walls; a positive or negative number moves them towards one wall or the other.");
             BayCenterY = Config.Bind("Bay", "BayCenterHeight", 0f,
                 "With CenterShip on: the height ships are centred on. Raise or lower it to sit ships higher or lower in the bay.");
+            StraightenShip = Config.Bind("Bay", "StraightenShip", true,
+                "With CenterShip on: before centring a custom ship, turn it square to the bay. The ship's own shape is the guide: the " +
+                "tightest box that fits around it is found, and the ship is turned by the smallest amount that lines that box up with " +
+                "the bay. A ship that is already square is not touched. See StraightenRatio for ships this cannot work on.");
+            StraightenRatio = Config.Bind("Bay", "StraightenRatio", 1.5f,
+                "With StraightenShip on: how much longer one side of the ship has to be than the next before its direction is trusted. " +
+                "A ship about as wide as it is long has no clear direction and keeps the angle it is posed at. If only its length (or " +
+                "only its thickness) stands out, that one axis is lined up, and the roll about it is taken from the ship's mirror symmetry " +
+                "(its left and right halves) where it has one; otherwise the ship is not rolled.");
 
             Clearance = Config.Bind("Jacks", "ClearanceMeters", 5f,
                 "With CenterShip on: the gap kept between the ship and the jacks. The Master Jack is pushed along the bay until it is this " +
