@@ -12,7 +12,7 @@ using UnityEngine.AddressableAssets;
 using UnityEngine.AddressableAssets.ResourceLocators;
 using UnityEngine.ResourceManagement.AsyncOperations;
 
-namespace TheExpanse
+namespace BiggerBays
 {
     // Places a ship in the middle of the bay instead of wherever its own origin puts it. Large custom ships are posed to
     // spawn up above the jacks, so that they are playable without this mod; with it, they are brought down into the bay
@@ -68,12 +68,9 @@ namespace TheExpanse
         static bool Prefix(ShipPreview shipPreview, AssetReferenceJointabilityAsset jointingInfoAssetRef, RigidTransform spawnTransform,
                            ShipRandomizationHelper.SpawnModuleGroupCallback onComplete, Action<float> loadingProgressCallback, ref Task<GameObject> __result)
         {
-            if (!sInside && shipPreview?.ModuleGroup != null)
-            {
-                // Noted for PartSeparation whether or not the ship is centered.
-                try { PartSeparation.CustomShip = IsCustom(shipPreview); }
-                catch (Exception ex) { PartSeparation.CustomShip = false; Plugin.Log.LogWarning("[Parts] could not tell whether this ship is a custom one: " + ex.Message); }
-            }
+            // Noted for the bay's sizing, whether or not the ship is centered.
+            if (!sInside && shipPreview != null)
+                BayMemory.OnShipSpawning(shipPreview.ShipName, ModuleService.Instance != null && ModuleService.Instance.ShipSpawningFromSaveInProgress);
             if (sInside || !Plugin.Enabled.Value || !Plugin.CenterShip.Value || shipPreview?.ModuleGroup == null) return true;
             __result = SpawnCentered(shipPreview, jointingInfoAssetRef, spawnTransform, onComplete, loadingProgressCallback);
             return false;

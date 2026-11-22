@@ -26,7 +26,7 @@ namespace TheExpanse
     internal static class RoomPressure
     {
         struct Times { public float Pressurize, Decompress; public string Name; }
-        struct Progress { public float Pressure; public int Direction; }
+        struct Progress { public float Pressure; public int Direction; public float Elapsed, Total; public int Repeats; }
 
         static readonly Dictionary<Entity, Times> sRoomTimes = new Dictionary<Entity, Times>();
         static readonly Dictionary<Entity, Progress> sProgress = new Dictionary<Entity, Progress>();
@@ -107,6 +107,12 @@ namespace TheExpanse
                     if (own <= stock) { sProgress.Remove(e); continue; }        // not longer than stock: leave it alone
 
                     group.AirPressure = Step(e, group.AirPressure, direction, dt, stock, own, $"{rooms.Length} connected room(s), longest '{name}',");
+                    if (sRepeatDue)
+                    {
+                        var members = new HashSet<Entity>();
+                        for (int i = 0; i < rooms.Length; i++) members.Add(rooms[i].EntityConnection);
+                        sRepeats.Add((members, direction));
+                    }
                     em.SetComponentData(e, group);
                 }
             }
@@ -126,11 +132,20 @@ namespace TheExpanse
                     if (own <= stock) { sProgress.Remove(e); continue; }
 
                     float p = Step(e, room.AirPressure, direction, dt, stock, own, $"room '{t.Name}'");
+                    if (sRepeatDue) sRepeats.Add((new HashSet<Entity> { e }, direction));
                     room.AirPressure = p;
                     em.SetComponentData(e, room);
                     em.SetComponentData(e, new AirPressure { Value = p });
                 }
             }
+
+            // The regulators' hiss and vent effect are a fixed few seconds long: start them again where one is due.
+            foreach (var repeat in sRepeats)
+            {
+                try { RegulatorEffects.Repeat(repeat.Item1, repeat.Item2); }
+                catch (Exception ex) { Plugin.Log.LogError("[RoomPressure] " + ex); }
+            }
+            sRepeats.Clear();
 
             // Forget things that no longer exist.
             if (sProgress.Count > 0)
@@ -142,17 +157,43 @@ namespace TheExpanse
         }
 
         // Our own progress for one group or room: advance it at its own pace and return the pressure to write back.
+        // Set by Step when the sound and effect of the change it just advanced should be started again.
+        static bool sRepeatDue;
+        static readonly List<(HashSet<Entity>, int)> sRepeats = new List<(HashSet<Entity>, int)>();
+
         static float Step(Entity e, float gamePressure, int direction, float dt, float stock, float own, string what)
         {
+            sRepeatDue = false;
             if (!sProgress.TryGetValue(e, out var p) || p.Direction != direction)
             {
                 // First frame of this change: start from where it was before the game's own step this frame.
                 p = new Progress { Pressure = Mathf.Clamp01(gamePressure - direction * dt / stock), Direction = direction };
-                Plugin.Log.LogInfo($"[RoomPressure] {what} {(direction > 0 ? "pressurizing" : "decompressing")} over {own:0.#} s (the game's own time is {stock:0.#} s).");
+                // How long this change will run (it can start part-way), and how often the regulators' sound and effect -
+                // which last only a couple of seconds - have to be started again to cover it. The repeats are spread
+                // evenly, the last one timed to end with the change.
+                p.Total = (direction > 0 ? 1f - p.Pressure : p.Pressure) * own;
+                int repeats = Plugin.ExtendPressureEffects.Value ? RepeatsFor(p.Total, EffectLength) : 0;
+                Plugin.Log.LogInfo($"[RoomPressure] {what} {(direction > 0 ? "pressurizing" : "decompressing")} over {own:0.#} s (the game's own time is {stock:0.#} s)" +
+                                   (repeats > 0 ? $"; regulator sound and effect repeated {repeats} time(s)." : "."));
+            }
+            p.Elapsed += dt;
+            if (Plugin.ExtendPressureEffects.Value)
+            {
+                int repeats = RepeatsFor(p.Total, EffectLength);
+                if (p.Repeats < repeats && p.Elapsed >= (p.Repeats + 1) * (p.Total - EffectLength) / repeats)
+                {
+                    p.Repeats++;
+                    sRepeatDue = true;
+                }
             }
             p.Pressure = Mathf.Clamp01(p.Pressure + direction * dt / own);
             sProgress[e] = p;
             return p.Pressure;
         }
+
+        // How long one play of a regulator's sound and vent effect covers; repeats are spaced no further apart than this.
+        static float EffectLength => Mathf.Max(0.25f, Plugin.PressureEffectSeconds.Value);
+
+        static int RepeatsFor(float total, float length) => total > length ? Mathf.CeilToInt((total - length) / length) : 0;
     }
 }

@@ -6,7 +6,7 @@ using HarmonyLib;
 using Unity.Entities;
 using UnityEngine;
 
-namespace TheExpanse
+namespace BiggerBays
 {
     // With ship centering on, measures the loaded ship and moves the bay's jacks clear of it.
     //
@@ -26,6 +26,7 @@ namespace TheExpanse
         // Where each moved object stood before this mod touched it, so a repeat pass starts from the stock position.
         static readonly Dictionary<int, Vector3> sOriginal = new Dictionary<int, Vector3>();
         static readonly HashSet<int> sPlayersMoved = new HashSet<int>();
+        static readonly HashSet<int> sPlayersBaseMoved = new HashSet<int>();
 
         static string V(Vector3 v) => $"({v.x:0.0}, {v.y:0.0}, {v.z:0.0})";
         static string B(Bounds b) => $"min {V(b.min)} max {V(b.max)}";
@@ -75,7 +76,7 @@ namespace TheExpanse
 
             // A ship posed entirely above a jack does not need that jack moved (a saved ship that was never centered).
             // Master Jack: along +Z until its near face is `clearance` past the ship's far end.
-            if (masterJack != null && ship.min.y >= BoundsOf(masterJack).max.y)
+            if (masterJack != null && ship.min.y >= BoundsOf(masterJack, sBaseShift).max.y)
             {
                 ResetToStock(masterJack);
                 Plugin.Log.LogInfo("[JackMover] ship is above the Master Jack; left where it is.");
@@ -83,14 +84,14 @@ namespace TheExpanse
             else if (masterJack != null)
             {
                 var stock = ResetToStock(masterJack);
-                float dz = Mathf.Max(0f, ship.max.z + clearance - BoundsOf(masterJack).min.z);
+                float dz = Mathf.Max(0f, ship.max.z + clearance - BoundsOf(masterJack, sBaseShift).min.z);
                 var delta = new Vector3(0f, 0f, dz);
                 Move(masterJack, delta, "Master Jack");
                 if (dz > 0f)
                 {
                     var lights = GameObject.Find(MasterJackLightsPath);
                     if (lights != null) { ResetToStock(lights.transform); Move(lights.transform, delta, "Master Jack hex lights"); }
-                    if (Plugin.MovePlayerSpawn.Value) MovePlayer(stock, delta);
+                    if (Plugin.MovePlayerSpawn.Value) MovePlayer(stock, delta, sPlayersMoved);
                 }
             }
 
@@ -112,7 +113,7 @@ namespace TheExpanse
 
         // ---- ship ---------------------------------------------------------------------------------------------------
         // Overall world-space box of every ship part's mesh renderers. Parts with no renderer count by their position.
-        static bool MeasureShip(out Bounds ship, out int parts)
+        internal static bool MeasureShip(out Bounds ship, out int parts)
         {
             ship = default; parts = 0;
             bool any = false;
@@ -183,7 +184,9 @@ namespace TheExpanse
             lightJacks.Sort((a, b) => a.position.z != b.position.z ? a.position.z.CompareTo(b.position.z) : a.position.x.CompareTo(b.position.x));
         }
 
-        static Bounds BoundsOf(Transform root)
+        // Statically batched renderers keep reporting the box they were built at; `batchedShift` is how far the object has
+        // been moved since (the longer-bay shift), so their boxes can be brought along.
+        static Bounds BoundsOf(Transform root, Vector3 batchedShift = default)
         {
             Bounds total = new Bounds(root.position, Vector3.zero);
             bool any = false;
@@ -191,6 +194,7 @@ namespace TheExpanse
             {
                 var b = r.bounds;
                 if (b.size == Vector3.zero) continue;
+                if (r.isPartOfStaticBatch) b.center += batchedShift;
                 if (any) total.Encapsulate(b); else { total = b; any = true; }
             }
             return total;
@@ -211,19 +215,21 @@ namespace TheExpanse
             if (rb != null) rb.position = pos;
         }
 
-        static void Move(Transform t, Vector3 delta, string label)
+        static void Move(Transform t, Vector3 delta, string label, bool remember = true)
         {
             var from = t.position;
             if (delta == Vector3.zero) return;
-            // Statically batched renderers are baked into a combined mesh and do not follow their transform; work out which
-            // part of that mesh each one draws while it is still at its stock position, then redraw it shifted.
+            // Statically batched renderers are baked into a combined mesh and do not follow their transform; they are
+            // redrawn shifted instead.
             var renderers = t.GetComponentsInChildren<MeshRenderer>(true);
             int batched = 0, redrawn = 0;
             foreach (var r in renderers)
             {
                 if (!r.isPartOfStaticBatch) continue;
                 batched++;
-                if (Redraw(r, delta)) redrawn++;
+                if (!BatchedRedraw.Shift(r, delta)) continue;
+                redrawn++;
+                if (remember) sShifted.Add(new KeyValuePair<MeshRenderer, Vector3>(r, delta));
             }
 
             var to = from + delta;
@@ -233,97 +239,51 @@ namespace TheExpanse
         }
 
         // ---- statically batched renderers ---------------------------------------------------------------------------
-        // The combined mesh holds its vertices in world space and is not readable, but it can still be drawn. Each batched
-        // renderer owns a run of consecutive submeshes (one per material); that run is found by matching submesh bounds
-        // to the renderer's own bounds. The original renderer is switched off and its submeshes are drawn every frame
-        // with a translation.
-        sealed class Draw
-        {
-            public MeshRenderer Original = null!;
-            public Mesh Mesh = null!;
-            public int FirstSubMesh;
-            public Material[] Materials = null!;
-            public Matrix4x4 Matrix;
-        }
+        // Batched renderers do not follow their transform; BatchedRedraw draws them shifted. What this class has shifted is
+        // remembered so a repeat pass can take it back without disturbing shifts made by the bay reshaping.
+        static readonly List<KeyValuePair<MeshRenderer, Vector3>> sShifted = new List<KeyValuePair<MeshRenderer, Vector3>>();
 
-        static readonly List<Draw> sDraws = new List<Draw>();
-
-        static bool Redraw(MeshRenderer r, Vector3 delta)
-        {
-            var mf = r.GetComponent<MeshFilter>();
-            var mesh = mf != null ? mf.sharedMesh : null;
-            var mats = r.sharedMaterials;
-            if (mesh == null || mats.Length == 0)
-            {
-                Plugin.Log.LogWarning($"[JackMover] '{r.name}' is statically batched but has no mesh or materials; it will stay behind.");
-                return false;
-            }
-
-            var want = r.bounds;
-            int best = -1; float bestErr = float.MaxValue;
-            for (int s = 0; s + mats.Length <= mesh.subMeshCount; s++)
-            {
-                var b = mesh.GetSubMesh(s).bounds;
-                for (int k = 1; k < mats.Length; k++) b.Encapsulate(mesh.GetSubMesh(s + k).bounds);
-                float err = (b.min - want.min).magnitude + (b.max - want.max).magnitude;
-                if (err < bestErr) { bestErr = err; best = s; }
-            }
-            if (best < 0 || bestErr > 0.1f)
-            {
-                Plugin.Log.LogWarning($"[JackMover] '{r.name}': no run of {mats.Length} submesh(es) in '{mesh.name}' ({mesh.subMeshCount} submeshes) " +
-                                      $"matches its bounds {B(want)} (closest is off by {bestErr:0.000} m); it will stay behind.");
-                return false;
-            }
-
-            // Hidden two ways. The scanner highlight swaps a renderer's materials for its outline material and switches the
-            // renderer back ON, which would draw the outline where the jack used to stand; forceRenderingOff keeps it
-            // undrawn through that, and DrawMoved picks the outline material up from it instead.
-            r.enabled = false;
-            r.forceRenderingOff = true;
-            sDraws.Add(new Draw { Original = r, Mesh = mesh, FirstSubMesh = best, Materials = mats, Matrix = Matrix4x4.Translate(delta) });
-            return true;
-        }
-
-        // Puts every redrawn renderer back the way the game had it.
         static void ClearRedraws()
         {
-            foreach (var d in sDraws) if (d.Original != null) { d.Original.forceRenderingOff = false; d.Original.enabled = true; }
-            sDraws.Clear();
+            foreach (var kv in sShifted) if (kv.Key != null) BatchedRedraw.Shift(kv.Key, -kv.Value);
+            sShifted.Clear();
         }
 
-        // Called every frame.
-        static readonly MaterialPropertyBlock sBlock = new MaterialPropertyBlock();
-
-        internal static void DrawMoved()
+        // Renderers of a level that has been unloaded are gone; forget them.
+        internal static void OnLevelLoadStart()
         {
-            for (int i = sDraws.Count - 1; i >= 0; i--)
-            {
-                var d = sDraws[i];
-                if (d.Original == null || d.Mesh == null) { sDraws.RemoveAt(i); continue; }      // level unloaded
-                var go = d.Original.gameObject;
-                if (!go.activeInHierarchy) continue;
-                // Whatever the original would be drawn with right now: its own materials, or the scanner's outline
-                // material and settings while the scanner has it highlighted.
-                var mats = d.Original.sharedMaterials;
-                MaterialPropertyBlock? block = null;
-                if (d.Original.HasPropertyBlock()) { d.Original.GetPropertyBlock(sBlock); block = sBlock; }
-                for (int k = 0; k < d.Materials.Length && k < mats.Length; k++)
-                    if (mats[k] != null)
-                        Graphics.DrawMesh(d.Mesh, d.Matrix, mats[k], go.layer, null, d.FirstSubMesh + k, block,
-                                          d.Original.shadowCastingMode, d.Original.receiveShadows);
-            }
+            sShifted.RemoveAll(kv => kv.Key == null);
+            sBaseShift = Vector3.zero;
+        }
+
+        // ---- lengthened bay -----------------------------------------------------------------------------------------
+        // When the bay is made longer, the Master Jack, its hex lights and the player's start go out with the far end.
+        // This happens before the ship is measured, so the clearance pass above treats the result as the stock position.
+        static Vector3 sBaseShift;
+
+        internal static void BaseShift(Vector3 delta)
+        {
+            if (delta == Vector3.zero) return;
+            FindJacks(out var masterJack, out _);
+            if (masterJack == null) { Plugin.Log.LogWarning("[JackMover] Master Jack not found; it stays where it is in the longer bay."); return; }
+            var stock = masterJack.position;
+            sBaseShift = delta;
+            Move(masterJack, delta, "Master Jack (longer bay)", remember: false);
+            var lights = GameObject.Find(MasterJackLightsPath);
+            if (lights != null) Move(lights.transform, delta, "Master Jack hex lights (longer bay)", remember: false);
+            if (Plugin.MovePlayerSpawn.Value) MovePlayer(stock, delta, sPlayersBaseMoved);
         }
 
         // ---- player -------------------------------------------------------------------------------------------------
         // The player object is placed in the scene at the Master Jack's door and respawns there; keep it at the door.
-        static void MovePlayer(Vector3 masterJackStock, Vector3 delta)
+        static void MovePlayer(Vector3 masterJackStock, Vector3 delta, HashSet<int> done)
         {
             foreach (var player in Resources.FindObjectsOfTypeAll<Player>())
             {
                 if (player == null || !player.gameObject.scene.IsValid()) continue;
                 var t = player.transform;
                 var from = t.position;
-                if (!sPlayersMoved.Add(player.GetInstanceID())) continue;
+                if (!done.Add(player.GetInstanceID())) continue;
                 if ((from - masterJackStock).magnitude > 30f)
                 {
                     Plugin.Log.LogInfo($"[JackMover] player at {V(from)} is not at the Master Jack's stock position; start point left alone.");
