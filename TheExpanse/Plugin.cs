@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using BBI.Unity.Game;
 using BepInEx;
 using BepInEx.Configuration;
@@ -10,6 +11,8 @@ namespace TheExpanse
     // Changes to ships, for large custom ships:
     //   RoomPressure    makes each room's own pressurization / decompression time count, so big rooms take longer
     //   PartSeparation  on custom ships, heavy parts that overlap their neighbors come free gently instead of being thrown
+    //   ShipRoll        on custom ghost ships, a haunting action of its own: the ship rolls slowly about its long axis
+    //   NodeRadiation   on custom ghost ships, being near a node hurts, as radiation
     // (Centering ships in the bay and moving the jacks, which started here, now live in the BiggerBays mod; the Mars
     // planet, loading screen and menu pictures live in the Themes mod.)
     [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
@@ -23,6 +26,25 @@ namespace TheExpanse
         internal static ConfigEntry<bool> ExtendPressureEffects = null!;
         internal static ConfigEntry<float> PressureEffectSeconds = null!;
         internal static ConfigEntry<bool> GentleSeparation = null!;
+        internal static ConfigEntry<bool> RollShip = null!;
+        internal static ConfigEntry<float> RollDegreesPerSecond = null!;
+        internal static ConfigEntry<float> RollSeconds = null!;
+        internal static ConfigEntry<float> RollMinInterval = null!;
+        internal static ConfigEntry<float> RollMaxInterval = null!;
+        internal static ConfigEntry<float> RollStartShare = null!;
+        internal static ConfigEntry<float> RollFrequencyRamp = null!;
+        internal static ConfigEntry<float> RollSpeedRamp = null!;
+        internal static ConfigEntry<bool> NodeRadiation = null!;
+        internal static ConfigEntry<float> NodeRadiationDamage = null!;
+        internal static ConfigEntry<float> NodeRadiationRadius = null!;
+        internal static ConfigEntry<float> NodeRadiationFalloff = null!;
+
+        const float HauntingSeconds = 0.5f;
+        static float sHauntingDue;
+
+        private FileSystemWatcher? _watcher;
+        static volatile bool sSettingsFileChanged;
+        static float sSettingsFileChangedAt;
 
         private void Awake()
         {
@@ -51,12 +73,91 @@ namespace TheExpanse
                 "eased apart at 0.3 m/s, parts up to 100 kg keep the game's speed, and parts in between fall on a smooth slide. The " +
                 "grapple, tethers, explosions and decompression are not changed. The game's own ships are left alone.");
 
+            RollShip = Config.Bind("Haunting", "RollShip", true,
+                "On custom ghost ships, add a haunting action to the game's own three (doors, room pressure, electricity): now and " +
+                "then the ship rolls slowly about its long axis, pushing loose parts and you with it. It stops for good when the last " +
+                "node is destroyed. The game's own haunting is not changed.");
+            RollDegreesPerSecond = Config.Bind("Haunting", "RollDegreesPerSecond", 2f,
+                "How fast the ship turns during a roll, in degrees per second. The speed eases in and out over 3 seconds.");
+            RollSeconds = Config.Bind("Haunting", "RollSeconds", 20f,
+                "How long one roll lasts, in seconds. Speed times this is roughly how far the ship turns each time.");
+            RollMinInterval = Config.Bind("Haunting", "RollMinInterval", 180f,
+                "The shortest wait between rolls, in seconds. Each wait is a random time between this and RollMaxInterval.");
+            RollMaxInterval = Config.Bind("Haunting", "RollMaxInterval", 480f,
+                "The longest wait between rolls, in seconds.");
+            RollStartShare = Config.Bind("Haunting", "RollStartShare", 1f,
+                new ConfigDescription("Rolls happen while the share of nodes left is at or below this. 1: from the start of the shift. " +
+                "0.5: only once half the nodes are destroyed, like the game's own haunting, which grows as nodes are lost.",
+                new AcceptableValueRange<float>(0f, 1f)));
+
+            RollFrequencyRamp = Config.Bind("Haunting", "RollFrequencyRamp", 3f,
+                "Rolls come more often as nodes are destroyed: with the last node left, the waits are this many times shorter than " +
+                "RollMinInterval and RollMaxInterval, and in between they shorten evenly with the share of nodes destroyed. 1: no change.");
+            RollSpeedRamp = Config.Bind("Haunting", "RollSpeedRamp", 2f,
+                "Rolls get faster as nodes are destroyed: with the last node left, the ship turns this many times faster than " +
+                "RollDegreesPerSecond, so each roll turns further. In between the speed rises evenly. 1: no change.");
+
+            NodeRadiation = Config.Bind("Haunting", "NodeRadiation", true,
+                "On custom ghost ships, being near a node damages your health as radiation. Radiation resistance counts. A node that is " +
+                "destroyed stops radiating.");
+            NodeRadiationDamage = Config.Bind("Haunting", "NodeRadiationDamage", 3f,
+                "Health lost per second right at a node, as a percentage of full health. The doses of several nodes add up.");
+            NodeRadiationRadius = Config.Bind("Haunting", "NodeRadiationRadius", 6f,
+                "How far from a node its radiation reaches, in meters.");
+            NodeRadiationFalloff = Config.Bind("Haunting", "NodeRadiationFalloff", 1f,
+                "How the dose drops with distance inside the radius. 0: the same dose everywhere inside, which is how the game's own " +
+                "radiation works. 1: falls evenly to nothing at the edge. 2 or more: strong close to the node, weak further out.");
+
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             CustomShips.Install(harmony);
             RoomPressure.Install(harmony);
 
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
+            WatchSettingsFile();
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} {PluginInfo.PLUGIN_VERSION} loaded.");
+        }
+
+        // ---- settings file ------------------------------------------------------------------------------------------
+        // Saving the settings file while the game runs re-reads it within a second, for tuning during a shift.
+        private void WatchSettingsFile()
+        {
+            try
+            {
+                string path = Config.ConfigFilePath;
+                _watcher = new FileSystemWatcher(Path.GetDirectoryName(path)!, Path.GetFileName(path))
+                {
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName | NotifyFilters.CreationTime,
+                };
+                FileSystemEventHandler changed = (_, __) => sSettingsFileChanged = true;     // the watcher's own thread: no Unity calls
+                _watcher.Changed += changed;
+                _watcher.Created += changed;
+                _watcher.Renamed += (_, __) => sSettingsFileChanged = true;
+                _watcher.EnableRaisingEvents = true;
+            }
+            catch (Exception ex) { Log.LogWarning("Could not watch the settings file; changes apply when a ship loads: " + ex.Message); }
+        }
+
+        private void OnDestroy() => _watcher?.Dispose();
+
+        private void Update()
+        {
+            // Wait for the editor to finish writing before reading the file.
+            if (sSettingsFileChanged)
+            {
+                sSettingsFileChanged = false;
+                sSettingsFileChangedAt = UnityEngine.Time.unscaledTime;
+            }
+            else if (sSettingsFileChangedAt > 0f && UnityEngine.Time.unscaledTime - sSettingsFileChangedAt > 0.5f)
+            {
+                sSettingsFileChangedAt = 0f;
+                try
+                {
+                    Config.Reload();
+                    ShipRoll.OnSettingsChanged();
+                    Log.LogInfo("Settings file re-read; the new values apply now.");
+                }
+                catch (Exception ex) { Log.LogWarning("Could not re-read the settings file; keeping the current settings: " + ex.Message); }
+            }
         }
 
         private void LateUpdate()
@@ -65,6 +166,30 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[RoomPressure] " + ex); }
             try { PartSeparation.Tick(); }
             catch (Exception ex) { Log.LogError("[Parts] " + ex); }
+            try { HauntingTick(); }
+            catch (Exception ex) { Log.LogError("[Haunting] " + ex); }
+        }
+
+        // The ghost ship additions, a couple of times a second of game time (so not while paused).
+        private static void HauntingTick()
+        {
+            if (UnityEngine.Time.time < sHauntingDue) return;
+            sHauntingDue = UnityEngine.Time.time + HauntingSeconds;
+            if (!Enabled.Value || !PartSeparation.CustomShip || (!RollShip.Value && !NodeRadiation.Value))
+            {
+                GhostNodes.Reset();
+                ShipRoll.Schedule();            // with no nodes counted, this eases any roll under way to a stop
+                return;
+            }
+            GhostNodes.Refresh();
+            TheExpanse.NodeRadiation.Apply(HauntingSeconds);
+            ShipRoll.Schedule();
+        }
+
+        private void FixedUpdate()
+        {
+            try { ShipRoll.FixedStep(); }
+            catch (Exception ex) { Log.LogError("[Haunting] " + ex); }
         }
 
         // Start is posted before the scenes load.
@@ -72,6 +197,10 @@ namespace TheExpanse
         {
             if (ev.State != LevelLoadEvent.LoadState.Start) return;
             PartSeparation.CustomShip = false;
+            GhostNodes.Reset();
+            ShipRoll.Reset();
+            TheExpanse.NodeRadiation.Reset();
+            sHauntingDue = 0f;
             // Pick up edits made to the settings file while the game was running, before the next ship loads.
             try { Instance.Config.Reload(); }
             catch (Exception ex) { Log.LogWarning("Could not re-read the settings file; keeping the current settings: " + ex.Message); }
