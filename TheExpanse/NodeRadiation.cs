@@ -40,11 +40,12 @@ namespace TheExpanse
             float radius = Mathf.Max(0.1f, Plugin.NodeRadiationRadius.Value);
             float falloff = Mathf.Max(0f, Plugin.NodeRadiationFalloff.Value);
             float dose = 0f;                                    // in "nodes' worth": 1 = touching one node
-            foreach (var node in GhostNodes.Positions)
+            for (int i = 0; i < GhostNodes.Positions.Count; i++)
             {
-                float d = Vector3.Distance(at, node);
-                if (d >= radius) continue;
-                dose += falloff <= 0f ? 1f : Mathf.Pow(1f - d / radius, falloff);
+                float reach = radius * GhostNodes.Reach[i];             // a larger node reaches further
+                float d = Vector3.Distance(at, GhostNodes.Positions[i]);
+                if (d >= reach) continue;
+                dose += falloff <= 0f ? 1f : Mathf.Pow(1f - d / reach, falloff);
             }
 
             var health = em.GetComponentData<HealthComponent>(player);
@@ -53,7 +54,7 @@ namespace TheExpanse
                 sAnnounced = true;
                 FindDamageType();
                 Plugin.Log.LogInfo($"[Nodes] {GhostNodes.Positions.Count} node(s) radiate: {Plugin.NodeRadiationDamage.Value:0.##}% of full health per second " +
-                                   $"at a node, out to {radius:0.#} m, falloff {falloff:0.##}. Player health {health.Current:0.#} of {health.Max:0.#}." +
+                                   $"at a node, out to {radius:0.#} m ({LargeNodes()}), falloff {falloff:0.##}. Player health {health.Current:0.#} of {health.Max:0.#}." +
                                    StockRadiationForReference(em));
             }
             if (dose <= 0f) return;
@@ -69,6 +70,13 @@ namespace TheExpanse
                 ModType = VitalityData.ModType.Relative,
                 DamageDirection = default
             });
+        }
+
+        static string LargeNodes()
+        {
+            int large = 0; float most = 1f;
+            foreach (float r in GhostNodes.Reach) { if (r > 1.01f) large++; most = Mathf.Max(most, r); }
+            return large == 0 ? "all nodes normal size" : $"{large} larger node(s), reaching up to {most:0.#}x as far";
         }
 
         static void FindDamageType()

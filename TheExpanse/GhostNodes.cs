@@ -16,6 +16,12 @@ namespace TheExpanse
     internal static class GhostNodes
     {
         internal static readonly List<Vector3> Positions = new List<Vector3>();
+        internal static readonly List<Entity> Entities = new List<Entity>();
+        // How far each node's effects reach compared with a normal-size node, by its size (1 for the usual ones,
+        // about 2 for the large node on the Corvette's reactor housing). Same order as Positions.
+        internal static readonly List<float> Reach = new List<float>();
+        const float NormalSize = 0.6f;          // m: the largest of the usual node shapes is about 0.55 m across
+        static readonly Dictionary<Entity, float> sReachOf = new Dictionary<Entity, float>();
         internal static float Total;            // haunting amount of the nodes still there
         internal static float Original;         // the most seen on this ship
 
@@ -28,6 +34,9 @@ namespace TheExpanse
         internal static void Reset()
         {
             Positions.Clear();
+            Entities.Clear();
+            Reach.Clear();
+            sReachOf.Clear();
             Total = 0f;
             Original = 0f;
         }
@@ -35,6 +44,8 @@ namespace TheExpanse
         internal static void Refresh()
         {
             Positions.Clear();
+            Entities.Clear();
+            Reach.Clear();
             Total = 0f;
             var world = World.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated) return;
@@ -58,10 +69,32 @@ namespace TheExpanse
                 foreach (var e in entities)
                 {
                     Total += em.GetComponentData<HauntingCauser>(e).HauntingAmount;
-                    if (TryGetPosition(em, e, out var position)) Positions.Add(position);
+                    Entities.Add(e);
+                    if (TryGetPosition(em, e, out var position)) { Positions.Add(position); Reach.Add(ReachOf(em, e)); }
                 }
             }
             if (Total > Original) Original = Total;
+        }
+
+        static float ReachOf(EntityManager em, Entity e)
+        {
+            if (sReachOf.TryGetValue(e, out float reach)) return reach;
+            reach = 1f;
+            if (em.HasComponent<Transform>(e))
+            {
+                var transform = em.GetComponentObject<Transform>(e);
+                float size = 0f;
+                if (transform != null)
+                    foreach (var filter in transform.GetComponentsInChildren<MeshFilter>())
+                    {
+                        if (filter == null || filter.sharedMesh == null) continue;
+                        Vector3 s = Vector3.Scale(filter.sharedMesh.bounds.size, filter.transform.lossyScale);
+                        size = Mathf.Max(size, Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z));
+                    }
+                reach = Mathf.Max(1f, size / NormalSize);
+            }
+            sReachOf[e] = reach;
+            return reach;
         }
 
         // The object's own transform first: it is right even while the ship is being turned.

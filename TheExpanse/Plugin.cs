@@ -34,7 +34,21 @@ namespace TheExpanse
         internal static ConfigEntry<float> RollStartShare = null!;
         internal static ConfigEntry<float> RollFrequencyRamp = null!;
         internal static ConfigEntry<float> RollSpeedRamp = null!;
+        internal static ConfigEntry<bool> LightFlicker = null!;
+        internal static ConfigEntry<bool> LightBlackout = null!;
+        internal static ConfigEntry<float> LightMinInterval = null!;
+        internal static ConfigEntry<float> LightMaxInterval = null!;
+        internal static ConfigEntry<float> LightFrequencyRamp = null!;
+        internal static ConfigEntry<float> LightRoomRadius = null!;
+        internal static ConfigEntry<float> FlickerSeconds = null!;
+        internal static ConfigEntry<float> BlackoutMinSeconds = null!;
+        internal static ConfigEntry<float> BlackoutMaxSeconds = null!;
+        internal static ConfigEntry<bool> HelmetFlicker = null!;
+        internal static ConfigEntry<float> HelmetFlickerRadius = null!;
+        internal static ConfigEntry<bool> RemoveGrowthAfterLastNode = null!;
         internal static ConfigEntry<bool> NodeRadiation = null!;
+        internal static ConfigEntry<bool> TestTools = null!;
+        internal static ConfigEntry<KeyboardShortcut> KillHalfNodesKey = null!;
         internal static ConfigEntry<float> NodeRadiationDamage = null!;
         internal static ConfigEntry<float> NodeRadiationRadius = null!;
         internal static ConfigEntry<float> NodeRadiationFalloff = null!;
@@ -93,9 +107,40 @@ namespace TheExpanse
             RollFrequencyRamp = Config.Bind("Haunting", "RollFrequencyRamp", 3f,
                 "Rolls come more often as nodes are destroyed: with the last node left, the waits are this many times shorter than " +
                 "RollMinInterval and RollMaxInterval, and in between they shorten evenly with the share of nodes destroyed. 1: no change.");
-            RollSpeedRamp = Config.Bind("Haunting", "RollSpeedRamp", 2f,
+            RollSpeedRamp = Config.Bind("Haunting", "RollSpeedRamp", 5f,
                 "Rolls get faster as nodes are destroyed: with the last node left, the ship turns this many times faster than " +
                 "RollDegreesPerSecond, so each roll turns further. In between the speed rises evenly. 1: no change.");
+
+            LightFlicker = Config.Bind("Haunting", "LightFlicker", true,
+                "On custom ghost ships, another haunting action: now and then the lights around one spot of the ship flicker for a " +
+                "few seconds. Shares its timer with LightBlackout; with both on, each time is one or the other at random.");
+            LightBlackout = Config.Bind("Haunting", "LightBlackout", true,
+                "On custom ghost ships, another haunting action: now and then the lights around one spot of the ship go dark for a " +
+                "while, stuttering as they go and as they come back.");
+            LightMinInterval = Config.Bind("Haunting", "LightMinInterval", 60f,
+                "The shortest wait between light hauntings, in seconds. Each wait is a random time between this and LightMaxInterval.");
+            LightMaxInterval = Config.Bind("Haunting", "LightMaxInterval", 180f,
+                "The longest wait between light hauntings, in seconds.");
+            LightFrequencyRamp = Config.Bind("Haunting", "LightFrequencyRamp", 3f,
+                "Light hauntings come more often as nodes are destroyed: with the last node left, the waits are this many times " +
+                "shorter. 1: no change.");
+            LightRoomRadius = Config.Bind("Haunting", "LightRoomRadius", 12f,
+                "How far around the chosen spot lights are affected, in meters. About one room at the default.");
+            FlickerSeconds = Config.Bind("Haunting", "FlickerSeconds", 4f,
+                "How long a flicker lasts, in seconds.");
+            BlackoutMinSeconds = Config.Bind("Haunting", "BlackoutMinSeconds", 10f,
+                "The shortest blackout, in seconds. Each lasts a random time between this and BlackoutMaxSeconds.");
+            BlackoutMaxSeconds = Config.Bind("Haunting", "BlackoutMaxSeconds", 30f,
+                "The longest blackout, in seconds.");
+            HelmetFlicker = Config.Bind("Haunting", "HelmetFlicker", true,
+                "On custom ghost ships, the helmet light stutters near a node, more often and for longer the closer you get. Only " +
+                "while it is switched on.");
+            HelmetFlickerRadius = Config.Bind("Haunting", "HelmetFlickerRadius", 10f,
+                "How close to a node the helmet light starts to stutter, in meters.");
+
+            RemoveGrowthAfterLastNode = Config.Bind("Haunting", "RemoveGrowthAfterLastNode", true,
+                "On custom ghost ships, the growth painted across the hull, walls and floors disappears when the last node is " +
+                "destroyed, and stays gone if the ship is loaded from a save with no nodes left.");
 
             NodeRadiation = Config.Bind("Haunting", "NodeRadiation", true,
                 "On custom ghost ships, being near a node damages your health as radiation. Radiation resistance counts. A node that is " +
@@ -108,11 +153,21 @@ namespace TheExpanse
                 "How the dose drops with distance inside the radius. 0: the same dose everywhere inside, which is how the game's own " +
                 "radiation works. 1: falls evenly to nothing at the edge. 2 or more: strong close to the node, weak further out.");
 
+            TestTools = Config.Bind("Debug", "TestTools", false,
+                "For testing the ghost ship additions: show how many nodes are left on screen, and destroy half of them with " +
+                "KillHalfNodesKey.");
+            KillHalfNodesKey = Config.Bind("Debug", "KillHalfNodesKey", new KeyboardShortcut(UnityEngine.KeyCode.F8),
+                "With TestTools on: destroys half of the nodes left (rounded up, so the last one goes too).");
+
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             CustomShips.Install(harmony);
             RoomPressure.Install(harmony);
 
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
+            Main.EventSystem.AddHandler<ShipAllSpawnWrapperEvent>(ev =>
+            {
+                if (ev.State == ShipAllSpawnWrapperEvent.SpawnState.Complete) GrowthCleanup.OnShipSpawned();
+            });
             WatchSettingsFile();
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} {PluginInfo.PLUGIN_VERSION} loaded.");
         }
@@ -139,8 +194,16 @@ namespace TheExpanse
 
         private void OnDestroy() => _watcher?.Dispose();
 
+        private void OnGUI()
+        {
+            try { NodeTestTools.Draw(); }
+            catch (Exception ex) { Log.LogError("[Test] " + ex); }
+        }
+
         private void Update()
         {
+            try { NodeTestTools.Tick(); }
+            catch (Exception ex) { Log.LogError("[Test] " + ex); }
             // Wait for the editor to finish writing before reading the file.
             if (sSettingsFileChanged)
             {
@@ -154,6 +217,7 @@ namespace TheExpanse
                 {
                     Config.Reload();
                     ShipRoll.OnSettingsChanged();
+                    HauntedLights.OnSettingsChanged();
                     Log.LogInfo("Settings file re-read; the new values apply now.");
                 }
                 catch (Exception ex) { Log.LogWarning("Could not re-read the settings file; keeping the current settings: " + ex.Message); }
@@ -166,7 +230,7 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[RoomPressure] " + ex); }
             try { PartSeparation.Tick(); }
             catch (Exception ex) { Log.LogError("[Parts] " + ex); }
-            try { HauntingTick(); }
+            try { HauntingTick(); HauntedLights.Frame(); }
             catch (Exception ex) { Log.LogError("[Haunting] " + ex); }
         }
 
@@ -175,15 +239,18 @@ namespace TheExpanse
         {
             if (UnityEngine.Time.time < sHauntingDue) return;
             sHauntingDue = UnityEngine.Time.time + HauntingSeconds;
-            if (!Enabled.Value || !PartSeparation.CustomShip || (!RollShip.Value && !NodeRadiation.Value))
+            if (!Enabled.Value || !PartSeparation.CustomShip)
             {
                 GhostNodes.Reset();
                 ShipRoll.Schedule();            // with no nodes counted, this eases any roll under way to a stop
+                HauntedLights.Schedule();       // and this puts any haunted lights back
                 return;
             }
             GhostNodes.Refresh();
             TheExpanse.NodeRadiation.Apply(HauntingSeconds);
             ShipRoll.Schedule();
+            HauntedLights.Schedule();
+            GrowthCleanup.Tick();
         }
 
         private void FixedUpdate()
@@ -199,6 +266,8 @@ namespace TheExpanse
             PartSeparation.CustomShip = false;
             GhostNodes.Reset();
             ShipRoll.Reset();
+            HauntedLights.Reset();
+            GrowthCleanup.Reset();
             TheExpanse.NodeRadiation.Reset();
             sHauntingDue = 0f;
             // Pick up edits made to the settings file while the game was running, before the next ship loads.
