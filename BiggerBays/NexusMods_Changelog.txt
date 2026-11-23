@@ -2,6 +2,9 @@ Changelog for the BiggerBays page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+1.0.1
+The roof, floor and rails around the second furnace and processor are now solid; salvage could pass through them and get stuck.
+
 1.0.0
 First release.
 The work bay is sized to each ship as it loads; a ship that fits leaves the bay stock.

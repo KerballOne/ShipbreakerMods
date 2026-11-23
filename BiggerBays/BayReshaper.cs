@@ -52,12 +52,10 @@ namespace BiggerBays
         const float DryDockLead = 10f;
         // In the stock bay each side's furnace and processor sit in a recess shaped like a triangle: a side wall by the
         // back wall reaching about 25 m toward the middle of the bay, and from its tip a long slanted edge back out to
-        // the dry dock wall, with plates and rails filling the triangle above and below the mouths. Every mesh of the
-        // recess is copied. Of its colliders, those of the triangle's plates (anything further than WingDepth from the
-        // back wall that reaches nearer the bay's center line than WedgeReach) are left out, so the copy does not narrow
-        // the bay for the ship. (The furnace's mouth is 35 m from the center line, the processor's 44 m.)
-        const float WingDepth = 10f;
-        const float WedgeReach = 25f;
+        // the dry dock wall, with plates and rails filling the triangle above and below the mouths. Every mesh and every
+        // collider of the recess is copied, so what is drawn is also solid. Turned into line with the bay, the copy's
+        // plates stand at least 24.5 m plus the added width from the center line, 4.7 m clear of a ship kept 20 m from
+        // the side walls; a copied collider that would still reach into the ship is dropped (see step 6).
         // Pieces this far out are not part of the bay at all (the station's calipers) and are never copied.
         const float FarOut = 300f;
         // The two groups that make up each side's recess; they stay where they are and are copied, never moved along.
@@ -412,6 +410,20 @@ namespace BiggerBays
                 }
             }
 
+            // A copied collider with no mesh of its own (the recess's plates and rails) must not stand inside the ship.
+            Physics.SyncTransforms();
+            int dropped = 0;
+            foreach (var kv in copyTargets)
+            {
+                if (kv.Key == null || kv.Value.Spans || IsMesh(kv.Value)) continue;
+                bool inShip = false;
+                foreach (var c in kv.Key.GetComponents<Collider>())
+                    if (!c.isTrigger && c.enabled && c.bounds.Intersects(ship)) inShip = true;
+                if (!inShip) continue;
+                Object.Destroy(kv.Key.gameObject);
+                dropped++;
+            }
+
             if (W > 0f)
             {
                 try { StretchBackWall(Resolve(rootObjects, BackWallPanel), W); }
@@ -437,6 +449,7 @@ namespace BiggerBays
             Plugin.Log.LogInfo($"[Bay] ship reaches {reach:0.0} m from the bay's center line and {past:0.0} m past the processor section" +
                                $"{(recalled ? " (loaded from a save: the bay recorded for it is used)" : "")}: each arm moved out {W:0.0} m, bay made {L:0.0} m longer" +
                                $"{(L > 0f ? " with a second furnace and processor on each side" : "")}" +
+                               $"{(dropped > 0 ? $"; {dropped} copied collider(s) left out because the ship reaches them" : "")}" +
                                $"{(BatchedRedraw.Failures > 0 ? $"; {BatchedRedraw.Failures} mesh(es) could not be matched and stay where they were" : "")}.");
         }
 
@@ -444,16 +457,8 @@ namespace BiggerBays
 
         static float Inner(Node n, float cx) => n.Side > 0 ? n.Box.min.x - cx : cx - n.Box.max.x;
 
-        // True for a piece of the recess that is not copied (see the constants above).
-        static bool LeftOut(Node n, float cx)
-        {
-            if (n.Whole != null) return false;
-            float inner = Inner(n, cx);
-            if (inner > FarOut) return true;
-            if (n.Spans || IsMesh(n)) return false;
-            if (n.Box.center.z <= ShipCentering.BackWallZ + WingDepth) return false;        // the bay's side wall stays
-            return inner < WedgeReach;
-        }
+        // True for a piece that is not part of the bay and is not copied (see FarOut).
+        static bool LeftOut(Node n, float cx) => n.Whole == null && Inner(n, cx) > FarOut;
 
         // Widens the back wall's door panel by `W` on each side, about its own middle. Its collider is on the same object
         // and widens with it; the wall behind it is already solid across the whole station.
