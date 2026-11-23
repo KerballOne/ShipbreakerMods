@@ -32,6 +32,7 @@ namespace PartInfoLogger
         internal static ConfigEntry<float> BayGeometryDelay = null!;
         internal static ConfigEntry<float> BayGeometryRadius = null!;
         internal static ConfigEntry<int> BayGeometryMaxVerts = null!;
+        internal static ConfigEntry<KeyCode> CensusHotkey = null!;
         internal static ConfigEntry<float> SpawnSnapshotDelay = null!;
         internal static ConfigEntry<string> SpawnLooseExpected = null!;
         internal static ConfigEntry<float> FireWatchSeconds = null!;
@@ -161,6 +162,10 @@ namespace PartInfoLogger
                 "If true, once per ship load writes joint_census_spawn.csv (every part's jointed neighbours, integrity and " +
                 "fire/electric flags shortly after gameplay starts) and then fire_watch.csv (first time each part is seen " +
                 "burning, electrified, burnt, leaking, damaged, moved or gone). Polling only, no Harmony patches.");
+            CensusHotkey = Config.Bind(
+                "SpawnDiagnostics", "CensusHotkey", KeyCode.F10,
+                "Key that writes joint_census_live.csv (every part's jointed neighbours as they are at that moment, same " +
+                "columns as joint_census_spawn.csv). Press again to overwrite. None disables it.");
             SpawnSnapshotDelay = Config.Bind(
                 "SpawnDiagnostics", "SnapshotDelaySeconds", 1.5f,
                 "Seconds after gameplay start before the spawn snapshot is taken.");
@@ -307,6 +312,7 @@ namespace PartInfoLogger
         private void Update()
         {
             PickupInspector.Tick();
+            SpawnDiagnostics.Tick();
 
             if (SkipDiagnosticsEnabled == null || !SkipDiagnosticsEnabled.Value) return;
 

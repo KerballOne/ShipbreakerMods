@@ -52,6 +52,21 @@ namespace PartInfoLogger
             Plugin.Instance.StartCoroutine(Run());
         }
 
+        // Hotkey (SpawnDiagnostics.CensusHotkey, default F10): writes joint_census_live.csv with the joints as they are
+        // RIGHT NOW (same columns as the spawn census, which is left untouched). Press again to overwrite.
+        internal static void Tick()
+        {
+            if (Plugin.CensusHotkey == null || Plugin.CensusHotkey.Value == KeyCode.None) return;
+            if (!UnityEngine.Input.GetKeyDown(Plugin.CensusHotkey.Value)) return;
+            try
+            {
+                var outDir = Path.GetDirectoryName(Plugin.OutputPath.Value)!;
+                var recs = Snapshot(outDir, "joint_census_live.csv");
+                Plugin.Log.LogInfo($"[SpawnDiagnostics] Live census on hotkey: {recs.Count} part(s) -> joint_census_live.csv");
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning($"[SpawnDiagnostics] Live census failed: {ex}"); }
+        }
+
         // Leaving the level re-arms the one-shot for the next ship.
         internal static void OnLeftLevel() => s_Ran = false;
 
@@ -124,7 +139,7 @@ namespace PartInfoLogger
             Plugin.Log.LogInfo($"[SpawnDiagnostics] Fire watch finished: {total} event(s) over {Plugin.FireWatchSeconds.Value:F0}s -> {watchPath}");
         }
 
-        static List<Rec> Snapshot(string outDir)
+        static List<Rec> Snapshot(string outDir, string fileName = "joint_census_spawn.csv")
         {
             var parts = Resources.FindObjectsOfTypeAll<StructurePart>()
                 .Where(p => p != null && p.gameObject.scene.IsValid()).ToArray();
@@ -202,7 +217,7 @@ namespace PartInfoLogger
                 counts[r.Verdict] = counts.TryGetValue(r.Verdict, out var n) ? n + 1 : 1;
                 sb.AppendLine($"{Csv(r.Name)},{Csv(r.Jsa)},{P(r.Pos0)},{r.Integrity0:F3},{r.IntegrityMax:F3},{r.NeighbourCount},{Csv(r.Neighbours)},{r.Flags},{r.Verdict},{(r.Active ? 1 : 0)},{r.MeshVerts},{r.ChildParts},{r.ChildPartsJointed},{Csv(r.Path)},{(r.HasEntity ? r.Entity.Index : -1)},{r.NeighbourIds}");
             }
-            var path = Path.Combine(outDir, "joint_census_spawn.csv");
+            var path = Path.Combine(outDir, fileName);
             File.WriteAllText(path, sb.ToString());
             Plugin.Log.LogInfo("[SpawnDiagnostics] Verdicts: " + string.Join(", ", counts.OrderByDescending(k => k.Value).Select(k => $"{k.Key} {k.Value}").ToArray()));
             Plugin.Log.LogInfo($"[SpawnDiagnostics] Spawn snapshot: {recs.Count} part(s), {isolated} with no jointed neighbour, " +
