@@ -1,6 +1,4 @@
-using System.Text;
 using BBI.Unity.Game;
-using Unity.Collections;
 using Unity.Entities;
 using UnityEngine;
 
@@ -54,8 +52,7 @@ namespace TheExpanse
                 sAnnounced = true;
                 FindDamageType();
                 Plugin.Log.LogInfo($"[Nodes] {GhostNodes.Positions.Count} node(s) radiate: {Plugin.NodeRadiationDamage.Value:0.##}% of full health per second " +
-                                   $"at a node, out to {radius:0.#} m ({LargeNodes()}), falloff {falloff:0.##}. Player health {health.Current:0.#} of {health.Max:0.#}." +
-                                   StockRadiationForReference(em));
+                                   $"at a node, out to {radius:0.#} m ({LargeNodes()}), falloff {falloff:0.##}. Player health {health.Current:0.#} of {health.Max:0.#}.");
             }
             if (dose <= 0f) return;
 
@@ -92,28 +89,6 @@ namespace TheExpanse
                 return;
             }
             Plugin.Log.LogWarning("[Nodes] the game's radiation damage type was not found; node damage is dealt as untyped damage, so radiation resistance will not count.");
-        }
-
-        // TEMPORARY, for choosing defaults: what the game's own radiation sources on this ship are set to.
-        static string StockRadiationForReference(EntityManager em)
-        {
-            var text = new StringBuilder();
-            var query = em.CreateEntityQuery(ComponentType.ReadOnly<RadioactiveDecayStage>());
-            using (var entities = query.ToEntityArray(Allocator.TempJob))
-            {
-                int shown = 0;
-                foreach (var e in entities)
-                {
-                    var stages = em.GetBuffer<RadioactiveDecayStage>(e);
-                    for (int i = 0; i < stages.Length && shown < 6; i++, shown++)
-                        text.Append($" [stage at {stages[i].IntegrityPercent}% integrity: radius {stages[i].NormalEffectRadius:0.##} m, " +
-                                    $"player {stages[i].NormalPlayerDamagePerTick:0.##} per {stages[i].NormalPlayerDamageTick:0.##} s]");
-                    if (shown >= 6) break;
-                }
-                text.Insert(0, $" Game's own radiation sources on this ship: {entities.Length}.");
-            }
-            query.Dispose();
-            return text.ToString();
         }
     }
 }

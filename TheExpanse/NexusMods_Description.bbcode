@@ -1,10 +1,10 @@
 [center][size=6][b]TheExpanse[/b][/size]
 [size=4]Companion mod for the MCRN Corvette ships[/size]
-[size=3]A mod for Hardspace: Shipbreaker · v0.6.0[/size][/center]
+[size=3]A mod for Hardspace: Shipbreaker · v0.7.0[/size][/center]
 
 [line]
 
-A small companion to the [url=https://www.nexusmods.com/hardspaceshipbreaker/mods/41]MCRN Corvette[/url] (the Tachi, the Rocinante and the Beratnas Gas Hauler). It handles two things that come from how those ships are designed and built. The ships play without it; they play better with it.
+A small companion to the [url=https://www.nexusmods.com/hardspaceshipbreaker/mods/41]MCRN Corvette[/url] (the Tachi, the Rocinante and the Beratnas Gas Hauler). It handles things that come from how those ships are designed and built, and makes their ghost-ship version properly haunted. The ships play without it; they play better with it.
 
 The game's own ships are not changed.
 
@@ -32,6 +32,17 @@ With this mod:
 [*]A hull breach still vents at the game's normal speed.
 [/list]
 
+
+[size=5][b]Ghost ships are more haunted[/b][/size]
+The game's own haunting is kept as it is: doors, room pressure and electricity. On a ghost ship this mod adds to it, and like the game's haunting it gets worse as you destroy the Protomolecule nodes and stops with the last one.
+[list]
+[*][b]The ship rolls.[/b] Every few minutes it turns slowly about its long axis, pushing loose parts and you with it. Faster and more often as nodes are destroyed.
+[*][b]Lights flicker and black out[/b] around one spot of the ship at a time.
+[*][b]The nodes are radioactive.[/b] Get close and you lose health; radiation resistance counts.
+[*][b]Your helmet light stutters[/b] near a node.
+[*][b]The growth goes with the last node.[/b] Destroy them all and the ship is clean.
+[/list]
+
 [line]
 
 [size=5][b]Requirements[/b][/size]
@@ -53,18 +64,19 @@ To remove it, delete the [b]TheExpanse[/b] folder.
 [size=5][b]Settings[/b][/size]
 The settings file is created on first run:
 [code]Hardspace Shipbreaker\BepInEx\config\me.kerballone.TheExpanse.cfg[/code]
-It is read again each time a ship starts loading.
+Saving it while the game is running applies the change within a second.
 [list]
 [*][b]Enabled[/b] (default true): turns the whole mod on or off.
 [*][b]GentleSeparation[/b] (default true): limit how fast overlapping parts are pushed apart when they separate, by mass.
 [*][b]UsePressureTimes[/b] (default true): make each room's own pressurization and decompression time count.
 [*][b]ExtendPressureEffects[/b] (default true): keep the regulator's hiss and vent effect going for the whole of a slowed pressure change.
 [*][b]PressureEffectSeconds[/b] (default 2): how many seconds one play of the hiss and vent effect covers. Lower it if you notice pauses.
+[*][b]Haunting[/b] section: each ghost-ship addition can be switched off, and its timing, speed, reach and damage tuned. Every setting is explained in the file.
 [/list]
 
 
 [size=5][b]Other custom ships[/b][/size]
-Both features apply to any custom ship. A ship author can make a room slow by setting [b]Pressurization Time[/b] and [b]Decompression Time[/b] on its room container, in seconds. Values of about 5 or less make no difference.
+Everything here applies to any custom ship. A ship author can make a room slow by setting [b]Pressurization Time[/b] and [b]Decompression Time[/b] on its room container, in seconds. Values of about 5 or less make no difference.
 
 
 [size=5][b]Source[/b][/size]

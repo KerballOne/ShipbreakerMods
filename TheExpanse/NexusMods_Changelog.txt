@@ -2,6 +2,15 @@ Changelog for the TheExpanse page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+0.7.0
+Ghost ships are more haunted. The game's own haunting is kept and added to, and it all gets worse as nodes are destroyed.
+The ship rolls slowly about its long axis now and then, faster and more often as nodes are destroyed.
+Lights around one spot of the ship flicker or black out.
+Nodes are radioactive: being close costs health, and radiation resistance counts. Larger nodes reach further.
+The helmet light stutters near a node.
+The growth disappears when the last node is destroyed.
+Saving the settings file while the game is running now applies the change at once.
+
 0.6.0
 The atmosphere regulator's hiss and vent effect now last for the whole of a slowed pressure change. New settings: ExtendPressureEffects and PressureEffectSeconds.
 This mod now only handles what is specific to the design of the MCRN Corvette ships: gentle part separation and room pressure times.

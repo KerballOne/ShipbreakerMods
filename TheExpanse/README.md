@@ -1,9 +1,10 @@
 # TheExpanse
 
-A companion mod for the MCRN Corvette ships in Hardspace: Shipbreaker (the Tachi, the Rocinante and the Beratnas Gas Hauler). It handles two things that come from how those ships are designed and built. Both also apply to any other custom ship.
+A companion mod for the MCRN Corvette ships in Hardspace: Shipbreaker (the Tachi, the Rocinante and the Beratnas Gas Hauler). It handles things that come from how those ships are designed and built, and makes their ghost-ship version properly haunted. All of it also applies to any other custom ship.
 
 - **Heavy parts come free gently.** The ships' hull panels and large objects are built from a 3D model, so neighboring parts overlap, and the game threw them off at speed when cut or yanked free. They are eased apart instead.
 - **Big rooms take longer to pressurize.** The game fills and empties every room in the same few seconds. With this mod, a room takes as long as the ship sets for it, and the regulator's hiss and vent effect last as long as the change does.
+- **Ghost ships are more haunted.** On top of the game's own haunting, the ship rolls, lights flicker and black out, the nodes radiate, and the growth disappears with the last node.
 
 ## Room pressure times
 
@@ -26,6 +27,16 @@ With this on, that push is limited by the part's mass:
 
 Only the push between overlapping parts changes. The grapple, tethers, explosions and decompression move parts as before. It applies while a custom ship is in the bay; the game's own ships are left alone.
 
+## Ghost ships
+
+The game's own haunting is kept as it is: doors, room pressure and electricity. On a custom ghost ship this mod adds to it. Like the game's haunting, it gets worse as you destroy nodes and stops with the last one.
+
+- **The ship rolls.** Every few minutes the ship turns slowly about its long axis for about 20 seconds, pushing loose parts and you with it. Rolls come up to 3 times as often and turn up to 5 times as fast as nodes are destroyed.
+- **Lights flicker and black out.** Every minute or few, the lights around one spot of the ship either flicker for a few seconds or go dark for 10 to 30 seconds. More often as nodes are destroyed.
+- **The nodes are radioactive.** Close to a node you lose health as radiation, falling off with distance. Radiation resistance counts. Larger nodes reach further.
+- **The helmet light stutters** near a node, more the closer you get.
+- **The growth goes with the last node.** When the last node is destroyed, the growth painted across the hull, walls and floors disappears. It stays gone on a ship loaded from a save with no nodes left.
+
 ## Settings file
 
 Generated on first run at:
@@ -34,7 +45,7 @@ Generated on first run at:
 Hardspace Shipbreaker\BepInEx\config\me.kerballone.TheExpanse.cfg
 ```
 
-The file is read again each time a ship starts loading, so you can edit it while the game is running and the change applies to the next ship.
+Saving the file while the game is running applies the change within a second.
 
 **[General]**
 - **Enabled** (default true): turns the whole mod on or off.
@@ -46,6 +57,26 @@ The file is read again each time a ship starts loading, so you can edit it while
 
 **[Parts]**
 - **GentleSeparation** (default true): on custom ships, limit how fast overlapping parts are pushed apart when they separate, by mass.
+
+**[Haunting]** (custom ghost ships only)
+- **RollShip** (default true): the ship rolls now and then.
+- **RollDegreesPerSecond** (2), **RollSeconds** (20): speed and length of a roll.
+- **RollMinInterval** (180), **RollMaxInterval** (480): wait between rolls, in seconds.
+- **RollStartShare** (1): rolls happen while the share of nodes left is at or below this. 0.5 = only once half are destroyed.
+- **RollFrequencyRamp** (3), **RollSpeedRamp** (5): with the last node left, rolls are this many times as frequent and as fast. 1 = no change.
+- **LightFlicker** (true), **LightBlackout** (true): the two light hauntings.
+- **LightMinInterval** (60), **LightMaxInterval** (180), **LightFrequencyRamp** (3): their timing, as for rolls.
+- **LightRoomRadius** (12): how far around the chosen spot lights are affected, in meters.
+- **FlickerSeconds** (4), **BlackoutMinSeconds** (10), **BlackoutMaxSeconds** (30): how long they last.
+- **HelmetFlicker** (true), **HelmetFlickerRadius** (10): the helmet light stutters within this many meters of a node.
+- **NodeRadiation** (true): nodes damage your health as radiation.
+- **NodeRadiationDamage** (3): health lost per second right at a node, as a percentage of full health. Doses of several nodes add up.
+- **NodeRadiationRadius** (6): how far a node's radiation reaches, in meters.
+- **NodeRadiationFalloff** (1): 0 = the same dose everywhere inside, as the game's own radiation; 1 = falls evenly to nothing at the edge; 2 or more = strong only close to the node.
+- **RemoveGrowthAfterLastNode** (true): the growth disappears with the last node.
+
+**[Debug]**
+- **TestTools** (default false): shows how many nodes are left on screen, and **KillHalfNodesKey** (F8) destroys half of them. For testing only.
 
 ## For ship authors
 
