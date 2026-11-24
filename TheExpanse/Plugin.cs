@@ -52,6 +52,22 @@ namespace TheExpanse
         internal static ConfigEntry<float> NodeRadiationDamage = null!;
         internal static ConfigEntry<float> NodeRadiationRadius = null!;
         internal static ConfigEntry<float> NodeRadiationFalloff = null!;
+        internal static ConfigEntry<bool> DrivePlume = null!;
+        internal static ConfigEntry<string> PlumeAt = null!;
+        internal static ConfigEntry<float> PlumeLength = null!;
+        internal static ConfigEntry<float> PlumeMouthDiameter = null!;
+        internal static ConfigEntry<float> PlumeSpread = null!;
+        internal static ConfigEntry<float> PlumeBrightness = null!;
+        internal static ConfigEntry<UnityEngine.Color> PlumeColor = null!;
+        internal static ConfigEntry<float> PlumeTurbulence = null!;
+        internal static ConfigEntry<float> PlumeFlowSpeed = null!;
+        internal static ConfigEntry<float> PlumeSheath = null!;
+        internal static ConfigEntry<float> PlumeCore = null!;
+        internal static ConfigEntry<float> PlumeCoreDiameter = null!;
+        internal static ConfigEntry<int> PlumeShockDiamonds = null!;
+        internal static ConfigEntry<float> PlumeStreak = null!;
+        internal static ConfigEntry<float> PlumeLightLumens = null!;
+        internal static ConfigEntry<float> PlumeTestThrottle = null!;
 
         const float HauntingSeconds = 0.5f;
         static float sHauntingDue;
@@ -153,6 +169,43 @@ namespace TheExpanse
                 "How the dose drops with distance inside the radius. 0: the same dose everywhere inside, which is how the game's own " +
                 "radiation works. 1: falls evenly to nothing at the edge. 2 or more: strong close to the node, weak further out.");
 
+            DrivePlume = Config.Bind("Drive", "DrivePlume", true,
+                "Draw the MCRN Corvette's drive plume. For now it is always on.");
+            PlumeAt = Config.Bind("Drive", "PlumeAt", "Bell",
+                new ConfigDescription("Where the plume burns. Bell: out of the mouth of the ship's engine bell (its EngineNozzle parts if the " +
+                    "bell is gone). MasterJack: a test spot 15 m above the bay's Master Jack, pointing up.",
+                    new AcceptableValueList<string>("Bell", "MasterJack")));
+            PlumeLength = Config.Bind("Drive", "Length", 150f,
+                "How far the plume reaches from the engine bell at full throttle, in meters. Lower throttle shortens it in proportion.");
+            PlumeTestThrottle = Config.Bind("Drive", "TestThrottle", 0.25f,
+                "For testing until the flight controls drive it: the throttle the plume burns at, 0.01 to 1. Length and FlowSpeed scale with it.");
+            PlumeMouthDiameter = Config.Bind("Drive", "MouthDiameter", 0f,
+                "How wide the base plume is where it leaves the engine bell, in meters. 0: as wide as the bell's mouth, measured on the ship " +
+                "(also at the test spot; 5 m there until the bell is found).");
+            PlumeSpread = Config.Bind("Drive", "Spread", 1.4f,
+                "How much wider the plume gets downstream: its widest, as a multiple of MouthDiameter. 1 keeps it a straight beam.");
+            PlumeBrightness = Config.Bind("Drive", "Brightness", 1f,
+                "How bright the whole plume glows. Core and Sheath set the two parts against each other.");
+            PlumeColor = Config.Bind("Drive", "Color", new UnityEngine.Color(0.12f, 0.35f, 1f, 1f),
+                "The color of the base plume; the core burns toward white. Keep red and green low or it washes out to white. The mouth glow takes a new color on the next level load.");
+            PlumeTurbulence = Config.Bind("Drive", "Turbulence", 0.6f,
+                "How much the sheath billows, 0 to 1. 0: smooth.");
+            PlumeSheath = Config.Bind("Drive", "Sheath", 0.6f,
+                "How bright the base plume is: the blue glow filling the bell's mouth around the core. Above about 1 it washes out to " +
+                "white. 0: core only.");
+            PlumeCore = Config.Bind("Drive", "Core", 4f,
+                "How bright the white-hot core down the middle of the plume is, and its shock diamonds and the glow at the nozzle.");
+            PlumeCoreDiameter = Config.Bind("Drive", "CoreDiameter", 3f,
+                "How wide the white-hot core is at the bell, in meters.");
+            PlumeFlowSpeed = Config.Bind("Drive", "FlowSpeed", 300f,
+                "How fast the billows run down the plume at full throttle, in meters per second. Lower throttle slows them in proportion.");
+            PlumeShockDiamonds = Config.Bind("Drive", "ShockDiamonds", 4,
+                "How many bright shock diamonds sit in the core near the nozzle, 0 to 12.");
+            PlumeStreak = Config.Bind("Drive", "Streak", 1f,
+                "How bright the thin horizontal flare streak through the nozzle glow is. 0: none.");
+            PlumeLightLumens = Config.Bind("Drive", "LightLumens", 150000f,
+                "How much light the plume casts on the nozzle and the hull, in lumens.");
+
             TestTools = Config.Bind("Debug", "TestTools", false,
                 "For testing the ghost ship additions: show how many nodes are left on screen, and destroy half of them with " +
                 "KillHalfNodesKey.");
@@ -232,6 +285,8 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Parts] " + ex); }
             try { HauntingTick(); HauntedLights.Frame(); }
             catch (Exception ex) { Log.LogError("[Haunting] " + ex); }
+            try { TheExpanse.DrivePlume.Frame(); }
+            catch (Exception ex) { Log.LogError("[Drive] " + ex); }
         }
 
         // The ghost ship additions, a couple of times a second of game time (so not while paused).
@@ -268,6 +323,7 @@ namespace TheExpanse
             ShipRoll.Reset();
             HauntedLights.Reset();
             GrowthCleanup.Reset();
+            TheExpanse.DrivePlume.Reset();
             TheExpanse.NodeRadiation.Reset();
             sHauntingDue = 0f;
             // Pick up edits made to the settings file while the game was running, before the next ship loads.
