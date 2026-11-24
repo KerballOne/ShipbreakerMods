@@ -52,6 +52,26 @@ namespace TheExpanse
         internal static ConfigEntry<float> NodeRadiationDamage = null!;
         internal static ConfigEntry<float> NodeRadiationRadius = null!;
         internal static ConfigEntry<float> NodeRadiationFalloff = null!;
+        internal static ConfigEntry<bool> ReactorControl = null!;
+        internal static ConfigEntry<float> ReactorBallSize = null!;
+        internal static ConfigEntry<float> ReactorBallDepth = null!;
+        internal static ConfigEntry<float> ReactorPulseSeconds = null!;
+        internal static ConfigEntry<float> ReactorBrightness = null!;
+        internal static ConfigEntry<float> ReactorLightLumens = null!;
+        internal static ConfigEntry<float> ReactorRadiationRadius = null!;
+        internal static ConfigEntry<float> ReactorRadiationDamage = null!;
+        internal static ConfigEntry<float> ReactorHeatRadius = null!;
+        internal static ConfigEntry<float> ReactorUnstableAt = null!;
+        internal static ConfigEntry<float> ReactorBurnInterval = null!;
+        internal static ConfigEntry<float> ReactorPartDamage = null!;
+        internal static ConfigEntry<bool> ReactorBurnsParts = null!;
+        internal static ConfigEntry<float> ReactorMeltdownAt = null!;
+        internal static ConfigEntry<float> ReactorMeltdownSeconds = null!;
+        internal static ConfigEntry<bool> ReactorMeltdown = null!;
+        internal static ConfigEntry<KeyboardShortcut> ReactorRightKey = null!;
+        internal static ConfigEntry<KeyboardShortcut> ReactorWrongKey = null!;
+        internal static ConfigEntry<KeyboardShortcut> FxGalleryKey = null!;
+        internal static ConfigEntry<KeyboardShortcut> FxGalleryBackKey = null!;
         internal static ConfigEntry<bool> DrivePlume = null!;
         internal static ConfigEntry<string> PlumeAt = null!;
         internal static ConfigEntry<float> PlumeLength = null!;
@@ -169,6 +189,48 @@ namespace TheExpanse
                 "How the dose drops with distance inside the radius. 0: the same dose everywhere inside, which is how the game's own " +
                 "radiation works. 1: falls evenly to nothing at the edge. 2 or more: strong close to the node, weak further out.");
 
+            ReactorControl = Config.Bind("Reactor", "ReactorControl", true,
+                "On the MCRN Corvette, a ball of fusion plasma burns in the reactor chamber, held in a magnetic bottle by the eight " +
+                "plasma injectors around it. Each injector pushes on the plasma; disconnecting one leaves a gap, and the ball drifts " +
+                "toward it and pulses faster and larger. Disconnect them in balanced order, like the nuts on a car wheel (opposite " +
+                "sides, then the pair in between): one gap at a time is safe, but two gaps side by side make the plasma unstable, " +
+                "and it burns what it touches. With all eight disconnected it fades out.");
+            ReactorBallSize = Config.Bind("Reactor", "BallSize", 2f,
+                "Diameter of the plasma ball when it is in balance, in meters. It grows as the balance goes off.");
+            ReactorBallDepth = Config.Bind("Reactor", "BallDepth", 3f,
+                "Only used if the ship's reactor fire marker is not found: how far below the ring of injectors the ball sits, in meters.");
+            ReactorPulseSeconds = Config.Bind("Reactor", "PulseSeconds", 4f,
+                "How long one slow, small pulse of the ball takes in balance with all eight injectors feeding it, in seconds. " +
+                "Slower and smaller as fewer (balanced) injectors feed it; faster and larger off balance.");
+            ReactorBrightness = Config.Bind("Reactor", "Brightness", 10f,
+                "How bright the plasma glows.");
+            ReactorLightLumens = Config.Bind("Reactor", "LightLumens", 30000f,
+                "How much light the plasma casts on the chamber, in lumens.");
+            ReactorRadiationRadius = Config.Bind("Reactor", "RadiationRadius", 4f,
+                "How far the plasma's radiation reaches from the ball's surface, in meters. The dose falls evenly to nothing at the edge. " +
+                "Radiation resistance counts.");
+            ReactorRadiationDamage = Config.Bind("Reactor", "RadiationDamage", 4f,
+                "Health lost per second at the ball's surface, as a percentage of full health.");
+            ReactorHeatRadius = Config.Bind("Reactor", "HeatRadius", 0.5f,
+                "Coming this close to the ball's surface, in meters, sets you on fire.");
+            ReactorUnstableAt = Config.Bind("Reactor", "UnstableAt", 1.05f,
+                "Imbalance (in injectors' worth) above which the plasma is unstable: a fire cloud wraps it and it burns what it touches. " +
+                "1.05 lets any single gap, and any slightly off opposite pair (0.77), through safely.");
+            ReactorBurnsParts = Config.Bind("Reactor", "BurnsParts", true,
+                "Unstable plasma (UnstableAt or more off balance) burns and sets fire to the parts it touches and the parts in its " +
+                "leak cone. Off: it only burns you.");
+            ReactorBurnInterval = Config.Bind("Reactor", "BurnInterval", 1f,
+                "Seconds between burns of the parts unstable plasma touches.");
+            ReactorPartDamage = Config.Bind("Reactor", "PartDamage", 4f,
+                "Integrity an injector loses each time unstable plasma burns it. Parts that can catch fire are set on fire instead.");
+            ReactorMeltdown = Config.Bind("Reactor", "Meltdown", true,
+                "Badly unbalanced plasma (MeltdownAt or more for MeltdownSeconds) starts the game's own reactor meltdown, and the " +
+                "reactor explodes. Off: it never melts down.");
+            ReactorMeltdownAt = Config.Bind("Reactor", "MeltdownAt", 2.4f,
+                "Imbalance (in injectors' worth) that counts toward a meltdown. Three gaps side by side are 2.41.");
+            ReactorMeltdownSeconds = Config.Bind("Reactor", "MeltdownSeconds", 10f,
+                "How long the plasma can stay at MeltdownAt or more before it melts down, in seconds.");
+
             DrivePlume = Config.Bind("Drive", "DrivePlume", true,
                 "Draw the MCRN Corvette's drive plume. For now it is always on.");
             PlumeAt = Config.Bind("Drive", "PlumeAt", "Bell",
@@ -207,10 +269,20 @@ namespace TheExpanse
                 "How much light the plume casts on the nozzle and the hull, in lumens.");
 
             TestTools = Config.Bind("Debug", "TestTools", false,
-                "For testing the ghost ship additions: show how many nodes are left on screen, and destroy half of them with " +
-                "KillHalfNodesKey.");
+                "For testing the ghost ship additions and reactor control: show how many nodes are left and the reactor's state on " +
+                "screen, destroy half of the nodes with KillHalfNodesKey, and pretend to disconnect injectors with ReactorRightKey " +
+                "and ReactorWrongKey.");
             KillHalfNodesKey = Config.Bind("Debug", "KillHalfNodesKey", new KeyboardShortcut(UnityEngine.KeyCode.F8),
                 "With TestTools on: destroys half of the nodes left (rounded up, so the last one goes too).");
+            ReactorRightKey = Config.Bind("Debug", "ReactorRightKey", new KeyboardShortcut(UnityEngine.KeyCode.F11),
+                "With TestTools on: treats the injector that keeps the plasma best balanced as disconnected, without touching the ship.");
+            ReactorWrongKey = Config.Bind("Debug", "ReactorWrongKey", new KeyboardShortcut(UnityEngine.KeyCode.F11, UnityEngine.KeyCode.LeftShift),
+                "With TestTools on: treats the injector that unbalances the plasma most as disconnected, without touching the ship.");
+            FxGalleryKey = Config.Bind("Debug", "FxGalleryKey", new KeyboardShortcut(UnityEngine.KeyCode.F11, UnityEngine.KeyCode.LeftControl),
+                "With TestTools on: shows the game's own fire, glow and reactor effects one at a time, at their real size, 10 m in " +
+                "front of you, with its number and name on screen. Each press shows the next; the press after the last clears.");
+            FxGalleryBackKey = Config.Bind("Debug", "FxGalleryBackKey", new KeyboardShortcut(UnityEngine.KeyCode.F11, UnityEngine.KeyCode.LeftControl, UnityEngine.KeyCode.LeftShift),
+                "With TestTools on: shows the previous effect in the gallery.");
 
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             CustomShips.Install(harmony);
@@ -219,7 +291,9 @@ namespace TheExpanse
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
             Main.EventSystem.AddHandler<ShipAllSpawnWrapperEvent>(ev =>
             {
-                if (ev.State == ShipAllSpawnWrapperEvent.SpawnState.Complete) GrowthCleanup.OnShipSpawned();
+                if (ev.State != ShipAllSpawnWrapperEvent.SpawnState.Complete) return;
+                GrowthCleanup.OnShipSpawned();
+                TheExpanse.ReactorControl.OnShipSpawned();
             });
             WatchSettingsFile();
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} {PluginInfo.PLUGIN_VERSION} loaded.");
@@ -249,13 +323,13 @@ namespace TheExpanse
 
         private void OnGUI()
         {
-            try { NodeTestTools.Draw(); }
+            try { NodeTestTools.Draw(); TheExpanse.ReactorControl.DrawTest(); FxGallery.Draw(); }
             catch (Exception ex) { Log.LogError("[Test] " + ex); }
         }
 
         private void Update()
         {
-            try { NodeTestTools.Tick(); }
+            try { NodeTestTools.Tick(); TheExpanse.ReactorControl.TestKeys(); FxGallery.Tick(); }
             catch (Exception ex) { Log.LogError("[Test] " + ex); }
             // Wait for the editor to finish writing before reading the file.
             if (sSettingsFileChanged)
@@ -285,6 +359,8 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Parts] " + ex); }
             try { HauntingTick(); HauntedLights.Frame(); }
             catch (Exception ex) { Log.LogError("[Haunting] " + ex); }
+            try { TheExpanse.ReactorControl.Frame(); }
+            catch (Exception ex) { Log.LogError("[Reactor] " + ex); }
             try { TheExpanse.DrivePlume.Frame(); }
             catch (Exception ex) { Log.LogError("[Drive] " + ex); }
         }
@@ -323,8 +399,10 @@ namespace TheExpanse
             ShipRoll.Reset();
             HauntedLights.Reset();
             GrowthCleanup.Reset();
-            TheExpanse.DrivePlume.Reset();
             TheExpanse.NodeRadiation.Reset();
+            TheExpanse.ReactorControl.Reset();
+            FxGallery.Reset();
+            TheExpanse.DrivePlume.Reset();
             sHauntingDue = 0f;
             // Pick up edits made to the settings file while the game was running, before the next ship loads.
             try { Instance.Config.Reload(); }
