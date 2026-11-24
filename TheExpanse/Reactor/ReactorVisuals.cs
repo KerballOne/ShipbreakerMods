@@ -46,6 +46,7 @@ namespace TheExpanse
         internal static void Destroy()
         {
             ReactorFeeds.Destroy();
+            ReactorSound.Destroy();
             if (sRoot != null) Object.Destroy(sRoot);
             if (sBallMaterial != null) Object.Destroy(sBallMaterial);
             sRoot = sBall = null;
@@ -183,9 +184,10 @@ namespace TheExpanse
             Plugin.Log.LogInfo($"[Reactor] {fx.Name} centered: moved to {t.localPosition}.");
         }
 
-        internal static Color ColorFor(int level) => level <= 1 ? new Color(1f, 0.85f, 0.5f)
-                                                   : level == 2 ? new Color(1f, 0.5f, 0.15f)
-                                                   : new Color(1f, 0.25f, 0.05f);
+        // The ball's light: blue, deepening as the plasma goes off balance (the flames keep the game's own amber).
+        internal static Color ColorFor(int level) => level <= 1 ? new Color(0.55f, 0.75f, 1f)
+                                                   : level == 2 ? new Color(0.3f, 0.5f, 1f)
+                                                   : new Color(0.25f, 0.3f, 1f);
 
         static void Place(Effect fx, bool visible, Vector3 scale)
         {

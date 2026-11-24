@@ -48,10 +48,17 @@ namespace TheExpanse
             internal Vector3 LocalDirection;    // unit, ball toward nozzle across the ring, core space
             internal Vector3 LocalHandle;       // its control handle (the console jointed to it), core space
             internal bool HasHandle;
+            internal StructurePart? HandlePart; // the handle's console
             internal bool Connected = true;
+            internal bool HandlePulled;         // it went by its handle (timed), not by a cut pipe
+            internal float PressAt = -100f;     // when its handle switch was last used, and whether the lights were dark then
+            internal bool PressSafe;
+            internal float JointAt = -1f;       // its first joint event since the last check, and whether it came in the window
+            internal bool JointSafe;
             internal bool UsesFeeds;            // a fuel line found at setup: whether it still reaches its anchors decides it
             internal readonly HashSet<Entity> Anchors = new HashSet<Entity>();   // where its fuel line joined the ship at setup
             internal readonly HashSet<Entity> Released = new HashSet<Entity>();  // what its handle lets go of, from setup
+            internal readonly HashSet<Entity> Line = new HashSet<Entity>();      // its fuel line's pipe parts, as last checked
             internal int LastAttached = -1;     // joints at the last check (-1 before the first)
             internal float LastHeated = -100f;
             internal GameObject? FireFx;
@@ -60,7 +67,7 @@ namespace TheExpanse
         static readonly Injector[] sInjectors = new Injector[Count];
         static readonly bool[] sSimulated = new bool[Count];       // test tools: treated as disconnected
         static Phase sPhase = Phase.Waiting;
-        static float sSpawnedAt = -1f, sLogicDue, sPhaseStarted, sNextBurn, sBadSince = -1f;
+        static float sSpawnedAt = -1f, sLogicDue, sPhaseStarted, sNextBurn, sBadSince = -1f, sNextCountdownLog;
         static StructurePart? sCore;
         static Entity sCoreEntity;
         static Vector3 sLocalCenter, sLocalDown;
@@ -80,6 +87,7 @@ namespace TheExpanse
             foreach (var injector in sInjectors) if (injector?.FireFx != null) Object.Destroy(injector.FireFx);
             for (int i = 0; i < Count; i++) { sInjectors[i] = null!; sSimulated[i] = false; }
             ReactorVisuals.Destroy();
+            HandleLights.Destroy();
             ReactorFire.Reset();
             sPhase = Phase.Waiting;
             sSpawnedAt = -1f;
@@ -89,6 +97,7 @@ namespace TheExpanse
             sShownFeed = 1f;
             sPulseAt = -1f;
             sBadSince = -1f;
+            sEscalation = 0; sEscalateFrom = -1f; sLastRaw = 0f;
             sTracked = false; sJumpFrames = 0; sJumpsHeld = 0;
             try
             {
@@ -97,6 +106,7 @@ namespace TheExpanse
             }
             catch { }
             sBlast = Entity.Null;
+            sBlastCached = false;
             sFade = 1f;
             sSetupFailedLogged = false;
         }
@@ -117,8 +127,8 @@ namespace TheExpanse
                     return;
                 }
             }
-            if (sPhase == Phase.Gone) return;
-            if (!Allowed) { ReactorVisuals.Destroy(); return; }
+            if (sPhase == Phase.Gone) { if (!Allowed) HandleLights.Destroy(); return; }
+            if (!Allowed) { ReactorVisuals.Destroy(); HandleLights.Destroy(); return; }
             if (!ReactorVisuals.Built) ReactorVisuals.Build();
 
             if (Time.time >= sLogicDue)
@@ -586,6 +596,7 @@ namespace TheExpanse
                                 {
                                     injector.LocalHandle = sCore.transform.InverseTransformPoint(held.transform.position);
                                     injector.HasHandle = true;
+                                    injector.HandlePart = held;
                                 }
                                 if (holders.Count < 8) holders.Add(NameOf(em, other));
                             }
@@ -636,6 +647,7 @@ namespace TheExpanse
                                            (injector.UsesFeeds ? (lid.Count > 0 ? $"; {lid.Count} at the lid decide it." : "; none at the lid: all of them decide it.")
                                                                : "; no line: any joint keeps it connected."));
                     }
+                    injector.Line.Clear(); injector.Line.UnionWith(pipes);
                     int reached = injector.UsesFeeds ? anchors.Count(x => injector.Anchors.Contains(x)) : 0;
                     bool connected = (injector.UsesFeeds ? reached > 0 : joints > 0) && !handlePulled;
 
@@ -651,6 +663,7 @@ namespace TheExpanse
                                                (connected ? "." : "; it counts as disconnected."));
                         injector.LastAttached = state;
                     }
+                    injector.HandlePulled = handlePulled;
                     if (injector.Connected && !connected && !sSimulated[i]) lost.Add(i);
                     injector.Connected = connected;
                 }
@@ -670,14 +683,103 @@ namespace TheExpanse
             return sum;
         }
 
-        static float Imbalance => LocalImbalance().magnitude;
+        static float RawImbalance => LocalImbalance().magnitude;
+        static float Imbalance => Escalated(RawImbalance);
+
+        // The push with escalation, for the leak cone: the same direction, the escalated strength.
+        static Vector3 EscalatedLocalImbalance()
+        {
+            var v = LocalImbalance();
+            float raw = v.magnitude;
+            return raw > 1e-4f ? v * (Imbalance / raw) : v;
+        }
         static bool Unstable => Imbalance > Mathf.Max(0f, Plugin.ReactorUnstableAt.Value);
 
         static string BalanceText()
         {
             float m = Imbalance;
+            string escalated = sEscalation > 0 ? $", raised from level {LevelOf(RawImbalance)} by {sEscalation} of waiting" : "";
             string gaps = string.Concat(Enumerable.Range(0, Count).Select(i => Connected(i) ? i.ToString() : "-"));
-            return $"injectors {gaps}, imbalance {m:0.00}" + (m > Plugin.ReactorUnstableAt.Value ? " (UNSTABLE)" : m < 0.05f ? " (in balance)" : " (safe)");
+            string state = m > Plugin.ReactorUnstableAt.Value ? "UNSTABLE" : m < 0.05f ? "in balance" : "safe";
+            string level = m < 0.05f ? "level 0" : $"LEVEL {LevelOf(m)}";
+            return $"{level} ({state}{escalated}), injectors {gaps}, imbalance {m:0.00}";
+        }
+
+        // ---- escalation ---------------------------------------------------------------------------------------------
+        // Left off balance, the plasma gets worse by itself: after EscalateMaxSeconds level 1 (safe) becomes level 2
+        // (unstable), and from there it takes less time, down to EscalateMinSeconds, to become level 3 (badly
+        // unbalanced, where the meltdown countdown, MeltdownSeconds, starts). The wait shortens smoothly with the
+        // imbalance, from Max at one gap to Min at two side by side. A disconnect that evens the balance out restarts the
+        // wait and takes a level of escalation off; a wrong one leaves the clock running. Back in balance it is all gone.
+        static int sEscalation;                 // levels added by waiting
+        static float sEscalateFrom = -1f;       // when the wait for the next level began
+        static float sLastRaw;                  // the balance the wait began at
+
+        // Where level 2 sits: two gaps side by side (1.85 with the default thresholds).
+        static float LevelTwoAt => Mathf.Lerp(Plugin.ReactorUnstableAt.Value, Plugin.ReactorMeltdownAt.Value, 0.6f);
+        static int LevelOf(float m) => m <= Plugin.ReactorUnstableAt.Value ? 1 : m < Plugin.ReactorMeltdownAt.Value ? 2 : 3;
+
+        static float Escalated(float raw)
+        {
+            if (sEscalation <= 0 || raw < 0.05f) return raw;
+            int level = Mathf.Min(3, LevelOf(raw) + sEscalation);
+            return Mathf.Max(raw, level >= 3 ? Plugin.ReactorMeltdownAt.Value : level == 2 ? LevelTwoAt : 0f);
+        }
+
+        static float EscalationDelay(float m)
+        {
+            float max = Mathf.Max(1f, Plugin.ReactorEscalateMaxSeconds.Value);
+            float min = Mathf.Clamp(Plugin.ReactorEscalateMinSeconds.Value, 1f, max);
+            return Mathf.Lerp(max, min, Mathf.Clamp01((m - 1f) / Mathf.Max(0.01f, LevelTwoAt - 1f)));
+        }
+
+        // Seconds until the plasma goes up a level by itself, or melts down; -1 when nothing is counting down.
+        static float NextStepIn()
+        {
+            if (sPhase != Phase.Running) return -1f;
+            float m = Imbalance;
+            if (m >= Plugin.ReactorMeltdownAt.Value)
+                return MeltdownAllowed && sBadSince >= 0f
+                    ? Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value) - (Time.time - sBadSince) : -1f;
+            if (Plugin.ReactorEscalation.Value && sEscalateFrom >= 0f && RawImbalance >= 0.05f)
+                return EscalationDelay(m) - (Time.time - sEscalateFrom);
+            return -1f;
+        }
+
+        static void Escalate()
+        {
+            float raw = RawImbalance;
+            if (!Plugin.ReactorEscalation.Value || raw < 0.05f)
+            {
+                if (sEscalation > 0) Plugin.Log.LogInfo("[Reactor] escalation cleared: " + (raw < 0.05f ? "back in balance." : "escalation is off."));
+                sEscalation = 0; sEscalateFrom = -1f; sLastRaw = raw;
+                return;
+            }
+            if (Mathf.Abs(raw - sLastRaw) > 0.01f)
+            {
+                // Only a disconnect that evens the balance out restarts the wait; a wrong one leaves the clock running.
+                if (raw < sLastRaw)
+                {
+                    if (sEscalation > 0)
+                    {
+                        sEscalation--;
+                        Plugin.Log.LogInfo($"[Reactor] evened out a level of escalation: {BalanceText()}.");
+                    }
+                    sEscalateFrom = Time.time;
+                }
+                else if (sEscalateFrom >= 0f) Plugin.Log.LogInfo($"[Reactor] a wrong disconnect: the escalation clock keeps running ({Time.time - sEscalateFrom:0} s in).");
+                sLastRaw = raw;
+            }
+            if (sEscalateFrom < 0f) sEscalateFrom = Time.time;
+            float m = Imbalance;
+            if (m >= Plugin.ReactorMeltdownAt.Value) return;        // level 3: the meltdown countdown takes over
+            float delay = EscalationDelay(m);
+            if (Time.time - sEscalateFrom < delay) return;
+            sEscalation++;
+            sEscalateFrom = Time.time;
+            float next = Imbalance;
+            Plugin.Log.LogInfo($"[Reactor] left off balance for {delay:0} s: escalated to level {LevelOf(next)}: {BalanceText()}" +
+                               (next < Plugin.ReactorMeltdownAt.Value ? $"; next level in {EscalationDelay(next):0} s." : "."));
         }
 
         // ---- the rules ----------------------------------------------------------------------------------------------
@@ -691,18 +793,34 @@ namespace TheExpanse
             {
                 case Phase.Running:
                 {
-                    if (!CoreAttached(em)) { Explode(em, "the reactor core was pulled out, cut loose or destroyed"); break; }
+                    CacheBlast(em);
+                    sWindowSinceCheck = sWindowSinceCheckNext || InSafeWindow();
+                    sWindowSinceCheckNext = false;
+                    if (!CoreAttached(em)) { Explode(em, "the reactor was pulled out, cut loose or destroyed"); break; }
                     foreach (int i in UpdateConnections(em)) OnDisconnected(i);
+                    sLastCheckAt = Time.time;
                     if (sPhase != Phase.Running) break;
+                    Escalate();
                     // Meltdown: badly unbalanced for too long.
-                    if (Plugin.ReactorMeltdown.Value && Imbalance >= Plugin.ReactorMeltdownAt.Value)
+                    if (!MeltdownAllowed && sBadSince >= 0f)
+                    {
+                        sBadSince = -1f;
+                        Plugin.Log.LogInfo($"[Reactor] meltdown countdown stopped: Core Meltdown is {(Plugin.ReactorMeltdown.Value ? "on" : "off")}, Ship Damage {Plugin.ReactorShipDamage.Value:0}.");
+                    }
+                    if (MeltdownAllowed && Imbalance >= Plugin.ReactorMeltdownAt.Value)
                     {
                         if (sBadSince < 0f)
                         {
                             sBadSince = Time.time;
                             Plugin.Log.LogInfo($"[Reactor] badly unbalanced ({BalanceText()}): meltdown in {Plugin.ReactorMeltdownSeconds.Value:0} s unless it is evened out.");
                         }
-                        else if (Time.time - sBadSince >= Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value))
+                        else if (Time.time >= sNextCountdownLog && Time.time - sBadSince < Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value))
+                        {
+                            // Diagnostic: the countdown, every 2 s (a meltdown once failed to come).
+                            sNextCountdownLog = Time.time + 2f;
+                            Plugin.Log.LogInfo($"[Reactor] meltdown countdown: {Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value) - (Time.time - sBadSince):0.0} s left ({BalanceText()}).");
+                        }
+                        if (sBadSince >= 0f && Time.time - sBadSince >= Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value))
                         {
                             sPhase = Phase.Meltdown;
                             sPhaseStarted = Time.time;
@@ -718,7 +836,7 @@ namespace TheExpanse
                 }
                 case Phase.Meltdown:
                     if (!em.Exists(sCoreEntity) || em.HasComponent<ExplodedComponent>(sCoreEntity) || sCore == null)
-                        BeginFade("the reactor core exploded");
+                        Explode(em, "the reactor above it exploded, and the core went with it");
                     else if (Time.time - sPhaseStarted > MeltdownGiveUp)
                         BeginFade($"the meltdown did not finish within {MeltdownGiveUp:0} s");
                     break;
@@ -728,6 +846,7 @@ namespace TheExpanse
                     {
                         sPhase = Phase.Gone;
                         ReactorVisuals.Destroy();
+                        ShowHandleLights();         // the signs stay on the consoles, unlit
                         foreach (var injector in sInjectors) if (injector?.FireFx != null) Object.Destroy(injector.FireFx);
                         Plugin.Log.LogInfo("[Reactor] the plasma is out.");
                         return;
@@ -740,8 +859,174 @@ namespace TheExpanse
 
         static void OnDisconnected(int i)
         {
+            if (sInjectors[i].HandlePulled) JudgePull(i);
             if (sInjectors.All(x => !Connected(x.Index))) { BeginFade($"injector {i} was the last one: the reactor is shut down"); return; }
             Plugin.Log.LogInfo($"[Reactor] injector {i} disconnected: {BalanceText()}.");
+        }
+
+        // ---- handle timing ------------------------------------------------------------------------------------------
+        // Like the game's breakers: an injector's handle is pulled safely only while the core is at the low point of its
+        // pulse (its three handle lights all dark). Pulled at any other moment, the plasma flashes back along it and sets
+        // you on fire. The moment of the pull is taken from the game's own joint events (any joints removed, or a
+        // breakable joint broken), which come on the very frame; the injectors themselves are checked only every
+        // quarter second. If no such event came, the pull counts as safe when the window was open at any time since the
+        // last check. Cutting the purple pipe instead is not timed, as cutting a breaker's fuse is not.
+        static float sCurrentPeriod = 4f;
+        static bool sWindowSinceCheck, sWindowSinceCheckNext;
+
+        // The lights' own cycle, like a breaker panel's: dark (safe), 1, 2, 3 lit, dark again, each step lasting
+        // PulsesPerLight of the core's pulses. Slow in balance (a 4 s pulse: 6 s a step at 1.5), quickening with the
+        // imbalance (one gap: 1.5 s; level 3: 0.375 s, a hair faster than the game's fastest breakers).
+        static float sLightCycle;               // 0..4: the step, and how far through it
+        static float StepSeconds => Mathf.Max(0.05f, Mathf.Max(0.1f, Plugin.ReactorPulsesPerLight.Value) * sCurrentPeriod);
+
+        static void AdvanceLights(float dt) => sLightCycle = (sLightCycle + dt / StepSeconds) % 4f;
+        static int LightStage() => Mathf.Clamp((int)sLightCycle, 0, 3);
+        static bool InSafeWindow() => LightStage() == 0;
+
+        // The moment the player pulls a handle: its Activate completes (the game's ProgressComplete interaction event, on
+        // the press itself; the console lets go of the injector about 5 s later). Judged then, and a miss punished at once.
+        // Init comes from just looking at it, so it does not count.
+        internal static void OnInteraction(InteractionEvent ev)
+        {
+            if (ev.InteractableObject == null || ev.Interaction != InteractionEvent.InteractionType.ProgressComplete) return;
+            OnSwitchUsed(ev.InteractableObject);
+        }
+
+        internal static void OnSwitchUsed(Component used)
+        {
+            if (!Plugin.ReactorHandleTiming.Value || (sPhase != Phase.Running && sPhase != Phase.Meltdown) || sInjectors[0] == null || sCore == null || used == null) return;
+            var at = used.transform.position;
+            int best = -1; float bestDistance = 4f;     // within 2 m
+            for (int i = 0; i < Count; i++)
+            {
+                var x = sInjectors[i];
+                if (x == null || !x.Connected || !x.HasHandle) continue;
+                float d = (sCore.transform.TransformPoint(x.LocalHandle) - at).sqrMagnitude;
+                if (d < bestDistance) { bestDistance = d; best = i; }
+            }
+            if (best < 0) return;
+            var injector = sInjectors[best];
+            injector.PressAt = Time.time;
+            injector.PressSafe = InSafeWindow();
+            Plugin.Log.LogInfo($"[Reactor] injector {best} handle pulled with the lights at step {LightStage()} " +
+                               $"({(injector.PressSafe ? "dark: safe" : "lit: flashback")}).");
+            Consequence(best, injector.PressSafe);
+        }
+
+        // A joint went somewhere in the game; if it was one of an injector's (its own parts, what its handle holds, or its
+        // handle's console), note the moment for that injector: the first one since the last check. Joints going elsewhere
+        // (burning parts fall apart all the time) do not count.
+        static float sLastCheckAt;
+
+        internal static void OnJointEvent(StructurePart? part)
+        {
+            if ((sPhase != Phase.Running && sPhase != Phase.Meltdown) || part == null || sInjectors[0] == null) return;
+            var entity = part.EntityBlueprintComponent != null ? part.EntityBlueprintComponent.Entity : Entity.Null;
+            for (int i = 0; i < Count; i++)
+            {
+                var x = sInjectors[i];
+                if (x == null || !x.Connected) continue;
+                bool mine = x.Parts.Contains(part) || part == x.HandlePart || (entity != Entity.Null && x.Released.Contains(entity));
+                if (!mine || x.JointAt >= sLastCheckAt) continue;
+                x.JointAt = Time.time;
+                x.JointSafe = InSafeWindow();
+            }
+        }
+
+        static void JudgePull(int i)
+        {
+            if (!Plugin.ReactorHandleTiming.Value || (sPhase != Phase.Running && sPhase != Phase.Meltdown)) return;
+            var x = sInjectors[i];
+            if (Time.time - x.PressAt < 10f) return;                 // already judged when its handle was pulled
+            bool fromEvent = x.JointAt >= sLastCheckAt - LogicSeconds;
+            bool safe = fromEvent ? x.JointSafe : sWindowSinceCheck;
+            string how = fromEvent ? $"no handle pull seen; timed by its own joint event {Time.time - x.JointAt:0.00} s before the check"
+                                   : "no handle pull or joint event of its own: judged by the window since the last check";
+            Plugin.Log.LogInfo($"[Reactor] injector {i} let go {(safe ? "in" : "OUTSIDE")} the safe window ({how}).");
+            Consequence(i, safe);
+        }
+
+        // A pulled handle's outcome: the breaker's "removed" sound if the lights were dark; otherwise a flashback: the
+        // failed sound, fire at the handle, and (with PlayerDamage) heat at once and the game's fire.
+        static void Consequence(int i, bool safe)
+        {
+            if (safe) { ReactorSound.Play("sfx_powerGenerator_breakerRemoved"); return; }
+            ReactorSound.Play("sfx_powerGenerator_breakerRemoved_fail");
+            var world = World.DefaultGameObjectInjectionWorld;
+            if (world == null || !world.IsCreated) return;
+            var em = world.EntityManager;
+            var handle = sCore != null ? sCore.transform.TransformPoint(sInjectors[i].LocalHandle) : sWorldCenter;
+            var prefab = FirePrefab();
+            if (prefab != null)
+            {
+                var burst = Object.Instantiate(prefab, handle, Quaternion.identity);
+                burst.name = "TheExpanse_HandleFlashback";
+                burst.SetActive(true);
+                Object.Destroy(burst, 3f);
+            }
+            if (!Plugin.ReactorPlayerDamage.Value) return;
+            var player = PlayerProfileService.Instance?.Profile?.PlayerEntity ?? Entity.Null;
+            if (player != Entity.Null && em.Exists(player) && em.HasComponent<HealthComponent>(player))
+            {
+                float health = em.GetComponentData<HealthComponent>(player).Max;
+                ReactorFire.ScorchPlayer(em, player, 0.05f * health);
+                ReactorFire.IgnitePlayer(em, player, 0.05f * health);
+            }
+        }
+
+        // ---- touch ----------------------------------------------------------------------------------------------------
+        // Holding the reactor, an injector or one of their fuel lines, the player hears the core through the suit, the
+        // game's touch transfer: its sounds come through louder, and clearly in vacuum.
+        static bool sTouching;
+
+        internal static void OnGrab(GrabEvent ev)
+        {
+            if (ev.State == GrabEvent.GrabState.Release) { if (sTouching) Plugin.Log.LogInfo("[Reactor] let go of the reactor."); sTouching = false; return; }
+            if (ev.State != GrabEvent.GrabState.Grab || ev.GrabbedPart == null || sInjectors[0] == null) return;
+            var part = ev.GrabbedPart;
+            var entity = part.EntityBlueprintComponent != null ? part.EntityBlueprintComponent.Entity : Entity.Null;
+            bool reactor = part == sCore || (entity != Entity.Null && entity == sCoreEntity)
+                || sInjectors.Any(x => x != null && (x.Parts.Contains(part) || (entity != Entity.Null && x.Line.Contains(entity))))
+                || NearHandle(part);
+            if (reactor && !sTouching) Plugin.Log.LogInfo($"[Reactor] holding '{part.name}': the core is heard through the suit.");
+            sTouching = reactor;
+        }
+
+        // Any part of a handle's console (the handle itself or the panel it sits on) within 2 m of an injector's handle.
+        static bool NearHandle(StructurePart part)
+        {
+            if (sCore == null || part.name.IndexOf("AirlockConsole", System.StringComparison.OrdinalIgnoreCase) < 0) return false;
+            var at = part.transform.position;
+            return sInjectors.Any(x => x != null && x.HasHandle && (sCore.transform.TransformPoint(x.LocalHandle) - at).sqrMagnitude < 4f);
+        }
+
+        static void ShowHandleLights()
+        {
+            bool burning = sPhase == Phase.Running || sPhase == Phase.Meltdown;
+            int stage = burning ? LightStage() : 0;
+            for (int i = 0; i < Count; i++)
+            {
+                var x = sInjectors[i];
+                bool live = burning && x != null && Connected(i);
+                // Live panels: on the console, or floating above the handle without one. Dead ones (already disconnected,
+                // or the plasma out): only on a console that is still there.
+                bool visible = Plugin.ReactorHandleTiming.Value && x != null && x.HasHandle
+                               && (live ? sCore != null : x.HandlePart != null);
+                if (!visible) { HandleLights.Show(i, false, null, default, default, default, default, 0); continue; }
+                if (sCore == null)
+                {
+                    HandleLights.Show(i, true, x!.HandlePart!.transform, default, Vector3.up, Vector3.right, Vector3.forward, 0, false);
+                    continue;
+                }
+                var t = sCore.transform;
+                var handle = t.TransformPoint(x!.LocalHandle);
+                var up = -t.TransformDirection(sLocalDown).normalized;
+                var radial = Vector3.ProjectOnPlane(handle - t.TransformPoint(sLocalCenter), up);
+                var around = radial.sqrMagnitude > 1e-4f ? Vector3.Cross(up, radial.normalized) : Vector3.right;
+                var outward = radial.sqrMagnitude > 1e-4f ? radial.normalized : Vector3.forward;
+                HandleLights.Show(i, true, x.HandlePart != null ? x.HandlePart.transform : null, handle, up, around, outward, stage, live);
+            }
         }
 
         // The reactor pulled while the plasma burns: a real explosion at the ball, the game's own. A short-lived entity
@@ -752,52 +1037,86 @@ namespace TheExpanse
         // explosion effect plays instead, and the player and parts nearby are set on fire. The plasma is gone within
         // a second either way.
         const string ExplosionGuid = "c620190dd56b9b64badf8501cd8939ef";    // FX_Explosion_ReactorCore
-        const float ExplosionReach = 2f;                                   // times the core's own
+        const float ExplosionReach = 2f;                                   // times the reactor's own, at Damage 100
         const float ExplosionPlayerRadius = 12f, ExplosionPartRadius = 10f; // the fallback's
         static Entity sBlast = Entity.Null;
+
+        // Damage (0..200 %): how hard the core hits the ship. 100 is the standard; 0 burns no parts, never melts down
+        // and detonates as nothing; 200 burns twice as hard and detonates with twice the reach.
+        internal static float DamageScale => Mathf.Clamp(Plugin.ReactorShipDamage.Value, 0f, 200f) / 100f;
+        static bool MeltdownAllowed => Plugin.ReactorMeltdown.Value && DamageScale > 0f;
+        static float Reach => ExplosionReach * DamageScale;
+
+        // The reactor's explosive settings, copied while it is still whole: when it explodes it may be gone by the time
+        // the core detonates.
+        static bool sBlastCached, sHasDamage, sHasForce, sHasShatter;
+        static ExplosiveComponent sExplosive;
+        static ExplosiveDamageSettings sDamage;
+        static ExplosiveForceSettings sForce;
+        static ExplosiveShatterSettings sShatter;
+
+        static void CacheBlast(EntityManager em)
+        {
+            if (sBlastCached || !em.Exists(sCoreEntity) || !em.HasComponent<ExplosiveComponent>(sCoreEntity)) return;
+            try
+            {
+                sExplosive = em.GetComponentData<ExplosiveComponent>(sCoreEntity);
+                if (sHasDamage = em.HasComponent<ExplosiveDamageSettings>(sCoreEntity)) sDamage = em.GetComponentData<ExplosiveDamageSettings>(sCoreEntity);
+                if (sHasForce = em.HasComponent<ExplosiveForceSettings>(sCoreEntity)) sForce = em.GetComponentData<ExplosiveForceSettings>(sCoreEntity);
+                if (sHasShatter = em.HasComponent<ExplosiveShatterSettings>(sCoreEntity)) sShatter = em.GetComponentData<ExplosiveShatterSettings>(sCoreEntity);
+                sBlastCached = true;
+            }
+            catch (System.Exception ex) { Plugin.Log.LogWarning("[Reactor] could not read the reactor's explosive settings: " + ex.Message); sBlastCached = true; }
+        }
 
         static void Explode(EntityManager em, string why)
         {
             var at = BallCenter;
-            Plugin.Log.LogInfo($"[Reactor] EXPLOSION: {why}.");
-            if (!RealExplosion(em, at)) FakeExplosion(em, at);
+            if (DamageScale <= 0f) Plugin.Log.LogInfo($"[Reactor] {why}; Ship Damage is off, so the core goes out without a blast.");
+            else
+            {
+                Plugin.Log.LogInfo($"[Reactor] CORE DETONATION: {why}.");
+                if (!RealExplosion(em, at)) FakeExplosion(em, at);
+            }
             BeginFade(why);
             sPhaseStarted = Time.time - FadeSeconds * 0.8f;     // gone within a second
         }
 
         static bool RealExplosion(EntityManager em, Vector3 at)
         {
-            if (!em.Exists(sCoreEntity) || !em.HasComponent<ExplosiveComponent>(sCoreEntity))
+            CacheBlast(em);
+            if (!sBlastCached || sExplosive.ElementalBounds <= 0f && !sHasDamage)
             {
-                Plugin.Log.LogInfo("[Reactor] the reactor core has no explosive settings: a fire-only explosion instead.");
+                Plugin.Log.LogInfo("[Reactor] the reactor has no explosive settings: a fire-only explosion instead.");
                 return false;
             }
             try
             {
                 if (sBlast != Entity.Null && em.Exists(sBlast)) em.DestroyEntity(sBlast);
-                var explosive = em.GetComponentData<ExplosiveComponent>(sCoreEntity);
-                explosive.ElementalBounds *= ExplosionReach;
-                explosive.MaxFXScale *= ExplosionReach;
+                var explosive = sExplosive;
+                explosive.ElementalBounds *= Reach;
+                explosive.MaxFXScale *= Reach;
                 var blast = em.CreateEntity();
                 em.AddComponentData(blast, explosive);
                 string what = $"reach {explosive.ElementalBounds:0.#} m, strength {explosive.ElementalStrength:0.#}";
-                if (em.HasComponent<ExplosiveDamageSettings>(sCoreEntity))
+                if (sHasDamage)
                 {
-                    var damage = em.GetComponentData<ExplosiveDamageSettings>(sCoreEntity);
-                    damage.PlayerDamageRadius *= ExplosionReach;
+                    var damage = sDamage;
+                    damage.PlayerDamageRadius *= Reach;
+                    if (!Plugin.ReactorPlayerDamage.Value) { damage.PlayerDamageRadius = 0f; damage.PlayerExplosionDamage = 0f; }
                     em.AddComponentData(blast, damage);
                     what += $", part damage {damage.ExplosionDamage:0.#}, player damage {damage.PlayerExplosionDamage:0.#} within {damage.PlayerDamageRadius:0.#} m";
                 }
-                if (em.HasComponent<ExplosiveForceSettings>(sCoreEntity))
+                if (sHasForce)
                 {
-                    var force = em.GetComponentData<ExplosiveForceSettings>(sCoreEntity);
-                    force.PlayerForceRadius *= ExplosionReach;
+                    var force = sForce;
+                    force.PlayerForceRadius *= Reach;
                     em.AddComponentData(blast, force);
                     what += $", force {force.ExplosionForce:0.#} (player {force.PlayerExplosionForce:0.#} within {force.PlayerForceRadius:0.#} m)";
                 }
-                if (em.HasComponent<ExplosiveShatterSettings>(sCoreEntity))
+                if (sHasShatter)
                 {
-                    em.AddComponentData(blast, em.GetComponentData<ExplosiveShatterSettings>(sCoreEntity));
+                    em.AddComponentData(blast, sShatter);
                     what += ", shatters";
                 }
                 em.AddComponentData(blast, new Unity.Transforms.LocalToWorld
@@ -806,7 +1125,7 @@ namespace TheExpanse
                 });
                 em.AddComponentData(blast, new ExplodedComponent { Time = (float)World.DefaultGameObjectInjectionWorld.Time.ElapsedTime });
                 sBlast = blast;
-                Plugin.Log.LogInfo($"[Reactor] a real explosion at the ball, from the core's own settings doubled: {what}.");
+                Plugin.Log.LogInfo($"[Reactor] a real explosion at the core, from the reactor's own settings, reach x{Reach:0.##}: {what}.");
                 return true;
             }
             catch (System.Exception ex)
@@ -826,7 +1145,7 @@ namespace TheExpanse
                     { Plugin.Log.LogWarning("[Reactor] the reactor core explosion effect could not be loaded."); return; }
                     var boom = Object.Instantiate(handle.Result, at, Quaternion.identity);
                     boom.name = "TheExpanse_ReactorExplosion";
-                    boom.transform.localScale = Vector3.one * ExplosionReach;
+                    boom.transform.localScale = Vector3.one * Reach;
                     boom.SetActive(true);
                     foreach (var effect in boom.GetComponentsInChildren<UnityEngine.VFX.VisualEffect>(true))
                     { effect.enabled = true; effect.Reinit(); effect.Play(); effect.SendEvent("Start"); effect.SendEvent("OnPlay"); }
@@ -837,10 +1156,10 @@ namespace TheExpanse
             catch (System.Exception ex) { Plugin.Log.LogWarning("[Reactor] the reactor core explosion effect could not be loaded: " + ex.Message); }
 
             var player = PlayerProfileService.Instance?.Profile?.PlayerEntity ?? Entity.Null;
-            if (player != Entity.Null && em.Exists(player) && em.HasComponent<HealthComponent>(player) && GhostNodes.TryGetPosition(em, player, out var where)
-                && (where - at).sqrMagnitude < ExplosionPlayerRadius * ExplosionPlayerRadius)
+            if (Plugin.ReactorPlayerDamage.Value && player != Entity.Null && em.Exists(player) && em.HasComponent<HealthComponent>(player) && GhostNodes.TryGetPosition(em, player, out var where)
+                && (where - at).sqrMagnitude < ExplosionPlayerRadius * ExplosionPlayerRadius * DamageScale * DamageScale)
                 ReactorFire.IgnitePlayer(em, player, 0.1f * em.GetComponentData<HealthComponent>(player).Max);
-            if (Plugin.ReactorBurnsParts.Value) BurnAround(em, at, ExplosionPartRadius, null);
+            BurnAround(em, at, ExplosionPartRadius * DamageScale, null);
         }
 
         static void BeginFade(string why)
@@ -894,11 +1213,22 @@ namespace TheExpanse
         {
             float m = sShownImbalance, feed = sShownFeed;
             float size = Mathf.Max(0.1f, Plugin.ReactorBallSize.Value) * (0.5f + 0.5f * feed);
-            float period = Mathf.Max(0.2f, Plugin.ReactorPulseSeconds.Value) * (2f - feed) / (1f + 1.5f * m);
+            float period = PulsePeriod(m, feed);
+            sCurrentPeriod = period;
             float depth = 0.5f * feed + 0.12f * m;        // 1x..2x with all eight feeding
             float pulse = 1f + depth * (1f - Mathf.Cos(PulsePhase(period)));
             float grow = 1f + 0.15f * m + (sPhase == Phase.Meltdown ? 0.5f : 0f);
             return size * pulse * grow;
+        }
+
+        // How long a pulse takes: in balance PulseSeconds (slower as fewer injectors feed it); off balance 1 s at one gap,
+        // 0.5 s at two side by side (imbalance 1.85), 0.25 s at three or more (2.41), smoothly in between.
+        static float PulsePeriod(float m, float feed)
+        {
+            float balanced = Mathf.Max(0.2f, Plugin.ReactorPulseSeconds.Value) * (2f - feed);
+            if (m <= 1f) return Mathf.Lerp(balanced, 1f, m);
+            if (m <= 1.85f) return Mathf.Lerp(1f, 0.5f, (m - 1f) / 0.85f);
+            return Mathf.Lerp(0.5f, 0.25f, Mathf.Clamp01((m - 1.85f) / 0.56f));
         }
 
         // The pulse's phase advances at the current rate, so a change of rate speeds it up or slows it down smoothly.
@@ -925,7 +1255,7 @@ namespace TheExpanse
             Track();
             float m = Imbalance;
             float dt = Mathf.Min(Time.deltaTime, 0.1f);
-            sShownImbalance = Mathf.MoveTowards(sShownImbalance, m, dt * 0.5f);
+            sShownImbalance = Mathf.MoveTowards(sShownImbalance, m, dt * 1.5f);   // the new rate is reached within a second
             sShownFeed = Mathf.MoveTowards(sShownFeed, sInjectors.Count(x => x != null && Connected(x.Index)) / (float)Count, dt * 0.05f);
             for (int i = 0; i < Count; i++)
             {
@@ -933,10 +1263,15 @@ namespace TheExpanse
                 sFeeds[i] = new ReactorFeeds.Feed { Connected = Connected(i) && sPhase != Phase.Fading, LocalNozzle = x.LocalNozzle,
                     LocalSlot = x.LocalSlot, LocalHandle = x.LocalHandle, LocalDirection = x.LocalDirection };
             }
-            ReactorFeeds.Show(sCore != null ? sCore.transform : null, sLocalCenter, sLocalDown, sLocalCoreTip, sFeeds, LocalImbalance(),
+            ReactorFeeds.Show(sCore != null ? sCore.transform : null, sLocalCenter, sLocalDown, sLocalCoreTip, sFeeds, EscalatedLocalImbalance(),
                               sPhase == Phase.Fading ? sFade : 1f, sPulsePhase / (Mathf.PI * 2f));
             ReactorVisuals.Show(BallCenter, BallDiameter(), ShownLevel(sShownImbalance), Unstable && sPhase != Phase.Fading,
                                 sPhase == Phase.Fading ? sFade : 1f);
+            ReactorSound.Show(BallCenter, sPulsePhase / (Mathf.PI * 2f), sShownImbalance, Unstable && sPhase != Phase.Fading,
+                              sPhase == Phase.Fading ? sFade : 1f, NextStepIn(), sTouching);
+            AdvanceLights(Mathf.Min(Time.deltaTime, 0.1f));
+            if (InSafeWindow()) sWindowSinceCheckNext = true;
+            ShowHandleLights();
         }
 
         // ---- hazards ------------------------------------------------------------------------------------------------
@@ -950,7 +1285,7 @@ namespace TheExpanse
             float ballRadius = BallDiameter() * 0.5f * fade;
 
             var player = PlayerProfileService.Instance?.Profile?.PlayerEntity ?? Entity.Null;
-            if (player != Entity.Null && em.Exists(player) && em.HasComponent<HealthComponent>(player) && GhostNodes.TryGetPosition(em, player, out var at))
+            if (Plugin.ReactorPlayerDamage.Value && player != Entity.Null && em.Exists(player) && em.HasComponent<HealthComponent>(player) && GhostNodes.TryGetPosition(em, player, out var at))
             {
                 float fromSurface = Vector3.Distance(at, center) - ballRadius;
                 float health = em.GetComponentData<HealthComponent>(player).Max;
@@ -970,7 +1305,7 @@ namespace TheExpanse
             }
 
             // Unstable plasma burns what it touches.
-            if (Unstable && Plugin.ReactorBurnsParts.Value && (sPhase == Phase.Running || sPhase == Phase.Meltdown) && Time.time >= sNextBurn)
+            if (Unstable && DamageScale > 0f && (sPhase == Phase.Running || sPhase == Phase.Meltdown) && Time.time >= sNextBurn)
             {
                 sNextBurn = Time.time + Mathf.Max(0.1f, Plugin.ReactorBurnInterval.Value);
                 BurnAround(em, center, ballRadius + 0.3f, null);
@@ -1008,7 +1343,7 @@ namespace TheExpanse
                 var owner = sInjectors.FirstOrDefault(x => x.Parts.Contains(part));
                 if (owner != null)
                 {
-                    ReactorFire.HeatPart(part, Mathf.Max(0f, Plugin.ReactorPartDamage.Value));
+                    ReactorFire.HeatPart(part, Mathf.Max(0f, Plugin.ReactorPartDamage.Value) * DamageScale);
                     owner.LastHeated = Time.time;
                     heated++;
                 }

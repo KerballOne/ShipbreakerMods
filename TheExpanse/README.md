@@ -5,7 +5,7 @@ A companion mod for the MCRN Corvette ships in Hardspace: Shipbreaker (the Tachi
 - **Heavy parts come free gently.** The ships' hull panels and large objects are built from a 3D model, so neighboring parts overlap, and the game threw them off at speed when cut or yanked free. They are eased apart instead.
 - **Big rooms take longer to pressurize.** The game fills and empties every room in the same few seconds. With this mod, a room takes as long as the ship sets for it, and the regulator's hiss and vent effect last as long as the change does.
 - **Ghost ships are more haunted.** On top of the game's own haunting, the ship rolls, lights flicker and black out, the nodes radiate, and the growth disappears with the last node.
-- **The reactor has to be shut down.** A ball of fusion plasma burns in the reactor chamber, held by eight plasma injectors. Take them off in the wrong order and it lashes out with fire.
+- **The reactor has to be shut down.** The ship's Solomon Epstein torch drive burns a core of fusion plasma in the reactor chamber, held by eight plasma injectors. Take them off in the wrong order and it lashes out with fire.
 
 ## Room pressure times
 
@@ -40,15 +40,17 @@ The game's own haunting is kept as it is: doors, room pressure and electricity. 
 
 ## Reactor control
 
-On the MCRN Corvette, a ball of fusion plasma burns in the reactor chamber, held in a magnetic bottle by the eight plasma injectors around it. Each injector feeds it through a beam from its nozzle, and a larger beam comes down from the nozzle above.
+The MCRN Corvette is driven by a Solomon Epstein torch drive. Its core, a ball of fusion plasma, burns in the reactor chamber, held in a magnetic bottle by the eight plasma injectors around it. Each injector feeds the core through a beam from its nozzle, and a larger beam comes down from the nozzle above.
 
-Each injector pushes on the plasma from its side. With all eight connected the pushes cancel, and the ball pulses slowly in the middle. Disconnect one and the pushes no longer cancel: the ball pulses faster and larger, and a cone of fire bursts out toward the gap in waves, in time with the pulse. Its beam goes out, so you can see which injectors are already off.
+Each injector pushes on the core from its side. With all eight connected the pushes cancel, and the core pulses slowly in the middle. Disconnect one and the pushes no longer cancel: the core pulses faster and larger, and a cone of fire bursts out toward the gap in waves, in time with the pulse. Its beam goes out, so you can see which injectors are already off.
 
-- **Balance.** Opposite gaps cancel each other out. One gap at a time is safe, and so is a pair that is not quite opposite. Two gaps side by side make the plasma unstable: a fire cloud wraps the ball, the cone reaches all the way to the injectors' handles, and the ball and the cone set you and the parts nearby on fire. So take the injectors off like the nuts on a car wheel: opposite sides, then the pair in between.
-- **Calming down.** Every balanced disconnect makes the ball smaller and slower. With all eight disconnected, the plasma fades out.
-- **Meltdown.** Badly unbalanced plasma (three gaps side by side) held for 10 seconds starts the game's own reactor meltdown.
+- **Balance.** Opposite gaps cancel each other out. One gap at a time is safe, and so is a pair that is not quite opposite. Two gaps side by side make the plasma unstable: a fire cloud wraps the core, the cone reaches all the way to the injectors' handles, and the core and the cone set you and the parts nearby on fire. So take the injectors off like the nuts on a car wheel: opposite sides, then the pair in between.
+- **Calming down.** Every balanced disconnect makes the core smaller and slower. With all eight disconnected, the plasma fades out.
+- **Escalation.** Left off balance, the core gets worse by itself: after 30 seconds a single gap becomes unstable, and 10 seconds later it is badly unbalanced. A disconnect that evens the balance out takes a step back and restarts the wait; a wrong one leaves the clock running. In the last 5 seconds before each step, a warning beep speeds up to four a second.
+- **Meltdown.** Badly unbalanced plasma (three gaps side by side) held for 10 seconds starts the game's own meltdown of the reactor above the core. When that reactor explodes, the core detonates with it.
+- **Timing the handle.** Like the game's breakers: three lights on each handle's console light red one by one and go dark again, each step lasting one and a half pulses of the core. That is slow in balance and quickens with the imbalance, down to a hair faster than the game's fastest breakers. Use the handle while they are dark. At any other moment the plasma flashes back along it and sets you on fire. Cutting the purple pipe is not timed.
 - **Disconnecting an injector.** Pull its handle, or cut the purple pipe that runs from it up to the reactor's lid (freeze the pipe first, as with any pipe). Either one switches it off.
-- **Pulling the reactor** while the plasma still burns sets off an explosion in the chamber, the reactor's own, at twice its reach.
+- **Pulling the reactor** while the plasma still burns detonates the core: the reactor's own explosion, at twice its reach.
 - **Hazards.** The plasma is radioactive within a few meters, and touching it sets you on fire.
 
 ## Settings file
@@ -90,22 +92,26 @@ Saving the file while the game is running applies the change within a second.
 - **RemoveGrowthAfterLastNode** (true): the growth disappears with the last node.
 
 **[Reactor]** (MCRN Corvette)
-- **ReactorControl** (default true): reactor control on or off.
-- **BallSize** (2): diameter of the plasma ball in balance, in meters. It swells to twice this in each pulse.
+- **ReactorControl** (default true): the live reactor, "Live Reactor" in the options page. Off: the reactor is cold, with no core, no light and nothing to shut down.
+- **BallSize** (2): diameter of the core in balance, in meters. It swells to twice this in each pulse.
 - **PulseSeconds** (4): how long one pulse takes in balance with all eight injectors.
-- **RadiationRadius** (4), **RadiationDamage** (4): how far the radiation reaches from the ball's surface, in meters, and the health lost per second right at the surface, as a percentage of full health.
-- **HeatRadius** (0.5): coming this close to the ball sets you on fire.
+- **RadiationRadius** (4), **RadiationDamage** (4): how far the radiation reaches from the core's surface, in meters, and the health lost per second right at the surface, as a percentage of full health.
+- **HeatRadius** (0.5): coming this close to the core sets you on fire.
 - **UnstableAt** (1.05): imbalance above which the plasma is unstable. One gap is 1; two side by side are 1.85.
-- **BurnsParts** (true): unstable plasma sets fire to the parts it reaches. Off: it only burns you.
-- **BurnInterval** (1), **PartDamage** (4): how often it burns, and how much integrity an injector it reaches loses each time.
+- **PlayerDamage** (true): the core's radiation, fire and detonation hurt you. Off: it never hurts you, though a detonation still throws you.
+- **PlasmaInjectorReleaseTiming** (true), **PulsesPerLight** (1.5): the handle lights and timed pulls, and how many of the core's pulses each step of the lights lasts.
+- **Haptics** (true): a controller rumbles with each pulse while you are near the core.
+- **ShipDamage** (100): how hard the core hits the ship, in percent. At 100, unstable plasma burns the parts it reaches, and the core detonates with twice the reactor's reach. 200 doubles both; 0 burns no parts, never melts down and lets the core go out without a blast.
+- **BurnInterval** (1), **PartDamage** (4): how often it burns, and how much integrity an injector it reaches loses each time at ShipDamage 100.
+- **Escalation** (true), **EscalateMaxSeconds** (30), **EscalateMinSeconds** (10): plasma left off balance goes up a level by itself, after Max seconds at one gap, shortening smoothly to Min seconds at two side by side.
 - **Meltdown** (true), **MeltdownAt** (2.4), **MeltdownSeconds** (10): a meltdown when the imbalance stays at MeltdownAt or more for that long.
-- **Brightness** (10), **LightLumens** (30000), **BallDepth** (3): the stand-in ball's glow (used only if the game's fire cannot load), the light the plasma casts, and where the ball sits if the ship's reactor marker is missing.
+- **Brightness** (10), **LightLumens** (30000), **BallDepth** (3): the stand-in core's glow (used only if the game's fire cannot load), the light the plasma casts, and where the core sits if the ship's reactor marker is missing.
 
 **[Drive]**
 - **DrivePlume** (default false): the MCRN Corvette's drive plume. Not finished; it will come with flight control.
 
 **[Debug]**
-- **TestTools** (default false): for testing only. Shows how many nodes are left and the reactor's balance on screen. **KillHalfNodesKey** (F8) destroys half of the nodes; **ReactorRightKey** (F11) and **ReactorWrongKey** (Shift+F11) treat the best or the worst injector as disconnected; **FxGalleryKey** (Ctrl+F11) and **FxGalleryBackKey** (Ctrl+Shift+F11) step through the game's effects.
+- **TestTools** (default false): for testing only. Shows how many nodes are left and the reactor's balance on screen. **KillHalfNodesKey** (F8) destroys half of the nodes; **ReactorRightKey** (F11) and **ReactorWrongKey** (Shift+F11) treat the best or the worst injector as disconnected.
 
 ## For ship authors
 

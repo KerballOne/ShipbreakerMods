@@ -64,14 +64,24 @@ namespace TheExpanse
         internal static ConfigEntry<float> ReactorUnstableAt = null!;
         internal static ConfigEntry<float> ReactorBurnInterval = null!;
         internal static ConfigEntry<float> ReactorPartDamage = null!;
-        internal static ConfigEntry<bool> ReactorBurnsParts = null!;
+        internal static ConfigEntry<float> ReactorShipDamage = null!;
+        internal static ConfigEntry<bool> ReactorPlayerDamage = null!;
+        internal static ConfigEntry<bool> ReactorHandleTiming = null!;
+        internal static ConfigEntry<float> ReactorPulsesPerLight = null!;
+        internal static ConfigEntry<bool> ReactorHaptics = null!;
         internal static ConfigEntry<float> ReactorMeltdownAt = null!;
+        internal static ConfigEntry<bool> ReactorEscalation = null!;
+        internal static ConfigEntry<float> ReactorEscalateMaxSeconds = null!;
+        internal static ConfigEntry<float> ReactorEscalateMinSeconds = null!;
+        internal static ConfigEntry<bool> ReactorSounds = null!;
+        internal static ConfigEntry<string> ReactorHumSound = null!;
+        internal static ConfigEntry<string> ReactorWarningSound = null!;
+        internal static ConfigEntry<float> ReactorSoundNear = null!;
+        internal static ConfigEntry<float> ReactorSoundFar = null!;
         internal static ConfigEntry<float> ReactorMeltdownSeconds = null!;
         internal static ConfigEntry<bool> ReactorMeltdown = null!;
         internal static ConfigEntry<KeyboardShortcut> ReactorRightKey = null!;
         internal static ConfigEntry<KeyboardShortcut> ReactorWrongKey = null!;
-        internal static ConfigEntry<KeyboardShortcut> FxGalleryKey = null!;
-        internal static ConfigEntry<KeyboardShortcut> FxGalleryBackKey = null!;
         internal static ConfigEntry<bool> DrivePlume = null!;
         internal static ConfigEntry<string> PlumeAt = null!;
         internal static ConfigEntry<float> PlumeLength = null!;
@@ -94,6 +104,7 @@ namespace TheExpanse
 
         private FileSystemWatcher? _watcher;
         static volatile bool sSettingsFileChanged;
+        internal static DateTime OwnWriteTimeUtc;          // when the EXPANSE options page last saved the file
         static float sSettingsFileChangedAt;
 
         private void Awake()
@@ -190,13 +201,15 @@ namespace TheExpanse
                 "radiation works. 1: falls evenly to nothing at the edge. 2 or more: strong close to the node, weak further out.");
 
             ReactorControl = Config.Bind("Reactor", "ReactorControl", true,
-                "On the MCRN Corvette, a ball of fusion plasma burns in the reactor chamber, held in a magnetic bottle by the eight " +
-                "plasma injectors around it. Each injector pushes on the plasma; disconnecting one leaves a gap, and the ball drifts " +
+                "The MCRN Corvette is driven by a Solomon Epstein torch drive. Its core, a ball of fusion plasma, burns in the reactor " +
+                "chamber, held in a magnetic bottle by the eight plasma injectors around it. Each injector pushes on the core; " +
+                "disconnecting one leaves a gap, and the core drifts " +
                 "toward it and pulses faster and larger. Disconnect them in balanced order, like the nuts on a car wheel (opposite " +
                 "sides, then the pair in between): one gap at a time is safe, but two gaps side by side make the plasma unstable, " +
-                "and it burns what it touches. With all eight disconnected it fades out.");
+                "and it burns what it touches. With all eight disconnected it fades out. Off: the reactor is cold, with no core, no " +
+                "light and nothing to shut down (\"Live Reactor\" in the options page).");
             ReactorBallSize = Config.Bind("Reactor", "BallSize", 2f,
-                "Diameter of the plasma ball when it is in balance, in meters. It grows as the balance goes off.");
+                "Diameter of the core when it is in balance, in meters. It grows as the balance goes off.");
             ReactorBallDepth = Config.Bind("Reactor", "BallDepth", 3f,
                 "Only used if the ship's reactor fire marker is not found: how far below the ring of injectors the ball sits, in meters.");
             ReactorPulseSeconds = Config.Bind("Reactor", "PulseSeconds", 4f,
@@ -216,20 +229,64 @@ namespace TheExpanse
             ReactorUnstableAt = Config.Bind("Reactor", "UnstableAt", 1.05f,
                 "Imbalance (in injectors' worth) above which the plasma is unstable: a fire cloud wraps it and it burns what it touches. " +
                 "1.05 lets any single gap, and any slightly off opposite pair (0.77), through safely.");
-            ReactorBurnsParts = Config.Bind("Reactor", "BurnsParts", true,
-                "Unstable plasma (UnstableAt or more off balance) burns and sets fire to the parts it touches and the parts in its " +
-                "leak cone. Off: it only burns you.");
+            ReactorPlayerDamage = Config.Bind("Reactor", "PlayerDamage", true,
+                "The core hurts you: its radiation, its fire (touching it, or its leak cone while unstable) and its detonation. " +
+                "Off: it never hurts you, though a detonation still throws you.");
+            ReactorHandleTiming = Config.Bind("Reactor", "PlasmaInjectorReleaseTiming", true,
+                "Like the game's breakers: three lights on each injector's handle console light red one by one and go dark " +
+                "again, faster the more unstable the core. Pull the handle while they are dark and it lets go safely; pull it at any " +
+                "other moment and the plasma flashes back along it and sets you on fire (with PlayerDamage on). Cutting the " +
+                "purple pipe instead is not timed. Off: no lights, and a handle can be pulled at any time.");
+            ReactorPulsesPerLight = Config.Bind("Reactor", "PulsesPerLight", 1.5f,
+                "With PlasmaInjectorReleaseTiming on: how many of the core's pulses each step of the handle lights lasts (dark, 1, 2, 3 lit). " +
+                "In balance the core pulses every 4 s, at one gap every second, at level 3 four times a second: at 1.5 a step " +
+                "takes 6 s, 1.5 s and 0.375 s (the game's breakers: 1 s down to 0.4 s).");
+            ReactorShipDamage = Config.Bind("Reactor", "ShipDamage", 100f,
+                new ConfigDescription("How hard the core hits the ship, in percent. Unstable plasma (UnstableAt or more off balance) " +
+                "burns the parts it touches and the parts in its leak cone, and when the reactor above it explodes or is pulled " +
+                "while the plasma burns, the core detonates with twice the reactor's own reach. 100: as described; 200: parts burn " +
+                "twice as hard and the detonation reaches twice as far; 0: no parts burn, it never melts down and the core goes " +
+                "out without a blast. What it does to you is PlayerDamage.", new AcceptableValueRange<float>(0f, 200f)));
             ReactorBurnInterval = Config.Bind("Reactor", "BurnInterval", 1f,
                 "Seconds between burns of the parts unstable plasma touches.");
             ReactorPartDamage = Config.Bind("Reactor", "PartDamage", 4f,
-                "Integrity an injector loses each time unstable plasma burns it. Parts that can catch fire are set on fire instead.");
+                "Integrity an injector loses each time unstable plasma burns it (at ShipDamage 100). Parts that can catch fire are set on fire instead.");
             ReactorMeltdown = Config.Bind("Reactor", "Meltdown", true,
-                "Badly unbalanced plasma (MeltdownAt or more for MeltdownSeconds) starts the game's own reactor meltdown, and the " +
-                "reactor explodes. Off: it never melts down.");
+                "Badly unbalanced plasma (MeltdownAt or more for MeltdownSeconds) starts the game's own meltdown of the reactor " +
+                "above the core; when that reactor explodes, the core detonates with it. Off, or ShipDamage 0: it never melts down.");
             ReactorMeltdownAt = Config.Bind("Reactor", "MeltdownAt", 2.4f,
                 "Imbalance (in injectors' worth) that counts toward a meltdown. Three gaps side by side are 2.41.");
             ReactorMeltdownSeconds = Config.Bind("Reactor", "MeltdownSeconds", 10f,
                 "How long the plasma can stay at MeltdownAt or more before it melts down, in seconds.");
+
+            ReactorEscalation = Config.Bind("Reactor", "Escalation", true,
+                "Plasma left off balance gets worse by itself: after EscalateMaxSeconds level 1 (safe) becomes level 2 (unstable), " +
+                "and from there it takes EscalateMinSeconds to become level 3 (badly unbalanced), where the meltdown countdown " +
+                "(MeltdownSeconds) starts. A disconnect that evens the balance out restarts the wait and takes a level off; a wrong " +
+                "one leaves the clock running. Back in balance it is all gone. Off: only the injectors decide the level.");
+            ReactorEscalateMaxSeconds = Config.Bind("Reactor", "EscalateMaxSeconds", 30f,
+                "With Escalation on: how long the plasma can be left at level 1 (one gap) before it becomes level 2, in seconds.");
+            ReactorEscalateMinSeconds = Config.Bind("Reactor", "EscalateMinSeconds", 10f,
+                "With Escalation on: how long the plasma can be left at level 2 (two gaps side by side) before it becomes level 3, " +
+                "in seconds. In between, the wait shortens smoothly from EscalateMaxSeconds to this.");
+
+            ReactorHaptics = Config.Bind("Reactor", "Haptics", true,
+                "A controller rumbles with each pulse of the core while you are near it (stronger off balance, and while you hold " +
+                "the reactor), following the game's own vibration setting.");
+            ReactorSounds = Config.Bind("Reactor", "Sounds", true,
+                "The reactor makes sounds, from the core: a hum, and a warning beep while unstable.");
+            ReactorHumSound = Config.Bind("Reactor", "HumSound", "sfx_env_powerGenerator",
+                "The game sound (Wwise event name) the reactor hums with. It loops.");
+            ReactorWarningSound = Config.Bind("Reactor", "WarningSound", "sfx_hud_alert_shift_countdown",
+                "The game sound played once a second while the plasma is unstable, and faster and faster in the last 5 seconds " +
+                "before it goes up a level by itself or melts down. A helmet (sfx_hud_...) sound is heard clearly in vacuum too; " +
+                "a sound from the ship itself is muffled there, as the game muffles all of them.");
+            // The first choice, a beep from the ship's own breakers, was barely heard in the vacuum of the reactor room.
+            if (ReactorWarningSound.Value == "sfx_powerGenerator_breaker_beep_unsafe") ReactorWarningSound.Value = (string)ReactorWarningSound.DefaultValue;
+            ReactorSoundNear = Config.Bind("Reactor", "SoundNear", 8f,
+                "Within this many meters of the ball the reactor is heard at full volume.");
+            ReactorSoundFar = Config.Bind("Reactor", "SoundFar", 18f,
+                "At this many meters from the ball the reactor can no longer be heard.");
 
             DrivePlume = Config.Bind("Drive", "DrivePlume", false,
                 "Draw the MCRN Corvette's drive plume. Off until the flight controls come; when on, it burns all the time at TestThrottle.");
@@ -278,15 +335,19 @@ namespace TheExpanse
                 "With TestTools on: treats the injector that keeps the plasma best balanced as disconnected, without touching the ship.");
             ReactorWrongKey = Config.Bind("Debug", "ReactorWrongKey", new KeyboardShortcut(UnityEngine.KeyCode.F11, UnityEngine.KeyCode.LeftShift),
                 "With TestTools on: treats the injector that unbalances the plasma most as disconnected, without touching the ship.");
-            FxGalleryKey = Config.Bind("Debug", "FxGalleryKey", new KeyboardShortcut(UnityEngine.KeyCode.F11, UnityEngine.KeyCode.LeftControl),
-                "With TestTools on: shows the game's own fire, glow and reactor effects one at a time, at their real size, 10 m in " +
-                "front of you, with its number and name on screen. Each press shows the next; the press after the last clears.");
-            FxGalleryBackKey = Config.Bind("Debug", "FxGalleryBackKey", new KeyboardShortcut(UnityEngine.KeyCode.F11, UnityEngine.KeyCode.LeftControl, UnityEngine.KeyCode.LeftShift),
-                "With TestTools on: shows the previous effect in the gallery.");
+
+            RemoveRetiredSettings();
 
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
             CustomShips.Install(harmony);
             RoomPressure.Install(harmony);
+            // The EXPANSE options page. Per class, so a patch whose target moved in a game update is logged and skipped.
+            foreach (var type in AccessTools.GetTypesFromAssembly(typeof(Plugin).Assembly))
+            {
+                if (!type.IsDefined(typeof(HarmonyPatch), inherit: false)) continue;
+                try { harmony.CreateClassProcessor(type).Patch(); }
+                catch (Exception ex) { Log.LogError($"Patch {type.Name} failed; the EXPANSE options page may not work: {ex.GetBaseException().Message}"); }
+            }
 
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
             Main.EventSystem.AddHandler<ShipAllSpawnWrapperEvent>(ev =>
@@ -294,6 +355,15 @@ namespace TheExpanse
                 if (ev.State != ShipAllSpawnWrapperEvent.SpawnState.Complete) return;
                 GrowthCleanup.OnShipSpawned();
                 TheExpanse.ReactorControl.OnShipSpawned();
+            });
+            // The moment a joint goes, for timing an injector's handle.
+            Main.EventSystem.AddHandler<RemoveHierarchyJointsEvent>(ev => TheExpanse.ReactorControl.OnJointEvent(ev.RemoveJointsFor));
+            Main.EventSystem.AddHandler<GrabEvent>(TheExpanse.ReactorControl.OnGrab);
+            Main.EventSystem.AddHandler<InteractionEvent>(TheExpanse.ReactorControl.OnInteraction);
+            Main.EventSystem.AddHandler<BreakableJointEvent>(ev =>
+            {
+                if (ev.State == BreakableJointEvent.BreakableJointState.Break && ev.BreakableJoint != null)
+                    TheExpanse.ReactorControl.OnJointEvent(ev.BreakableJoint.StructurePart);
             });
             WatchSettingsFile();
             Log.LogInfo($"{PluginInfo.PLUGIN_NAME} {PluginInfo.PLUGIN_VERSION} loaded.");
@@ -321,15 +391,40 @@ namespace TheExpanse
 
         private void OnDestroy() => _watcher?.Dispose();
 
+        // Settings that are no longer used are dropped from the settings file (BepInEx keeps unknown lines otherwise).
+        static readonly string[] sRetired = { "Reactor/PulseSound", "Reactor/HapticDelay", "Reactor/HapticSeconds", "Reactor/BurnsParts", "Reactor/Damage",
+                                              "Reactor/SafeWindow", "Reactor/MinSafeSeconds", "Reactor/HandleTiming", "Debug/FxGalleryKey", "Debug/FxGalleryBackKey" };
+        private void RemoveRetiredSettings()
+        {
+            try
+            {
+                var orphans = typeof(ConfigFile).GetProperty("OrphanedEntries", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)
+                    ?.GetValue(Config) as System.Collections.Generic.Dictionary<ConfigDefinition, string>;
+                if (orphans == null) return;
+                int removed = 0;
+                foreach (var key in new System.Collections.Generic.List<ConfigDefinition>(orphans.Keys))
+                    if (System.Array.IndexOf(sRetired, key.Section + "/" + key.Key) >= 0) { orphans.Remove(key); removed++; }
+                if (removed > 0) { Config.Save(); Log.LogInfo($"Removed {removed} retired setting(s) from the settings file."); }
+            }
+            catch (Exception ex) { Log.LogWarning("Could not tidy retired settings from the settings file: " + ex.Message); }
+        }
+
+        // After the settings change, from the file or the EXPANSE options page.
+        internal static void OnSettingsChanged()
+        {
+            ShipRoll.OnSettingsChanged();
+            HauntedLights.OnSettingsChanged();
+        }
+
         private void OnGUI()
         {
-            try { NodeTestTools.Draw(); TheExpanse.ReactorControl.DrawTest(); FxGallery.Draw(); }
+            try { NodeTestTools.Draw(); TheExpanse.ReactorControl.DrawTest(); }
             catch (Exception ex) { Log.LogError("[Test] " + ex); }
         }
 
         private void Update()
         {
-            try { NodeTestTools.Tick(); TheExpanse.ReactorControl.TestKeys(); FxGallery.Tick(); }
+            try { NodeTestTools.Tick(); TheExpanse.ReactorControl.TestKeys(); }
             catch (Exception ex) { Log.LogError("[Test] " + ex); }
             // Wait for the editor to finish writing before reading the file.
             if (sSettingsFileChanged)
@@ -337,14 +432,15 @@ namespace TheExpanse
                 sSettingsFileChanged = false;
                 sSettingsFileChangedAt = UnityEngine.Time.unscaledTime;
             }
-            else if (sSettingsFileChangedAt > 0f && UnityEngine.Time.unscaledTime - sSettingsFileChangedAt > 0.5f)
+            // Not while the EXPANSE options page is open (its unsaved changes would be lost), nor for the page's own save.
+            else if (sSettingsFileChangedAt > 0f && UnityEngine.Time.unscaledTime - sSettingsFileChangedAt > 0.5f && !EditSession.IsOpen)
             {
                 sSettingsFileChangedAt = 0f;
                 try
                 {
+                    if (File.GetLastWriteTimeUtc(Config.ConfigFilePath) == OwnWriteTimeUtc) return;
                     Config.Reload();
-                    ShipRoll.OnSettingsChanged();
-                    HauntedLights.OnSettingsChanged();
+                    OnSettingsChanged();
                     Log.LogInfo("Settings file re-read; the new values apply now.");
                 }
                 catch (Exception ex) { Log.LogWarning("Could not re-read the settings file; keeping the current settings: " + ex.Message); }
@@ -401,11 +497,10 @@ namespace TheExpanse
             GrowthCleanup.Reset();
             TheExpanse.NodeRadiation.Reset();
             TheExpanse.ReactorControl.Reset();
-            FxGallery.Reset();
             TheExpanse.DrivePlume.Reset();
             sHauntingDue = 0f;
             // Pick up edits made to the settings file while the game was running, before the next ship loads.
-            try { Instance.Config.Reload(); }
+            if (!EditSession.IsOpen) try { Instance.Config.Reload(); }
             catch (Exception ex) { Log.LogWarning("Could not re-read the settings file; keeping the current settings: " + ex.Message); }
             RoomPressure.OnLevelLoadStart();
         }

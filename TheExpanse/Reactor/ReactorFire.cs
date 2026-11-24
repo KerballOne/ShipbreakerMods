@@ -59,6 +59,13 @@ namespace TheExpanse
             DamagePlayer(em, player, sHeat, fallbackDamage);
         }
 
+        // Heat damage at once (the game's fire takes a moment to build up).
+        internal static void ScorchPlayer(EntityManager em, Entity player, float amount)
+        {
+            FindDamageTypes();
+            DamagePlayer(em, player, sHeat, amount);
+        }
+
         internal static void IrradiatePlayer(EntityManager em, Entity player, float amount)
         {
             FindDamageTypes();
