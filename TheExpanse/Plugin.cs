@@ -231,8 +231,8 @@ namespace TheExpanse
             ReactorMeltdownSeconds = Config.Bind("Reactor", "MeltdownSeconds", 10f,
                 "How long the plasma can stay at MeltdownAt or more before it melts down, in seconds.");
 
-            DrivePlume = Config.Bind("Drive", "DrivePlume", true,
-                "Draw the MCRN Corvette's drive plume. For now it is always on.");
+            DrivePlume = Config.Bind("Drive", "DrivePlume", false,
+                "Draw the MCRN Corvette's drive plume. Off until the flight controls come; when on, it burns all the time at TestThrottle.");
             PlumeAt = Config.Bind("Drive", "PlumeAt", "Bell",
                 new ConfigDescription("Where the plume burns. Bell: out of the mouth of the ship's engine bell (its EngineNozzle parts if the " +
                     "bell is gone). MasterJack: a test spot 15 m above the bay's Master Jack, pointing up.",
