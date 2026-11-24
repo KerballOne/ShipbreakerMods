@@ -98,6 +98,7 @@ namespace TheExpanse
             sPulseAt = -1f;
             sBadSince = -1f;
             sEscalation = 0; sEscalateFrom = -1f; sLastRaw = 0f;
+            sPendingOutcome.Clear();
             sTracked = false; sJumpFrames = 0; sJumpsHeld = 0;
             try
             {
@@ -911,7 +912,8 @@ namespace TheExpanse
             injector.PressSafe = InSafeWindow();
             Plugin.Log.LogInfo($"[Reactor] injector {best} handle pulled with the lights at step {LightStage()} " +
                                $"({(injector.PressSafe ? "dark: safe" : "lit: flashback")}).");
-            Consequence(best, injector.PressSafe);
+            // The outcome lands as the handle finishes turning (it turns by itself after the press), not on the press.
+            sPendingOutcome.Add((best, injector.PressSafe, Time.time + OutcomeDelay));
         }
 
         // A joint went somewhere in the game; if it was one of an injector's (its own parts, what its handle holds, or its
@@ -949,6 +951,21 @@ namespace TheExpanse
 
         // A pulled handle's outcome: the breaker's "removed" sound if the lights were dark; otherwise a flashback: the
         // failed sound, fire at the handle, and (with PlayerDamage) heat at once and the game's fire.
+        // A pulled handle's outcome waits for the handle to finish turning, about 2 s (the press is judged at once).
+        const float OutcomeDelay = 2f;
+        static readonly List<(int Injector, bool Safe, float At)> sPendingOutcome = new List<(int, bool, float)>();
+
+        static void SettleOutcomes()
+        {
+            for (int k = sPendingOutcome.Count - 1; k >= 0; k--)
+                if (Time.time >= sPendingOutcome[k].At)
+                {
+                    var (i, safe, _) = sPendingOutcome[k];
+                    sPendingOutcome.RemoveAt(k);
+                    Consequence(i, safe);
+                }
+        }
+
         static void Consequence(int i, bool safe)
         {
             if (safe) { ReactorSound.Play("sfx_powerGenerator_breakerRemoved"); return; }
@@ -1270,6 +1287,7 @@ namespace TheExpanse
             ReactorSound.Show(BallCenter, sPulsePhase / (Mathf.PI * 2f), sShownImbalance, Unstable && sPhase != Phase.Fading,
                               sPhase == Phase.Fading ? sFade : 1f, NextStepIn(), sTouching);
             AdvanceLights(Mathf.Min(Time.deltaTime, 0.1f));
+            SettleOutcomes();
             if (InSafeWindow()) sWindowSinceCheckNext = true;
             ShowHandleLights();
         }
