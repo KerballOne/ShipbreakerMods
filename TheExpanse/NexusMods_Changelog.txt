@@ -2,6 +2,16 @@ Changelog for the TheExpanse page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+0.7.1
+Reactor control on the MCRN Corvette: a ball of fusion plasma burns in the reactor chamber, held by the eight plasma injectors around it.
+Each connected injector feeds the plasma through a beam; disconnecting one turns its beam off.
+Disconnecting injectors out of balance makes the plasma pulse faster and larger and burst fire toward the gap.
+Two gaps side by side make the plasma unstable: it sets you and the parts nearby on fire.
+Badly unbalanced plasma melts down, the game's own reactor meltdown.
+An injector is disconnected by pulling its handle or by cutting its purple pipe to the reactor's lid.
+Pulling the reactor while the plasma burns sets off an explosion in the chamber.
+New Reactor settings section.
+
 0.7.0
 Ghost ships are more haunted. The game's own haunting is kept and added to, and it all gets worse as nodes are destroyed.
 The ship rolls slowly about its long axis now and then, faster and more often as nodes are destroyed.

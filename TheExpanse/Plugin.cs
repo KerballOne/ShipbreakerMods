@@ -200,10 +200,10 @@ namespace TheExpanse
             ReactorBallDepth = Config.Bind("Reactor", "BallDepth", 3f,
                 "Only used if the ship's reactor fire marker is not found: how far below the ring of injectors the ball sits, in meters.");
             ReactorPulseSeconds = Config.Bind("Reactor", "PulseSeconds", 4f,
-                "How long one slow, small pulse of the ball takes in balance with all eight injectors feeding it, in seconds. " +
-                "Slower and smaller as fewer (balanced) injectors feed it; faster and larger off balance.");
+                "How long one pulse of the ball takes in balance with all eight injectors feeding it, in seconds (it swells to " +
+                "twice BallSize and back). Slower and smaller as fewer (balanced) injectors feed it; faster and larger off balance.");
             ReactorBrightness = Config.Bind("Reactor", "Brightness", 10f,
-                "How bright the plasma glows.");
+                "How bright the plain stand-in ball glows, drawn only if the game's fire effect cannot be loaded.");
             ReactorLightLumens = Config.Bind("Reactor", "LightLumens", 30000f,
                 "How much light the plasma casts on the chamber, in lumens.");
             ReactorRadiationRadius = Config.Bind("Reactor", "RadiationRadius", 4f,
