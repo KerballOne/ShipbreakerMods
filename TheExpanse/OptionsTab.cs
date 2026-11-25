@@ -36,7 +36,7 @@ namespace TheExpanse
             // A toggle that switches these on and off together with Entry (on when any of them is).
             public ConfigEntry<bool>[] AlsoSwitches = new ConfigEntry<bool>[0];
             // Grayed out, and left alone, while this is false.
-            public Func<bool>? ActiveWhen;
+            public Func<bool>? ActiveWhen = null;
             // Shown instead of 0.
             public string? ZeroLabel;
 
@@ -65,13 +65,14 @@ namespace TheExpanse
         {
             new Setting("GENERAL", "The Expanse", Plugin.Enabled),
             new Setting("LIVE REACTOR", "Live Reactor", Plugin.ReactorControl),
-            new Setting("LIVE REACTOR", "Escalate Max Seconds", Plugin.ReactorEscalateMaxSeconds, true, 5f, 120f, 5f)
+            new Setting("LIVE REACTOR", "Escalate Seconds", Plugin.ReactorEscalateSeconds, true, 5f, 120f, 5f)
                 { OffSwitch = Plugin.ReactorEscalation },
-            new Setting("LIVE REACTOR", "Escalate Min Seconds", Plugin.ReactorEscalateMinSeconds, true, 1f, 60f, 1f)
-                { ActiveWhen = () => Plugin.ReactorEscalation.Value },
             new Setting("LIVE REACTOR", "Core Meltdown", Plugin.ReactorMeltdown),
             new Setting("LIVE REACTOR", "Ship Damage", Plugin.ReactorShipDamage, true, 0f, 200f, 10f) { ZeroLabel = "OFF" },
             new Setting("LIVE REACTOR", "Player Damage", Plugin.ReactorPlayerDamage),
+            new Setting("LIVE REACTOR", "Balance Mode", Plugin.ReactorModeBalance),
+            new Setting("LIVE REACTOR", "Memorize Mode", Plugin.ReactorModeMemorize),
+            new Setting("LIVE REACTOR", "Resonance Mode", Plugin.ReactorModeResonance),
             new Setting("HAUNTING", "Ship Roll", Plugin.RollShip),
             new Setting("HAUNTING", "Haunted Lights", Plugin.LightFlicker)
                 { AlsoSwitches = new[] { Plugin.LightBlackout, Plugin.HelmetFlicker } },

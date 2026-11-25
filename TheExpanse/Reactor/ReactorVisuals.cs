@@ -185,9 +185,18 @@ namespace TheExpanse
         }
 
         // The ball's light: blue, deepening as the plasma goes off balance (the flames keep the game's own amber).
-        internal static Color ColorFor(int level) => level <= 1 ? new Color(0.55f, 0.75f, 1f)
-                                                   : level == 2 ? new Color(0.3f, 0.5f, 1f)
-                                                   : new Color(0.25f, 0.3f, 1f);
+        // The core's light by level: blue in balance, then orange, red and purple, each brighter.
+        internal static Color ColorFor(int level) => level <= 0 ? new Color(0.55f, 0.75f, 1f)
+                                                   : level == 1 ? new Color(1f, 0.55f, 0.15f)
+                                                   : level == 2 ? new Color(1f, 0.15f, 0.08f)
+                                                   : new Color(0.75f, 0.2f, 1f);
+        // A mistake: the core's light flashes red for a moment.
+        static float sRedUntil = -1f, sShownBright = 1f;
+        static Color sShownColor = new Color(0.55f, 0.75f, 1f);
+        static bool sWasRed;
+        internal static void FlashRed(float seconds) => sRedUntil = Time.time + seconds;
+
+        static float BrightnessFor(int level) => level <= 0 ? 1f : level == 1 ? 1.3f : level == 2 ? 1.7f : 2.2f;
 
         static void Place(Effect fx, bool visible, Vector3 scale)
         {
@@ -217,10 +226,19 @@ namespace TheExpanse
         {
             if (sRoot == null || sBall == null) return;
             float brightness = Mathf.Max(0f, Plugin.ReactorBrightness.Value) * fade;
-            var color = ColorFor(level);
+            // The light eases to the level's color and brightness over about a second; a mistake's red comes at once
+            // and eases back.
+            bool red = Time.time < sRedUntil;
+            var target = red ? new Color(1f, 0.04f, 0.04f) : ColorFor(level);
+            float targetBright = red ? 3f : BrightnessFor(level);
+            float ease = red && !sWasRed ? 1f : 1f - Mathf.Exp(-Time.deltaTime * 2.5f);
+            sWasRed = red;
+            sShownColor = Color.Lerp(sShownColor, target, ease);
+            sShownBright = Mathf.Lerp(sShownBright, targetBright, ease);
+            var color = sShownColor;
 
             sRoot.transform.position = center;
-            float flicker = 1f + (level - 1) * 0.06f * (Mathf.PerlinNoise(Time.time * 7f, 0.3f) - 0.5f);
+            float flicker = 1f + Mathf.Max(0, level - 1) * 0.06f * (Mathf.PerlinNoise(Time.time * 7f, 0.3f) - 0.5f);
             float baseSize = Mathf.Max(0.1f, Plugin.ReactorBallSize.Value);
             float ballScale = Mathf.Max(0.001f, ballDiameter / baseSize * fade * flicker);   // 1 = BallSize
 
@@ -238,7 +256,7 @@ namespace TheExpanse
             if (sLight != null)
             {
                 sLight.SetColor(color);
-                sLight.SetIntensity(Mathf.Max(0f, Plugin.ReactorLightLumens.Value) * fade * (ballDiameter / baseSize), LightUnit.Lumen);
+                sLight.SetIntensity(Mathf.Max(0f, Plugin.ReactorLightLumens.Value) * fade * (ballDiameter / baseSize) * sShownBright, LightUnit.Lumen);
                 sLight.SetRange(Mathf.Max(1f, ballDiameter * 6f));
             }
 

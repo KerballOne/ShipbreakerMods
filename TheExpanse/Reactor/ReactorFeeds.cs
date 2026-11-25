@@ -11,10 +11,8 @@ namespace TheExpanse
     //               half size; a beam shrinks away when its injector is
     //               disconnected, so the player sees which ones are already out. A full size beam comes down from the
     //               big nozzle above the ball to its middle. All beams draw behind the ball;
-    //   leak flames: while the plasma is off balance, the game's fire (FX_Fire_01) bursts out of the ball in a cone
-    //               (LeakConeDegrees wide) aimed at the middle of the gap, as far as the gap's control handles, in
-    //               waves: each pulse of the ball sends one wave of flames out along the cone, filling it evenly
-    //               across; the flames a wave leaves behind burn out on their own.
+    //   flares:     from each disconnected injector's gap, a short harmless cone of the game's fire (FX_Fire_01) bursts
+    //               out of the ball with every pulse, shorter as the core shrinks.
     // Everything is laid out in the reactor core's own space, so it moves and turns with the ship.
     internal static class ReactorFeeds
     {
@@ -30,19 +28,8 @@ namespace TheExpanse
         }
 
         const float FeedWidth = 0.5f;           // injector beams, against the big nozzle's full size one
-        const int LeakFlames = 2;               // fire effects sharing each wave (two seeds: denser)
-        const float WaveBand = 1.5f;            // m deep: the band of the cone each wave spawns flames in
-        const float LeakConeDegrees = 30f;      // the cone's width past the gap: it spans the gap's injectors plus this
-        static readonly GameObject?[] sLeak = new GameObject?[LeakFlames];
-        static float sLeakReach;                // m the flames have crept out along the cone
-        static Vector3 sLeakAxis;               // unit, core space, eased toward the middle of the gap
-        static float sLeakLength;               // m the cone reaches: half way to the gap's handles per injector's worth
-        static Vector3 sLeakApex;               // core space
-        static float sBakedReach = -1f, sBakedFront = -1f;
-        static Vector3 sBakedAxis;
 
         static GameObject? sCoreBeam;
-        static float sLeakDegrees = LeakConeDegrees;    // the cone's full width now
 
         sealed class Lane
         {
@@ -65,9 +52,9 @@ namespace TheExpanse
             sRoot = null;
             sFallbackMaterial = null;
             sLanes.Clear();
-            for (int k = 0; k < LeakFlames; k++) sLeak[k] = null;
+            System.Array.Clear(sFlares, 0, sFlares.Length);
+            System.Array.Clear(sFlareFront, 0, sFlareFront.Length);
             sCoreBeam = null;
-            sLeakReach = 0f; sLeakAxis = Vector3.zero; sBakedReach = sBakedFront = -1f;
         }
 
         internal static void Build()
@@ -213,13 +200,13 @@ namespace TheExpanse
         // Flames in the band [from, to] meters out along the cone: evenly along it, evenly across it.
         static readonly Dictionary<long, Texture2D> sCones = new Dictionary<long, Texture2D>();
 
-        static void BakeCone(GameObject flame, Vector3 apex, Vector3 axis, float from, float to, int part)
+        static void BakeCone(GameObject flame, Vector3 apex, Vector3 axis, float from, float to, int part, float degrees)
         {
             var random = new System.Random(4242 + part);
             var points = new Color[256];
             var across = Vector3.Cross(axis, Mathf.Abs(Vector3.Dot(axis, Vector3.up)) < 0.9f ? Vector3.up : Vector3.right).normalized;
             var across2 = Vector3.Cross(axis, across);
-            float spread = Mathf.Tan(Mathf.Clamp(sLeakDegrees, 1f, 170f) * 0.5f * Mathf.Deg2Rad);
+            float spread = Mathf.Tan(Mathf.Clamp(degrees, 1f, 170f) * 0.5f * Mathf.Deg2Rad);
             for (int i = 0; i < points.Length; i++)
             {
                 float d = Mathf.Lerp(from, to, (float)random.NextDouble());
@@ -300,71 +287,45 @@ namespace TheExpanse
             }
         }
 
-        // Off balance: a cone of fire from the ball toward the middle of the gap (the disconnected injectors on the
-        // unbalanced side), reaching their control handles. It creeps out and draws back; its aim eases.
+        // Flares: from every disconnected injector's gap, a short cone of the game's fire bursts out of the ball once per
+        // pulse, harmless. With seven still feeding it reaches half way to the missing injector's body; it shortens with
+        // the core as more are removed.
+        const float FlareDegrees = 20f;
+        static readonly GameObject?[] sFlares = new GameObject?[8];
+        static readonly float[] sFlareFront = new float[8];
+
         static void Leak(Vector3 localCenter, Feed[] feeds, Vector3 imbalance, float fade, float dt, float pulse)
         {
-            float m = imbalance.magnitude;
-            var push = m > 1e-3f ? imbalance / m : Vector3.zero;
-            var handles = Vector3.zero; int gaps = 0;
-            if (m > 0.05f && fade > 0.05f)
-                foreach (var f in feeds)
-                    if (!f.Connected && Vector3.Dot(f.LocalDirection, push) > 0.38f) { handles += f.LocalHandle; gaps++; }
-            bool leaking = gaps > 0;
-            if (leaking)
+            int connected = 0;
+            foreach (var f in feeds) if (f.Connected) connected++;
+            float size = (0.5f + 0.5f * connected / Mathf.Max(1f, feeds.Length)) / (0.5f + 0.5f * 7f / 8f);
+            float wave = Mathf.Repeat(pulse - 0.5f, 1f);            // starts as the ball swells to its largest
+            for (int i = 0; i < feeds.Length && i < sFlares.Length; i++)
             {
-                var toward = handles / gaps - localCenter;
-                // one injector's worth of imbalance reaches half way to the gap's handles; two or more, all the way
-                sLeakLength = toward.magnitude * Mathf.Min(1f, 0.5f * m);
-                sLeakApex = localCenter;
-                var aim = toward.normalized;
-                // as wide as the gap's injectors spread around its middle, plus LeakConeDegrees
-                float widest = 0f;
-                foreach (var f in feeds)
-                    if (!f.Connected && Vector3.Dot(f.LocalDirection, push) > 0.38f)
-                        widest = Mathf.Max(widest, Vector3.Angle(aim, f.LocalHandle - localCenter));
-                float degrees = 2f * widest + LeakConeDegrees;
-                if (Mathf.Abs(degrees - sLeakDegrees) > 1f) sBakedReach = -1f;      // re-bake at the new width
-                sLeakDegrees = Mathf.MoveTowards(sLeakDegrees, degrees, dt * 30f);
-                sLeakAxis = sLeakAxis.sqrMagnitude < 0.5f ? aim : Vector3.Slerp(sLeakAxis, aim, 1f - Mathf.Exp(-dt * 2f)).normalized;
-            }
-            sLeakReach = Mathf.MoveTowards(sLeakReach, leaking ? sLeakLength : 0f, dt * (leaking ? 1.5f : 3f));
-            bool show = sLeakReach > 0.05f && sFirePrefab != null && sLeakAxis.sqrMagnitude > 0.5f;
-            // the wave's front runs from the ball to the reach once per pulse (pulse: 0..1 through the ball's cycle)
-            // starting as the ball swells to its largest (halfway through its cycle)
-            float front = Mathf.Repeat(pulse - 0.5f, 1f) * sLeakReach;
-            bool rebake = show && (Mathf.Abs(front - sBakedFront) >= 0.1f || Mathf.Abs(sLeakReach - sBakedReach) >= 0.1f
-                                   || Vector3.Angle(sLeakAxis, sBakedAxis) > 1.5f);
-            for (int k = 0; k < LeakFlames; k++)
-            {
-                var flame = sLeak[k];
+                var f = feeds[i];
+                var flame = sFlares[i];
+                bool show = !f.Connected && connected > 0 && fade > 0.05f && sFirePrefab != null;
                 if (!show) { if (flame != null && flame.activeSelf) flame.SetActive(false); continue; }
+                var toward = f.LocalSlot - localCenter;
+                float reach = 0.5f * toward.magnitude * size;
+                float front = wave * reach;
                 bool fresh = false;
                 if (flame == null)
                 {
-                    flame = sLeak[k] = Object.Instantiate(sFirePrefab!, sRoot!.transform, false);
-                    flame.name = "Leak";
+                    flame = sFlares[i] = Object.Instantiate(sFirePrefab!, sRoot!.transform, false);
+                    flame.name = "Flare";
                     flame.transform.localPosition = Vector3.zero;
                     flame.transform.localRotation = Quaternion.identity;
                     fresh = true;
                 }
                 else if (!flame.activeSelf) { flame.SetActive(true); fresh = true; }
-                if (rebake || fresh) BakeCone(flame, localCenter, sLeakAxis, Mathf.Max(0f, front - WaveBand), Mathf.Max(0.05f, front), k);
+                if (fresh || Mathf.Abs(front - sFlareFront[i]) >= 0.05f)
+                {
+                    sFlareFront[i] = front;
+                    BakeCone(flame, localCenter, toward.normalized, Mathf.Max(0f, front - reach * 0.5f), Mathf.Max(0.05f, front), 100 + i, FlareDegrees);
+                }
                 if (fresh) Play(flame);
             }
-            if (rebake) { sBakedReach = sLeakReach; sBakedAxis = sLeakAxis; sBakedFront = front; }
-        }
-
-        // The leak cone as it is now, in the world, for the hazards. False while there is none.
-        internal static bool TryCone(out Vector3 apex, out Vector3 axis, out float reach, out float halfDegrees)
-        {
-            apex = axis = Vector3.zero; reach = halfDegrees = 0f;
-            if (sRoot == null || !sRoot.activeInHierarchy || sLeakReach < 0.3f || sLeakAxis.sqrMagnitude < 0.5f) return false;
-            apex = sRoot.transform.TransformPoint(sLeakApex);
-            axis = sRoot.transform.TransformDirection(sLeakAxis).normalized;
-            reach = sLeakReach;
-            halfDegrees = sLeakDegrees * 0.5f;
-            return true;
         }
 
         static void Play(GameObject shown)

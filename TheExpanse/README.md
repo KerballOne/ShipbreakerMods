@@ -42,16 +42,22 @@ The game's own haunting is kept as it is: doors, room pressure and electricity. 
 
 The MCRN Corvette is driven by a Solomon Epstein torch drive. Its core, a ball of fusion plasma, burns in the reactor chamber, held in a magnetic bottle by the eight plasma injectors around it. Each injector feeds the core through a beam from its nozzle, and a larger beam comes down from the nozzle above.
 
-Each injector pushes on the core from its side. With all eight connected the pushes cancel, and the core pulses slowly in the middle. Disconnect one and the pushes no longer cancel: the core pulses faster and larger, and a cone of fire bursts out toward the gap in waves, in time with the pulse. Its beam goes out, so you can see which injectors are already off.
+Each injector pushes on the core from its side. With all eight connected the pushes cancel. The core pulses on a steady beat; it shrinks as injectors are removed, and a short, harmless flare bursts from each gap on every beat. A disconnected injector's beam goes out, so you can see which ones are already off.
 
-- **Balance.** Opposite gaps cancel each other out. One gap at a time is safe, and so is a pair that is not quite opposite. Two gaps side by side make the plasma unstable: a fire cloud wraps the core, the cone reaches all the way to the injectors' handles, and the core and the cone set you and the parts nearby on fire. So take the injectors off like the nuts on a car wheel: opposite sides, then the pair in between.
-- **Calming down.** Every balanced disconnect makes the core smaller and slower. With all eight disconnected, the plasma fades out.
-- **Escalation.** Left off balance, the core gets worse by itself: after 30 seconds a single gap becomes unstable, and 10 seconds later it is badly unbalanced. A disconnect that evens the balance out takes a step back and restarts the wait; a wrong one leaves the clock running. In the last 5 seconds before each step, a warning beep speeds up to four a second.
-- **Meltdown.** Badly unbalanced plasma (three gaps side by side) held for 10 seconds starts the game's own meltdown of the reactor above the core. When that reactor explodes, the core detonates with it.
-- **Timing the handle.** Like the game's breakers: three lights on each handle's console light red one by one and go dark again, each step lasting one and a half pulses of the core. That is slow in balance and quickens with the imbalance, down to a hair faster than the game's fastest breakers. Use the handle while they are dark. At any other moment the plasma flashes back along it and sets you on fire. Cutting the purple pipe is not timed.
-- **Disconnecting an injector.** Pull its handle, or cut the purple pipe that runs from it up to the reactor's lid (freeze the pipe first, as with any pipe). Either one switches it off.
+- **Levels.** The core's light shows how unbalanced it is: blue in balance, then orange (level 1), red (level 2, unstable: a fire cloud wraps the core) and purple (level 3), brighter at each level. A warning beep in your helmet sounds while it is unstable.
+- **Balance.** Opposite gaps cancel each other out. One gap at a time is level 1, and so is a pair that is not quite opposite. Two gaps side by side are level 2, three are level 3. So take the injectors off like the nuts on a car wheel: opposite sides, then the pair in between.
+- **Escalation.** Left off balance, the core gets worse by itself: every 45 seconds it goes up a level. A disconnect that evens the balance out takes a step back and restarts the wait; a wrong one leaves the clock running. In the last 5 seconds before each step, the warning beep speeds up to four a second.
+- **Level 3: the donut flare.** Held at level 3 for 5 seconds, the core throws out a ring of plasma in the plane of the injectors and destroys all eight. It cannot be undone. Then the game's own meltdown of the reactor above the core starts: get out. When that reactor explodes, the core detonates with it.
+- **Timing the handle.** Like the game's breakers: three lights on each handle's console light red one by one on the core's beats and go dark again. Use the handle while they are dark; the dark moment narrows as the core gets more unstable. At any other moment the plasma flashes back along the handle and sets you on fire as it finishes turning. Cutting the purple pipe is not timed. A caution sign on each console stays, unlit, once its injector is out.
+- **Shutdown modes.** Each ship picks one of the modes switched on in the options page, at random:
+  - *Balance*: no set order; keep it balanced.
+  - *Memorize*: two nav terminals on the engineering deck (two of the four, picked at random per ship) flash the order, one injector a second, on a diagram of the ring marked DRSL, VNTR, PORT and STBD, seen looking aft; a map pin marks the terminal's own side. Disconnect them in that order.
+  - *Resonance*: the lights of the injector to release next tick exactly on the core's beat; the others tick between beats. The terminals show the core's beat as a wave.
+
+  In Memorize and Resonance the order (any order) is the only rule; the balance does not count. A wrong injector is a mistake: the core flashes red and goes up a level (no fire), the one you owed stays next, and a clock starts: every 45 seconds until a correct one, it goes up a level too. A correct one brings the core back to level 0 and stops the clock; with no mistakes there is no clock.
+- **Disconnecting an injector.** Pull its handle, or cut the purple pipe that runs from it up to the reactor's lid (freeze the pipe first, as with any pipe). Either one switches it off. With all eight disconnected, the plasma fades out.
 - **Pulling the reactor** while the plasma still burns detonates the core: the reactor's own explosion, at twice its reach.
-- **Hazards.** The plasma is radioactive within a few meters, and touching it sets you on fire.
+- **Hazards.** The plasma is radioactive within a few meters, and touching it sets you on fire. Holding the reactor, an injector or its pipe, you hear the core through your suit; a controller rumbles with each beat.
 
 ## Settings file
 
@@ -94,17 +100,18 @@ Saving the file while the game is running applies the change within a second.
 **[Reactor]** (MCRN Corvette)
 - **ReactorControl** (default true): the live reactor, "Live Reactor" in the options page. Off: the reactor is cold, with no core, no light and nothing to shut down.
 - **BallSize** (2): diameter of the core in balance, in meters. It swells to twice this in each pulse.
-- **PulseSeconds** (4): how long one pulse takes in balance with all eight injectors.
+- **PulseSeconds** (1.5): how long one beat of the core takes; steady whatever the balance.
 - **RadiationRadius** (4), **RadiationDamage** (4): how far the radiation reaches from the core's surface, in meters, and the health lost per second right at the surface, as a percentage of full health.
 - **HeatRadius** (0.5): coming this close to the core sets you on fire.
-- **UnstableAt** (1.05): imbalance above which the plasma is unstable. One gap is 1; two side by side are 1.85.
-- **PlayerDamage** (true): the core's radiation, fire and detonation hurt you. Off: it never hurts you, though a detonation still throws you.
-- **PlasmaInjectorReleaseTiming** (true), **PulsesPerLight** (1.5): the handle lights and timed pulls, and how many of the core's pulses each step of the lights lasts.
+- **UnstableAt** (1.05): imbalance above which the plasma is unstable (level 2). One gap is 1; two side by side are 1.85.
+- **PlayerDamage** (true): the core's radiation, its fire, a flashback, the donut flare and the detonation hurt you. Off: it never hurts you, though a detonation still throws you.
+- **PlasmaInjectorReleaseTiming** (true): the handle lights, signs and timed pulls.
+- **ModeBalance**, **ModeMemorize**, **ModeResonance** (all true): the shutdown modes a ship may pick from. **ResonanceOffset** (0.5): how far off the beat the other injectors' lights tick, in beats; smaller is harder. **ResonanceSpread** (0.12): how much the others' offsets differ. **ResonanceRingHint** (false): the screen rings the injector to release next.
+- **Terminals** (empty), **ScreenDorsal** (+Z), **ScreenBrightness** (4), **ScreenPosition**, **ScreenRotation**, **ScreenSize** (for placing the screen): which nav terminals show the shutdown screen (their numbers from the log; empty: any two of the four on the engineering deck, at random per ship), which of the ship's axes is dorsal on the diagram, and how bright the screen is.
 - **Haptics** (true): a controller rumbles with each pulse while you are near the core.
-- **ShipDamage** (100): how hard the core hits the ship, in percent. At 100, unstable plasma burns the parts it reaches, and the core detonates with twice the reactor's reach. 200 doubles both; 0 burns no parts, never melts down and lets the core go out without a blast.
-- **BurnInterval** (1), **PartDamage** (4): how often it burns, and how much integrity an injector it reaches loses each time at ShipDamage 100.
-- **Escalation** (true), **EscalateMaxSeconds** (30), **EscalateMinSeconds** (10): plasma left off balance goes up a level by itself, after Max seconds at one gap, shortening smoothly to Min seconds at two side by side.
-- **Meltdown** (true), **MeltdownAt** (2.4), **MeltdownSeconds** (10): a meltdown when the imbalance stays at MeltdownAt or more for that long.
+- **ShipDamage** (100): how hard the core hits the ship, in percent. At 100 the donut flare destroys the injectors, and the core detonates with twice the reactor's reach (200: four times). 0: the donut destroys nothing, nothing melts down and the core goes out without a blast.
+- **Escalation** (true), **EscalateSeconds** (45): plasma left off balance goes up a level by itself every EscalateSeconds.
+- **Meltdown** (true), **MeltdownAt** (2.4), **MeltdownSeconds** (5): level 3 starts at MeltdownAt; held that long, the donut flare comes, and with Meltdown on the game's meltdown follows.
 - **Brightness** (10), **LightLumens** (30000), **BallDepth** (3): the stand-in core's glow (used only if the game's fire cannot load), the light the plasma casts, and where the core sits if the ship's reactor marker is missing.
 
 **[Drive]**

@@ -236,6 +236,13 @@ namespace TheExpanse
         // Set them into the console's face, once (they then move with it).
         static void Mount(int injector, Transform console, Vector3 outward)
         {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            try { MountOn(injector, console, outward); }
+            finally { Plugin.Log.LogInfo($"[Reactor] injector {injector}: console measured in {watch.Elapsed.TotalMilliseconds:0} ms."); }
+        }
+
+        static void MountOn(int injector, Transform console, Vector3 outward)
+        {
             sMountedOn[injector] = console;
             // The console's size, in its own space, from its meshes (not ours).
             bool any = false;

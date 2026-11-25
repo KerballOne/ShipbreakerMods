@@ -25,7 +25,7 @@ namespace TheExpanse
     // An injector is disconnected once its fuel feed pipes are no longer jointed to it (its handle releases them), or,
     // for an injector without feeds, once nothing at all is jointed to it. Nothing is saved: on a reload the state is
     // rebuilt from which injectors are still connected.
-    internal static class ReactorControl
+    internal static partial class ReactorControl
     {
         enum Phase { Waiting, Running, Meltdown, Fading, Gone }
 
@@ -67,7 +67,7 @@ namespace TheExpanse
         static readonly Injector[] sInjectors = new Injector[Count];
         static readonly bool[] sSimulated = new bool[Count];       // test tools: treated as disconnected
         static Phase sPhase = Phase.Waiting;
-        static float sSpawnedAt = -1f, sLogicDue, sPhaseStarted, sNextBurn, sBadSince = -1f, sNextCountdownLog;
+        static float sSpawnedAt = -1f, sLogicDue, sPhaseStarted, sBadSince = -1f, sNextCountdownLog;
         static StructurePart? sCore;
         static Entity sCoreEntity;
         static Vector3 sLocalCenter, sLocalDown;
@@ -88,6 +88,7 @@ namespace TheExpanse
             for (int i = 0; i < Count; i++) { sInjectors[i] = null!; sSimulated[i] = false; }
             ReactorVisuals.Destroy();
             HandleLights.Destroy();
+            TerminalScreens.Destroy();
             ReactorFire.Reset();
             sPhase = Phase.Waiting;
             sSpawnedAt = -1f;
@@ -98,6 +99,7 @@ namespace TheExpanse
             sPulseAt = -1f;
             sBadSince = -1f;
             sEscalation = 0; sEscalateFrom = -1f; sLastRaw = 0f;
+            sDonutDone = false;
             sPendingOutcome.Clear();
             sTracked = false; sJumpFrames = 0; sJumpsHeld = 0;
             try
@@ -122,14 +124,17 @@ namespace TheExpanse
             if (sPhase == Phase.Waiting)
             {
                 if (sSpawnedAt < 0f || !Allowed || Time.time - sSpawnedAt < SetupDelay) return;
-                if (!TrySetUp())
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                bool ready = TrySetUp();
+                Plugin.Log.LogInfo($"[Reactor] setup {(ready ? "done" : "tried")} in {watch.Elapsed.TotalMilliseconds:0} ms (one frame).");
+                if (!ready)
                 {
                     if (Time.time - sSpawnedAt > SetupGiveUp) { sPhase = Phase.Gone; sSpawnedAt = -1f; }
                     return;
                 }
             }
             if (sPhase == Phase.Gone) { if (!Allowed) HandleLights.Destroy(); return; }
-            if (!Allowed) { ReactorVisuals.Destroy(); HandleLights.Destroy(); return; }
+            if (!Allowed) { ReactorVisuals.Destroy(); HandleLights.Destroy(); TerminalScreens.Destroy(); return; }
             if (!ReactorVisuals.Built) ReactorVisuals.Build();
 
             if (Time.time >= sLogicDue)
@@ -141,7 +146,19 @@ namespace TheExpanse
         }
 
         // ---- finding the reactor ------------------------------------------------------------------------------------
+        // The scene's parts, gathered once per setup (asking the game for them is slow; setup used to ask ~20 times).
+        static StructurePart[]? sParts;
+        static bool sInSetUp;
+        internal static StructurePart[] Parts => sInSetUp ? (sParts ??= Object.FindObjectsOfType<StructurePart>()) : Object.FindObjectsOfType<StructurePart>();
+
         static bool TrySetUp()
+        {
+            sInSetUp = true;
+            try { return SetUp(); }
+            finally { sParts = null; sInSetUp = false; }
+        }
+
+        static bool SetUp()
         {
             var world = World.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated) return false;
@@ -160,7 +177,7 @@ namespace TheExpanse
             Vector3 corePosition = core.transform.position;
             Vector3 axis = core.transform.up;
             var groups = new Dictionary<int, List<StructurePart>>();
-            foreach (var part in Object.FindObjectsOfType<StructurePart>())
+            foreach (var part in Parts)
             {
                 if (part == null || part == core) continue;
                 if ((part.transform.position - corePosition).sqrMagnitude > 12f * 12f) continue;
@@ -247,6 +264,8 @@ namespace TheExpanse
                 Plugin.Log.LogInfo($"[Reactor] injector {injector.Index} handle {(injector.HasHandle ? "console" : "(none found: its top part)")} " +
                                    $"{(core.transform.TransformPoint(injector.LocalHandle) - center).magnitude:0.0} m from the ball.");
             }
+            TerminalScreens.Find(core, center, down);
+            ChooseMode(core);
             sPhase = Phase.Running;
             int left = sInjectors.Count(x => x.Connected);
             if (left == 0) BeginFade("all injectors were already disconnected");
@@ -306,7 +325,7 @@ namespace TheExpanse
         static Dictionary<int, List<StructurePart>>? InjectorsByShape(StructurePart core, Vector3 corePosition, Vector3 axis)
         {
             var found = new List<(StructurePart part, float angle, float height)>();
-            foreach (var part in Object.FindObjectsOfType<StructurePart>())
+            foreach (var part in Parts)
             {
                 if (part == null || part == core || !IsThrusterPart(part)) continue;
                 if ((part.transform.position - corePosition).sqrMagnitude > 12f * 12f) continue;
@@ -342,7 +361,7 @@ namespace TheExpanse
 
         static string Describe(StructurePart core, Vector3 corePosition, Vector3 axis)
         {
-            var near = Object.FindObjectsOfType<StructurePart>()
+            var near = Parts
                 .Where(p => p != null && p != core && (p.transform.position - corePosition).sqrMagnitude < 12f * 12f)
                 .Select(p => (p, where: AroundCore(core, axis, p.transform.position)))
                 .OrderBy(x => x.where.radius)
@@ -351,11 +370,15 @@ namespace TheExpanse
             return $"core '{core.name}' axis {axis}; parts near the core: " + string.Join("; ", near);
         }
 
+        // Searched under the hierarchies of the parts near the core (inactive objects included), not every object loaded.
         static Transform? FindMarker(string name, Vector3 near, float within)
         {
-            foreach (var t in Resources.FindObjectsOfTypeAll<Transform>())
-                if (t != null && t.name == name && t.gameObject.scene.IsValid() && (t.position - near).sqrMagnitude < within * within)
-                    return t;
+            var roots = new HashSet<Transform>();
+            foreach (var part in Parts)
+                if (part != null && (part.transform.position - near).sqrMagnitude < 40f * 40f) roots.Add(part.transform.root);
+            foreach (var root in roots)
+                foreach (var t in root.GetComponentsInChildren<Transform>(true))
+                    if (t.name == name && (t.position - near).sqrMagnitude < within * within) return t;
             return null;
         }
 
@@ -381,7 +404,7 @@ namespace TheExpanse
             foreach (var key in new[] { "MistralThruster_Nozzle_4Cx4Cx4B_End", "MistralThruster_Nozzle" })
             {
                 StructurePart? best = null; float bestDistance = NozzleSearch * NozzleSearch;
-                foreach (var part in Object.FindObjectsOfType<StructurePart>())
+                foreach (var part in Parts)
                 {
                     if (part == null || part.name.IndexOf(key, System.StringComparison.OrdinalIgnoreCase) < 0) continue;
                     float d = (part.transform.position - middle).sqrMagnitude;
@@ -684,10 +707,12 @@ namespace TheExpanse
             return sum;
         }
 
-        static float RawImbalance => LocalImbalance().magnitude;
+        // The balance counts toward the level only in Balance; in Memorize and Resonance the order is the only rule.
+        static bool OrderMode => CurrentMode != Mode.Balance;
+        static float RawImbalance => OrderMode ? 0f : LocalImbalance().magnitude;
         static float Imbalance => Escalated(RawImbalance);
 
-        // The push with escalation, for the leak cone: the same direction, the escalated strength.
+        // The push with escalation: the same direction, the escalated strength.
         static Vector3 EscalatedLocalImbalance()
         {
             var v = LocalImbalance();
@@ -707,11 +732,9 @@ namespace TheExpanse
         }
 
         // ---- escalation ---------------------------------------------------------------------------------------------
-        // Left off balance, the plasma gets worse by itself: after EscalateMaxSeconds level 1 (safe) becomes level 2
-        // (unstable), and from there it takes less time, down to EscalateMinSeconds, to become level 3 (badly
-        // unbalanced, where the meltdown countdown, MeltdownSeconds, starts). The wait shortens smoothly with the
-        // imbalance, from Max at one gap to Min at two side by side. A disconnect that evens the balance out restarts the
-        // wait and takes a level of escalation off; a wrong one leaves the clock running. Back in balance it is all gone.
+        // Left off balance, the plasma gets worse by itself: every EscalateSeconds it goes up a level (1 to 2, 2 to 3; at
+        // level 3 the donut flare countdown, MeltdownSeconds, starts). A disconnect that evens the balance out restarts
+        // the wait and takes a level of escalation off; a wrong one leaves the clock running. Back in balance it is all gone.
         static int sEscalation;                 // levels added by waiting
         static float sEscalateFrom = -1f;       // when the wait for the next level began
         static float sLastRaw;                  // the balance the wait began at
@@ -722,17 +745,20 @@ namespace TheExpanse
 
         static float Escalated(float raw)
         {
-            if (sEscalation <= 0 || raw < 0.05f) return raw;
-            int level = Mathf.Min(3, LevelOf(raw) + sEscalation);
-            return Mathf.Max(raw, level >= 3 ? Plugin.ReactorMeltdownAt.Value : level == 2 ? LevelTwoAt : 0f);
+            if (OrderMode)
+            {
+                // the order modes: mistakes and stalling only
+                int stacked = Mathf.Min(3, sEscalation + sPenalty);
+                return stacked <= 0 ? 0f : stacked >= 3 ? Plugin.ReactorMeltdownAt.Value : stacked == 2 ? LevelTwoAt : 1f;
+            }
+            bool balanced = raw < 0.05f;
+            int added = (balanced ? 0 : sEscalation) + sPenalty;      // waiting only counts off balance; mistakes always
+            if (added <= 0) return raw;
+            int level = Mathf.Min(3, (balanced ? 0 : LevelOf(raw)) + added);
+            return Mathf.Max(raw, level >= 3 ? Plugin.ReactorMeltdownAt.Value : level == 2 ? LevelTwoAt : 1f);
         }
 
-        static float EscalationDelay(float m)
-        {
-            float max = Mathf.Max(1f, Plugin.ReactorEscalateMaxSeconds.Value);
-            float min = Mathf.Clamp(Plugin.ReactorEscalateMinSeconds.Value, 1f, max);
-            return Mathf.Lerp(max, min, Mathf.Clamp01((m - 1f) / Mathf.Max(0.01f, LevelTwoAt - 1f)));
-        }
+        static float EscalationDelay(float m) => Mathf.Max(1f, Plugin.ReactorEscalateSeconds.Value);
 
         // Seconds until the plasma goes up a level by itself, or melts down; -1 when nothing is counting down.
         static float NextStepIn()
@@ -740,15 +766,16 @@ namespace TheExpanse
             if (sPhase != Phase.Running) return -1f;
             float m = Imbalance;
             if (m >= Plugin.ReactorMeltdownAt.Value)
-                return MeltdownAllowed && sBadSince >= 0f
+                return sBadSince >= 0f && !sDonutDone
                     ? Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value) - (Time.time - sBadSince) : -1f;
-            if (Plugin.ReactorEscalation.Value && sEscalateFrom >= 0f && RawImbalance >= 0.05f)
+            if (Plugin.ReactorEscalation.Value && sEscalateFrom >= 0f && (OrderMode ? Owed >= 0 && sPenalty > 0 : RawImbalance >= 0.05f))
                 return EscalationDelay(m) - (Time.time - sEscalateFrom);
             return -1f;
         }
 
         static void Escalate()
         {
+            if (OrderMode) { EscalateOrder(); return; }
             float raw = RawImbalance;
             if (!Plugin.ReactorEscalation.Value || raw < 0.05f)
             {
@@ -783,6 +810,20 @@ namespace TheExpanse
                                (next < Plugin.ReactorMeltdownAt.Value ? $"; next level in {EscalationDelay(next):0} s." : "."));
         }
 
+        // Memorize and Resonance: following the order is safe (no clock). After a mistake the clock runs: every
+        // EscalateSeconds until a correct disconnect, up a level. A correct one resets it all (CheckOrder).
+        static void EscalateOrder()
+        {
+            if (!Plugin.ReactorEscalation.Value || Owed < 0 || sPenalty <= 0) { sEscalation = 0; sEscalateFrom = -1f; return; }
+            if (sEscalateFrom < 0f) sEscalateFrom = Time.time;
+            if (Imbalance >= Plugin.ReactorMeltdownAt.Value) return;           // level 3: the donut countdown takes over
+            float delay = EscalationDelay(0f);
+            if (Time.time - sEscalateFrom < delay) return;
+            sEscalation++;
+            sEscalateFrom = Time.time;
+            Plugin.Log.LogInfo($"[Reactor] no correct disconnect for {delay:0} s: up to level {ShownLevel(Imbalance)} ({sEscalation} from waiting, {sPenalty} from mistakes).");
+        }
+
         // ---- the rules ----------------------------------------------------------------------------------------------
         static void Logic(float dt)
         {
@@ -803,32 +844,32 @@ namespace TheExpanse
                     if (sPhase != Phase.Running) break;
                     Escalate();
                     // Meltdown: badly unbalanced for too long.
-                    if (!MeltdownAllowed && sBadSince >= 0f)
-                    {
-                        sBadSince = -1f;
-                        Plugin.Log.LogInfo($"[Reactor] meltdown countdown stopped: Core Meltdown is {(Plugin.ReactorMeltdown.Value ? "on" : "off")}, Ship Damage {Plugin.ReactorShipDamage.Value:0}.");
-                    }
-                    if (MeltdownAllowed && Imbalance >= Plugin.ReactorMeltdownAt.Value)
+                    // Level 3: after MeltdownSeconds the donut flare, which cannot be undone.
+                    if (!sDonutDone && Imbalance >= Plugin.ReactorMeltdownAt.Value)
                     {
                         if (sBadSince < 0f)
                         {
                             sBadSince = Time.time;
-                            Plugin.Log.LogInfo($"[Reactor] badly unbalanced ({BalanceText()}): meltdown in {Plugin.ReactorMeltdownSeconds.Value:0} s unless it is evened out.");
+                            Plugin.Log.LogInfo($"[Reactor] badly unbalanced ({BalanceText()}): the donut flare in {Plugin.ReactorMeltdownSeconds.Value:0} s unless it is evened out.");
                         }
                         else if (Time.time >= sNextCountdownLog && Time.time - sBadSince < Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value))
                         {
                             // Diagnostic: the countdown, every 2 s (a meltdown once failed to come).
                             sNextCountdownLog = Time.time + 2f;
-                            Plugin.Log.LogInfo($"[Reactor] meltdown countdown: {Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value) - (Time.time - sBadSince):0.0} s left ({BalanceText()}).");
+                            Plugin.Log.LogInfo($"[Reactor] donut flare countdown: {Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value) - (Time.time - sBadSince):0.0} s left ({BalanceText()}).");
                         }
                         if (sBadSince >= 0f && Time.time - sBadSince >= Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value))
                         {
-                            sPhase = Phase.Meltdown;
-                            sPhaseStarted = Time.time;
-                            Plugin.Log.LogInfo("[Reactor] MELTDOWN, started as " + ReactorFire.StartMeltdown(em, sCoreEntity) + ".");
+                            Donut(em);
+                            if (MeltdownAllowed)
+                            {
+                                sPhase = Phase.Meltdown;
+                                sPhaseStarted = Time.time;
+                                Plugin.Log.LogInfo("[Reactor] MELTDOWN, started as " + ReactorFire.StartMeltdown(em, sCoreEntity) + ".");
+                            }
                         }
                     }
-                    else if (sBadSince >= 0f)
+                    else if (sBadSince >= 0f && !sDonutDone)
                     {
                         sBadSince = -1f;
                         Plugin.Log.LogInfo($"[Reactor] evened out in time: {BalanceText()}.");
@@ -860,7 +901,11 @@ namespace TheExpanse
 
         static void OnDisconnected(int i)
         {
-            if (sInjectors[i].HandlePulled) JudgePull(i);
+            if (!sDonutDone)                    // the donut flare's destruction is neither a pull nor a choice
+            {
+                if (sInjectors[i].HandlePulled) JudgePull(i);
+                CheckOrder(i);
+            }
             if (sInjectors.All(x => !Connected(x.Index))) { BeginFade($"injector {i} was the last one: the reactor is shut down"); return; }
             Plugin.Log.LogInfo($"[Reactor] injector {i} disconnected: {BalanceText()}.");
         }
@@ -875,15 +920,20 @@ namespace TheExpanse
         static float sCurrentPeriod = 4f;
         static bool sWindowSinceCheck, sWindowSinceCheckNext;
 
-        // The lights' own cycle, like a breaker panel's: dark (safe), 1, 2, 3 lit, dark again, each step lasting
-        // PulsesPerLight of the core's pulses. Slow in balance (a 4 s pulse: 6 s a step at 1.5), quickening with the
-        // imbalance (one gap: 1.5 s; level 3: 0.375 s, a hair faster than the game's fastest breakers).
-        static float sLightCycle;               // 0..4: the step, and how far through it
-        static float StepSeconds => Mathf.Max(0.05f, Mathf.Max(0.1f, Plugin.ReactorPulsesPerLight.Value) * sCurrentPeriod);
+        // The lights' cycle, like a breaker panel's: dark (safe), 1, 2, 3 lit, dark again, over four of the core's beats
+        // and counted from the same clock as the pulse (a step changes on the beat, the core's peak). The dark step is a
+        // whole beat at level 1 or below and narrows to a third of a beat at level 3; the lit steps share the rest.
+        static float LightCycle => (sBeats + 0.5f) % 4f;
+        static float DarkBeats => Mathf.Lerp(1f, 1f / 3f,
+            Mathf.Clamp01((Imbalance - 1f) / Mathf.Max(0.01f, Plugin.ReactorMeltdownAt.Value - 1f)));
 
-        static void AdvanceLights(float dt) => sLightCycle = (sLightCycle + dt / StepSeconds) % 4f;
-        static int LightStage() => Mathf.Clamp((int)sLightCycle, 0, 3);
-        static bool InSafeWindow() => LightStage() == 0;
+        static int LightStage(int injector = -1)
+        {
+            float c = injector < 0 ? LightCycle : (LightCycle + LightOffset(injector)) % 4f, dark = DarkBeats;
+            if (c < dark) return 0;
+            return Mathf.Clamp(1 + (int)((c - dark) / ((4f - dark) / 3f)), 1, 3);
+        }
+        static bool InSafeWindow(int injector = -1) => LightStage(injector) == 0;
 
         // The moment the player pulls a handle: its Activate completes (the game's ProgressComplete interaction event, on
         // the press itself; the console lets go of the injector about 5 s later). Judged then, and a miss punished at once.
@@ -909,8 +959,8 @@ namespace TheExpanse
             if (best < 0) return;
             var injector = sInjectors[best];
             injector.PressAt = Time.time;
-            injector.PressSafe = InSafeWindow();
-            Plugin.Log.LogInfo($"[Reactor] injector {best} handle pulled with the lights at step {LightStage()} " +
+            injector.PressSafe = InSafeWindow(best);
+            Plugin.Log.LogInfo($"[Reactor] injector {best} handle pulled with the lights at step {LightStage(best)} " +
                                $"({(injector.PressSafe ? "dark: safe" : "lit: flashback")}).");
             // The outcome lands as the handle finishes turning (it turns by itself after the press), not on the press.
             sPendingOutcome.Add((best, injector.PressSafe, Time.time + OutcomeDelay));
@@ -932,7 +982,7 @@ namespace TheExpanse
                 bool mine = x.Parts.Contains(part) || part == x.HandlePart || (entity != Entity.Null && x.Released.Contains(entity));
                 if (!mine || x.JointAt >= sLastCheckAt) continue;
                 x.JointAt = Time.time;
-                x.JointSafe = InSafeWindow();
+                x.JointSafe = InSafeWindow(i);
             }
         }
 
@@ -1018,12 +1068,31 @@ namespace TheExpanse
             return sInjectors.Any(x => x != null && x.HasHandle && (sCore.transform.TransformPoint(x.LocalHandle) - at).sqrMagnitude < 4f);
         }
 
+        static readonly bool[] sConnectedNow = new bool[Count];
+        static void DrawScreens()
+        {
+            if (!TerminalScreens.Available || sCore == null) return;
+            var center = BallCenter;
+            for (int i = 0; i < Count; i++)
+            {
+                sConnectedNow[i] = sInjectors[i] != null && Connected(i);
+                if (sInjectors[i] != null) TerminalScreens.SetInjector(i, sCore.transform.TransformPoint(sInjectors[i].LocalSlot) - center);
+            }
+            TerminalScreens.Tick(new TerminalScreens.State
+            {
+                Mode = CurrentMode, Connected = sConnectedNow, Order = Order, Owed = Owed, Mistake = MistakeInjector,
+                MistakeAge = Time.time - MistakeAt, Live = sPhase == Phase.Running || sPhase == Phase.Meltdown,
+                Level = ShownLevel(sShownImbalance), NextStep = NextStepIn(), Beats = sBeats,
+                StepSeconds = Imbalance >= Plugin.ReactorMeltdownAt.Value ? Mathf.Max(1f, Plugin.ReactorMeltdownSeconds.Value) : EscalationDelay(0f),
+            });
+        }
+
         static void ShowHandleLights()
         {
             bool burning = sPhase == Phase.Running || sPhase == Phase.Meltdown;
-            int stage = burning ? LightStage() : 0;
             for (int i = 0; i < Count; i++)
             {
+                int stage = burning ? LightStage(i) : 0;
                 var x = sInjectors[i];
                 bool live = burning && x != null && Connected(i);
                 // Live panels: on the console, or floating above the handle without one. Dead ones (already disconnected,
@@ -1044,6 +1113,58 @@ namespace TheExpanse
                 var outward = radial.sqrMagnitude > 1e-4f ? radial.normalized : Vector3.forward;
                 HandleLights.Show(i, true, x.HandlePart != null ? x.HandlePart.transform : null, handle, up, around, outward, stage, live);
             }
+        }
+
+        // ---- the donut flare --------------------------------------------------------------------------------------------
+        // Level 3 held for MeltdownSeconds: a flat ring of plasma bursts out in the plane of the injectors. With Ship
+        // Damage on it destroys the eight injectors (not the big nozzle above, the fuel pipes or the reactor); with Player
+        // Damage on it scorches you if you are in its plane (heat, no catching fire). Then, with Core Meltdown on, the
+        // game's own meltdown follows (losing the injectors does not start it by itself).
+        static bool sDonutDone;
+
+        static void Donut(EntityManager em)
+        {
+            sDonutDone = true;
+            var center = BallCenter;
+            var normal = sCore != null ? -sCore.transform.TransformDirection(sLocalDown).normalized : Vector3.up;
+            float reach = 0f;
+            foreach (var x in sInjectors)
+                if (x != null && sCore != null) reach = Mathf.Max(reach, (sCore.transform.TransformPoint(x.LocalSlot) - center).magnitude);
+            reach += 1.5f;
+            DonutFlare.Fire(center, normal, BallDiameter() * 0.5f, reach * 1.3f);
+
+            int destroyed = 0;
+            var prefab = FirePrefab();
+            foreach (var x in sInjectors)
+            {
+                if (x == null) continue;
+                if (prefab != null && sCore != null)
+                {
+                    var burst = Object.Instantiate(prefab, sCore.transform.TransformPoint(x.LocalSlot), Quaternion.identity);
+                    burst.name = "TheExpanse_DonutBurst";
+                    burst.SetActive(true);
+                    Object.Destroy(burst, 4f);
+                }
+                if (DamageScale <= 0f) continue;
+                foreach (var part in x.Parts)
+                    if (part != null) { ReactorFire.HeatPart(part, 1000f); destroyed++; }
+            }
+
+            string player = "";
+            var playerEntity = PlayerProfileService.Instance?.Profile?.PlayerEntity ?? Entity.Null;
+            if (Plugin.ReactorPlayerDamage.Value && playerEntity != Entity.Null && em.Exists(playerEntity) && em.HasComponent<HealthComponent>(playerEntity)
+                && GhostNodes.TryGetPosition(em, playerEntity, out var at))
+            {
+                var offset = at - center;
+                float height = Mathf.Abs(Vector3.Dot(offset, normal));
+                float across = Vector3.ProjectOnPlane(offset, normal).magnitude;
+                if (height < 2.5f && across < reach * 1.3f)
+                {
+                    ReactorFire.ScorchPlayer(em, playerEntity, 0.25f * em.GetComponentData<HealthComponent>(playerEntity).Max);
+                    player = "; it caught you";
+                }
+            }
+            Plugin.Log.LogInfo($"[Reactor] THE DONUT FLARE: {(DamageScale > 0f ? $"{destroyed} injector part(s) destroyed" : "Ship Damage is off: nothing destroyed")}{player}.");
         }
 
         // The reactor pulled while the plasma burns: a real explosion at the ball, the game's own. A short-lived entity
@@ -1232,29 +1353,30 @@ namespace TheExpanse
             float size = Mathf.Max(0.1f, Plugin.ReactorBallSize.Value) * (0.5f + 0.5f * feed);
             float period = PulsePeriod(m, feed);
             sCurrentPeriod = period;
-            float depth = 0.5f * feed + 0.12f * m;        // 1x..2x with all eight feeding
+            float depth = 0.5f;                            // 1x..2x
             float pulse = 1f + depth * (1f - Mathf.Cos(PulsePhase(period)));
-            float grow = 1f + 0.15f * m + (sPhase == Phase.Meltdown ? 0.5f : 0f);
+            float grow = 1f + 0.1f * m + (sPhase == Phase.Meltdown ? 0.5f : 0f);
             return size * pulse * grow;
         }
 
-        // How long a pulse takes: in balance PulseSeconds (slower as fewer injectors feed it); off balance 1 s at one gap,
-        // 0.5 s at two side by side (imbalance 1.85), 0.25 s at three or more (2.41), smoothly in between.
-        static float PulsePeriod(float m, float feed)
-        {
-            float balanced = Mathf.Max(0.2f, Plugin.ReactorPulseSeconds.Value) * (2f - feed);
-            if (m <= 1f) return Mathf.Lerp(balanced, 1f, m);
-            if (m <= 1.85f) return Mathf.Lerp(1f, 0.5f, (m - 1f) / 0.85f);
-            return Mathf.Lerp(0.5f, 0.25f, Mathf.Clamp01((m - 1.85f) / 0.56f));
-        }
+        // How long a pulse takes: a steady PulseSeconds whatever the balance (the level shows in the core's color and
+        // brightness and the helmet beep instead; fewer injectors make the core smaller, not slower). The beat is left
+        // free for the shutdown modes to use.
+        static float PulsePeriod(float m, float feed) => Mathf.Max(0.2f, Plugin.ReactorPulseSeconds.Value);
 
         // The pulse's phase advances at the current rate, so a change of rate speeds it up or slows it down smoothly.
-        static float sPulsePhase, sPulseAt = -1f;
+        // sBeats counts the core's beats (the clock the handle lights read).
+        static float sPulsePhase, sPulseAt = -1f, sBeats;
         static float PulsePhase(float period)
         {
             if (sPulseAt != Time.time)
             {
-                if (sPulseAt >= 0f) sPulsePhase = (sPulsePhase + (Time.time - sPulseAt) * Mathf.PI * 2f / period) % (Mathf.PI * 2f);
+                if (sPulseAt >= 0f)
+                {
+                    float beats = (Time.time - sPulseAt) / period;
+                    sBeats = (sBeats + beats) % 4000f;
+                    sPulsePhase = (sPulsePhase + beats * Mathf.PI * 2f) % (Mathf.PI * 2f);
+                }
                 sPulseAt = Time.time;
             }
             return sPulsePhase;
@@ -1264,8 +1386,8 @@ namespace TheExpanse
         // Eased like the imbalance, so the ball settles down gradually.
         static float sShownFeed = 1f;
 
-        // The color step: 1 safe, 2 unstable, 3 badly unbalanced.
-        static int ShownLevel(float m) => m <= Plugin.ReactorUnstableAt.Value ? 1 : m < Plugin.ReactorMeltdownAt.Value ? 2 : 3;
+        // The color step: 0 in balance, 1 safe but off balance, 2 unstable, 3 badly unbalanced.
+        static int ShownLevel(float m) => m < 0.05f ? 0 : m <= Plugin.ReactorUnstableAt.Value ? 1 : m < Plugin.ReactorMeltdownAt.Value ? 2 : 3;
 
         static void Draw()
         {
@@ -1286,8 +1408,8 @@ namespace TheExpanse
                                 sPhase == Phase.Fading ? sFade : 1f);
             ReactorSound.Show(BallCenter, sPulsePhase / (Mathf.PI * 2f), sShownImbalance, Unstable && sPhase != Phase.Fading,
                               sPhase == Phase.Fading ? sFade : 1f, NextStepIn(), sTouching);
-            AdvanceLights(Mathf.Min(Time.deltaTime, 0.1f));
             SettleOutcomes();
+            DrawScreens();
             if (InSafeWindow()) sWindowSinceCheckNext = true;
             ShowHandleLights();
         }
@@ -1316,24 +1438,9 @@ namespace TheExpanse
                     ReactorFire.IrradiatePlayer(em, player, dose * Mathf.Max(0f, Plugin.ReactorRadiationDamage.Value) / 100f * health * dt * fade);
                 }
 
-                // Touching the ball sets the player on fire; so does the leak cone, while the plasma is unstable.
-                if (fromSurface < Mathf.Max(0f, Plugin.ReactorHeatRadius.Value)
-                    || (Unstable && ReactorFeeds.TryCone(out var apex, out var axis, out float coneReach, out float half) && InCone(at, apex, axis, coneReach, half, 0.3f)))
+                // Touching the ball sets the player on fire (the flares and the fire cloud are harmless).
+                if (fromSurface < Mathf.Max(0f, Plugin.ReactorHeatRadius.Value))
                     ReactorFire.IgnitePlayer(em, player, 0.02f * health);
-            }
-
-            // Unstable plasma burns what it touches.
-            if (Unstable && DamageScale > 0f && (sPhase == Phase.Running || sPhase == Phase.Meltdown) && Time.time >= sNextBurn)
-            {
-                sNextBurn = Time.time + Mathf.Max(0.1f, Plugin.ReactorBurnInterval.Value);
-                BurnAround(em, center, ballRadius + 0.3f, null);
-                if (ReactorFeeds.TryCone(out var apex, out var axis, out float coneReach, out float half))
-                {
-                    // the cone's bounding capsule, then only what lies inside the cone
-                    float wide = coneReach * Mathf.Tan(half * Mathf.Deg2Rad);
-                    BurnAround(em, apex + axis * (coneReach * 0.5f), Mathf.Sqrt(coneReach * coneReach * 0.25f + wide * wide),
-                               p => InCone(p, apex, axis, coneReach, half, 0.3f));
-                }
             }
         }
 
@@ -1420,6 +1527,8 @@ namespace TheExpanse
             float pickScore = best ? scored.Min(x => x.after) : scored.Max(x => x.after);
             var ties = scored.Where(x => Mathf.Abs(x.after - pickScore) < 0.01f).ToList();
             int pick = ties[Random.Range(0, ties.Count)].i;
+            if (best && Owed >= 0 && connected.Contains(Owed)) pick = Owed;                                         // Memorize, Resonance: the one owed
+            if (worst && Owed >= 0 && pick == Owed && connected.Count > 1) pick = connected.First(i => i != Owed);
             sSimulated[pick] = true;
             Plugin.Log.LogInfo($"[Test] treating injector {pick} as disconnected ({(best ? "the best balanced choice" : "the worst choice")}).");
             OnDisconnected(pick);

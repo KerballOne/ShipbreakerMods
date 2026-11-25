@@ -62,17 +62,26 @@ namespace TheExpanse
         internal static ConfigEntry<float> ReactorRadiationDamage = null!;
         internal static ConfigEntry<float> ReactorHeatRadius = null!;
         internal static ConfigEntry<float> ReactorUnstableAt = null!;
-        internal static ConfigEntry<float> ReactorBurnInterval = null!;
         internal static ConfigEntry<float> ReactorPartDamage = null!;
         internal static ConfigEntry<float> ReactorShipDamage = null!;
         internal static ConfigEntry<bool> ReactorPlayerDamage = null!;
         internal static ConfigEntry<bool> ReactorHandleTiming = null!;
-        internal static ConfigEntry<float> ReactorPulsesPerLight = null!;
         internal static ConfigEntry<bool> ReactorHaptics = null!;
+        internal static ConfigEntry<bool> ReactorModeBalance = null!;
+        internal static ConfigEntry<bool> ReactorModeMemorize = null!;
+        internal static ConfigEntry<bool> ReactorModeResonance = null!;
+        internal static ConfigEntry<float> ReactorResonanceOffset = null!;
+        internal static ConfigEntry<float> ReactorResonanceSpread = null!;
+        internal static ConfigEntry<string> ReactorTerminals = null!;
+        internal static ConfigEntry<string> ReactorScreenDorsal = null!;
+        internal static ConfigEntry<float> ReactorScreenBrightness = null!;
+        internal static ConfigEntry<bool> ReactorResonanceHint = null!;
+        internal static ConfigEntry<string> ReactorScreenPosition = null!;
+        internal static ConfigEntry<string> ReactorScreenRotation = null!;
+        internal static ConfigEntry<string> ReactorScreenSize = null!;
         internal static ConfigEntry<float> ReactorMeltdownAt = null!;
         internal static ConfigEntry<bool> ReactorEscalation = null!;
-        internal static ConfigEntry<float> ReactorEscalateMaxSeconds = null!;
-        internal static ConfigEntry<float> ReactorEscalateMinSeconds = null!;
+        internal static ConfigEntry<float> ReactorEscalateSeconds = null!;
         internal static ConfigEntry<bool> ReactorSounds = null!;
         internal static ConfigEntry<string> ReactorHumSound = null!;
         internal static ConfigEntry<string> ReactorWarningSound = null!;
@@ -212,9 +221,10 @@ namespace TheExpanse
                 "Diameter of the core when it is in balance, in meters. It grows as the balance goes off.");
             ReactorBallDepth = Config.Bind("Reactor", "BallDepth", 3f,
                 "Only used if the ship's reactor fire marker is not found: how far below the ring of injectors the ball sits, in meters.");
-            ReactorPulseSeconds = Config.Bind("Reactor", "PulseSeconds", 4f,
-                "How long one pulse of the ball takes in balance with all eight injectors feeding it, in seconds (it swells to " +
-                "twice BallSize and back). Slower and smaller as fewer (balanced) injectors feed it; faster and larger off balance.");
+            ReactorPulseSeconds = Config.Bind("Reactor", "PulseSeconds", 1.5f,
+                "How long one pulse (beat) of the core takes, in seconds; steady whatever the balance. The core swells to twice its " +
+                "size and back, and is smaller as fewer injectors feed it. The handle lights step on these beats.");
+            if (UnityEngine.Mathf.Approximately(ReactorPulseSeconds.Value, 4f)) ReactorPulseSeconds.Value = (float)ReactorPulseSeconds.DefaultValue;   // the old default
             ReactorBrightness = Config.Bind("Reactor", "Brightness", 10f,
                 "How bright the plain stand-in ball glows, drawn only if the game's fire effect cannot be loaded.");
             ReactorLightLumens = Config.Bind("Reactor", "LightLumens", 30000f,
@@ -227,49 +237,75 @@ namespace TheExpanse
             ReactorHeatRadius = Config.Bind("Reactor", "HeatRadius", 0.5f,
                 "Coming this close to the ball's surface, in meters, sets you on fire.");
             ReactorUnstableAt = Config.Bind("Reactor", "UnstableAt", 1.05f,
-                "Imbalance (in injectors' worth) above which the plasma is unstable: a fire cloud wraps it and it burns what it touches. " +
+                "Imbalance (in injectors' worth) above which the plasma is unstable (level 2): a fire cloud wraps it (harmless). " +
                 "1.05 lets any single gap, and any slightly off opposite pair (0.77), through safely.");
             ReactorPlayerDamage = Config.Bind("Reactor", "PlayerDamage", true,
-                "The core hurts you: its radiation, its fire (touching it, or its leak cone while unstable) and its detonation. " +
-                "Off: it never hurts you, though a detonation still throws you.");
+                "The core hurts you: its radiation, its fire if you touch it, a flashback from a badly timed injector release, the " +
+                "level 3 donut flare (heat) and its detonation. Off: it never hurts you, though a detonation still throws you.");
             ReactorHandleTiming = Config.Bind("Reactor", "PlasmaInjectorReleaseTiming", true,
-                "Like the game's breakers: three lights on each injector's handle console light red one by one and go dark " +
-                "again, faster the more unstable the core. Pull the handle while they are dark and it lets go safely; pull it at any " +
+                "Like the game's breakers: three lights on each injector's handle console light red one by one on the core's beats " +
+                "and go dark again; the dark moment narrows as the core gets more unstable. Pull the handle while they are dark and it lets go safely; pull it at any " +
                 "other moment and the plasma flashes back along it and sets you on fire (with PlayerDamage on). Cutting the " +
                 "purple pipe instead is not timed. Off: no lights, and a handle can be pulled at any time.");
-            ReactorPulsesPerLight = Config.Bind("Reactor", "PulsesPerLight", 1.5f,
-                "With PlasmaInjectorReleaseTiming on: how many of the core's pulses each step of the handle lights lasts (dark, 1, 2, 3 lit). " +
-                "In balance the core pulses every 4 s, at one gap every second, at level 3 four times a second: at 1.5 a step " +
-                "takes 6 s, 1.5 s and 0.375 s (the game's breakers: 1 s down to 0.4 s).");
             ReactorShipDamage = Config.Bind("Reactor", "ShipDamage", 100f,
-                new ConfigDescription("How hard the core hits the ship, in percent. Unstable plasma (UnstableAt or more off balance) " +
-                "burns the parts it touches and the parts in its leak cone, and when the reactor above it explodes or is pulled " +
-                "while the plasma burns, the core detonates with twice the reactor's own reach. 100: as described; 200: parts burn " +
-                "twice as hard and the detonation reaches twice as far; 0: no parts burn, it never melts down and the core goes " +
-                "out without a blast. What it does to you is PlayerDamage.", new AcceptableValueRange<float>(0f, 200f)));
-            ReactorBurnInterval = Config.Bind("Reactor", "BurnInterval", 1f,
-                "Seconds between burns of the parts unstable plasma touches.");
+                new ConfigDescription("How hard the core hits the ship, in percent: the level 3 donut flare destroys the eight " +
+                "injectors, and when the reactor above the core explodes or is pulled while the plasma burns, the core detonates " +
+                "with twice the reactor's own reach (200: four times). 0: the donut destroys nothing, the reactor never melts down " +
+                "and the core goes out without a blast. What it does to you is PlayerDamage.", new AcceptableValueRange<float>(0f, 200f)));
             ReactorPartDamage = Config.Bind("Reactor", "PartDamage", 4f,
-                "Integrity an injector loses each time unstable plasma burns it (at ShipDamage 100). Parts that can catch fire are set on fire instead.");
+                "Only if the reactor has no explosion settings of its own (the fallback blast): integrity an injector loses from it, at ShipDamage 100.");
             ReactorMeltdown = Config.Bind("Reactor", "Meltdown", true,
-                "Badly unbalanced plasma (MeltdownAt or more for MeltdownSeconds) starts the game's own meltdown of the reactor " +
-                "above the core; when that reactor explodes, the core detonates with it. Off, or ShipDamage 0: it never melts down.");
+                "After the level 3 donut flare, start the game's own meltdown of the reactor above the core (losing the injectors " +
+                "does not start it by itself); when that reactor explodes, the core detonates with it. Off, or ShipDamage 0: no " +
+                "meltdown. The donut flare itself comes either way.");
             ReactorMeltdownAt = Config.Bind("Reactor", "MeltdownAt", 2.4f,
                 "Imbalance (in injectors' worth) that counts toward a meltdown. Three gaps side by side are 2.41.");
-            ReactorMeltdownSeconds = Config.Bind("Reactor", "MeltdownSeconds", 10f,
-                "How long the plasma can stay at MeltdownAt or more before it melts down, in seconds.");
+            ReactorMeltdownSeconds = Config.Bind("Reactor", "MeltdownSeconds", 5f,
+                "How long the plasma can stay at level 3 (MeltdownAt or more) before the donut flare, in seconds; the warning beep " +
+                "races in the last 5.");
+            if (UnityEngine.Mathf.Approximately(ReactorMeltdownSeconds.Value, 10f)) ReactorMeltdownSeconds.Value = 5f;   // the old default
 
             ReactorEscalation = Config.Bind("Reactor", "Escalation", true,
-                "Plasma left off balance gets worse by itself: after EscalateMaxSeconds level 1 (safe) becomes level 2 (unstable), " +
-                "and from there it takes EscalateMinSeconds to become level 3 (badly unbalanced), where the meltdown countdown " +
-                "(MeltdownSeconds) starts. A disconnect that evens the balance out restarts the wait and takes a level off; a wrong " +
-                "one leaves the clock running. Back in balance it is all gone. Off: only the injectors decide the level.");
-            ReactorEscalateMaxSeconds = Config.Bind("Reactor", "EscalateMaxSeconds", 30f,
-                "With Escalation on: how long the plasma can be left at level 1 (one gap) before it becomes level 2, in seconds.");
-            ReactorEscalateMinSeconds = Config.Bind("Reactor", "EscalateMinSeconds", 10f,
-                "With Escalation on: how long the plasma can be left at level 2 (two gaps side by side) before it becomes level 3, " +
-                "in seconds. In between, the wait shortens smoothly from EscalateMaxSeconds to this.");
+                "Plasma left off balance gets worse by itself: every EscalateSeconds it goes up a level (level 3 starts the donut " +
+                "flare countdown). A disconnect that evens the balance out restarts the wait and takes a level off; a wrong one " +
+                "leaves the clock running. Back in balance it is all gone. Off: only the injectors (and mistakes) decide the level.");
+            ReactorEscalateSeconds = Config.Bind("Reactor", "EscalateSeconds", 45f,
+                "With Escalation on: how long a problem can be left before the core goes up a level, in seconds.");
+            if (UnityEngine.Mathf.Approximately(ReactorEscalateSeconds.Value, 30f)) ReactorEscalateSeconds.Value = 45f;   // the old default
 
+            ReactorModeBalance = Config.Bind("Reactor", "ModeBalance", true,
+                "Shutdown mode Balance: no set order; keep the plasma balanced. Each ship picks one of the modes switched on, at random.");
+            ReactorModeMemorize = Config.Bind("Reactor", "ModeMemorize", true,
+                "Shutdown mode Memorize: two engineering deck terminals flash the order to disconnect the injectors in.");
+            ReactorModeResonance = Config.Bind("Reactor", "ModeResonance", true,
+                "Shutdown mode Resonance: the handle lights of the injector to release next tick exactly on the core's beat; the others tick off it.");
+            ReactorResonanceOffset = Config.Bind("Reactor", "ResonanceOffset", 0.5f,
+                "Resonance: how far off the beat the other injectors' lights tick, in beats (0.5: half way between beats, the easiest " +
+                "to tell; smaller is harder).");
+            ReactorResonanceSpread = Config.Bind("Reactor", "ResonanceSpread", 0.12f,
+                "Resonance: how much the other injectors' offsets differ from one another, in beats, either side of ResonanceOffset " +
+                "(none ticks closer than 0.2 beat to the beat itself).");
+            ReactorTerminals = Config.Bind("Reactor", "Terminals", "",
+                "Which nav terminals show the shutdown screen: their numbers from the log line '[Reactor] nav terminals near the " +
+                "core', comma separated (e.g. 0,2). Empty: any two of the four nearest, at random per ship.");
+            if (ReactorTerminals.Value.Contains("PRF_")) ReactorTerminals.Value = "";
+            ReactorScreenDorsal = Config.Bind("Reactor", "ScreenDorsal", "+Z",
+                "Which of the ship's own axes is dorsal (up) on the shutdown screen's diagram: +X, -X, +Y, -Y, +Z or -Z. Change it if " +
+                "DRSL / VNTR / PORT / STBD do not match the ship.");
+            ReactorScreenBrightness = Config.Bind("Reactor", "ScreenBrightness", 1.5f,
+                "How bright the shutdown screen is.");
+            if (UnityEngine.Mathf.Approximately(ReactorScreenBrightness.Value, 4f)) ReactorScreenBrightness.Value = 1.5f;
+            ReactorScreenPosition = Config.Bind("Reactor", "ScreenPosition", "",
+                "Debug: where the shutdown screen sits on its terminal, in the terminal's own space, meters, as x,y,z. Empty: on " +
+                "the terminal's front face, measured from its mesh. Re-read live from the settings file.");
+            ReactorScreenRotation = Config.Bind("Reactor", "ScreenRotation", "",
+                "Debug: the shutdown screen's turn on its terminal, degrees, as x,y,z. Empty: flush on the measured face.");
+            if (ReactorScreenRotation.Value.Replace(" ", "") == "0,0,0" || ReactorScreenRotation.Value.Replace(" ", "") == "0,-90,0") ReactorScreenRotation.Value = "";
+            ReactorScreenSize = Config.Bind("Reactor", "ScreenSize", "",
+                "Debug: the shutdown screen's width and height, meters, as w,h. Empty: the measured face's.");
+            if (ReactorScreenSize.Value.Replace(" ", "") == "0.45,0.7" || ReactorScreenSize.Value.Replace(" ", "") == "0.42,0.68") ReactorScreenSize.Value = "";
+            ReactorResonanceHint = Config.Bind("Reactor", "ResonanceRingHint", false,
+                "Resonance: the screen also rings the injector to release next. Off: find it by its pulse alone.");
             ReactorHaptics = Config.Bind("Reactor", "Haptics", true,
                 "A controller rumbles with each pulse of the core while you are near it (stronger off balance, and while you hold " +
                 "the reactor), following the game's own vibration setting.");
@@ -393,7 +429,7 @@ namespace TheExpanse
 
         // Settings that are no longer used are dropped from the settings file (BepInEx keeps unknown lines otherwise).
         static readonly string[] sRetired = { "Reactor/PulseSound", "Reactor/HapticDelay", "Reactor/HapticSeconds", "Reactor/BurnsParts", "Reactor/Damage",
-                                              "Reactor/SafeWindow", "Reactor/MinSafeSeconds", "Reactor/HandleTiming", "Debug/FxGalleryKey", "Debug/FxGalleryBackKey" };
+                                              "Reactor/SafeWindow", "Reactor/MinSafeSeconds", "Reactor/HandleTiming", "Reactor/PulsesPerLight", "Reactor/BurnInterval", "Reactor/EscalateMaxSeconds", "Reactor/EscalateMinSeconds", "Reactor/ResonanceHint", "Debug/FxGalleryKey", "Debug/FxGalleryBackKey" };
         private void RemoveRetiredSettings()
         {
             try
