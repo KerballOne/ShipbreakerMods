@@ -334,6 +334,7 @@ namespace TheExpanse
                 case ReactorControl.Mode.Balance: DrawBalance(state); break;
                 case ReactorControl.Mode.Memorize: DrawMemorize(state); break;
                 case ReactorControl.Mode.Resonance: DrawResonance(state); break;
+                case ReactorControl.Mode.Free: DrawRing(state, i => new Color32(60, 200, 215, 255)); break;
             }
         }
 

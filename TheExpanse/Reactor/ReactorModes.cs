@@ -17,7 +17,7 @@ namespace TheExpanse
     // the core to level 0 and stops the clock. The injector that was owed stays next; the wrong one is struck off.
     internal static partial class ReactorControl
     {
-        internal enum Mode { Balance, Memorize, Resonance }
+        internal enum Mode { Balance, Memorize, Resonance, Free }      // Free: all modes switched off, no challenge
         internal static Mode CurrentMode { get; private set; } = Mode.Balance;
         static readonly List<int> sOrder = new List<int>();     // still owed, in order (Memorize, Resonance)
         static int sPenalty;                                      // levels added by mistakes
@@ -34,7 +34,7 @@ namespace TheExpanse
             if (Plugin.ReactorModeBalance.Value) enabled.Add(Mode.Balance);
             if (Plugin.ReactorModeMemorize.Value && TerminalScreens.Available) enabled.Add(Mode.Memorize);
             if (Plugin.ReactorModeResonance.Value) enabled.Add(Mode.Resonance);
-            if (enabled.Count == 0) enabled.Add(Mode.Balance);
+            if (enabled.Count == 0) enabled.Add(Mode.Free);   // no challenge: no wrong choices, no levels; every effect stays
             CurrentMode = enabled[random.Next(enabled.Count)];
 
             // Any order.
@@ -43,7 +43,7 @@ namespace TheExpanse
             for (int k = sOrder.Count - 1; k > 0; k--) { int r = random.Next(k + 1); (sOrder[k], sOrder[r]) = (sOrder[r], sOrder[k]); }
             sOrder.RemoveAll(i => !Connected(i));       // already out (a reloaded save)
             sPenalty = 0; MistakeInjector = -1; MistakeAt = -100f;
-            Plugin.Log.LogInfo($"[Reactor] shutdown mode: {CurrentMode}" + (CurrentMode == Mode.Balance ? "." : $"; order {string.Join(" ", sOrder)}.") +
+            Plugin.Log.LogInfo($"[Reactor] shutdown mode: {CurrentMode}" + (CurrentMode == Mode.Balance || CurrentMode == Mode.Free ? "." : $"; order {string.Join(" ", sOrder)}.") +
                                (Plugin.ReactorModeMemorize.Value && !TerminalScreens.Available ? " (Memorize left out: no terminal screen found.)" : ""));
         }
 
@@ -61,7 +61,7 @@ namespace TheExpanse
         {
             get
             {
-                if (CurrentMode == Mode.Balance) return -1;
+                if (CurrentMode == Mode.Balance || CurrentMode == Mode.Free) return -1;
                 foreach (int i in sOrder) if (Connected(i)) return i;
                 return -1;
             }
@@ -70,7 +70,7 @@ namespace TheExpanse
         // Every disconnect: in Memorize and Resonance, was it the one owed?
         static void CheckOrder(int i)
         {
-            if (CurrentMode == Mode.Balance || sOrder.Count == 0) return;
+            if (CurrentMode == Mode.Balance || CurrentMode == Mode.Free || sOrder.Count == 0) return;
             sOrder.RemoveAll(x => x != i && !Connected(x));      // gone some other way (the donut flare, a test key)
             if (sOrder.Count == 0) return;
             if (sOrder[0] == i)
