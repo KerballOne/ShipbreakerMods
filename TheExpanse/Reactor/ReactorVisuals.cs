@@ -81,6 +81,7 @@ namespace TheExpanse
             lightObject.transform.SetParent(sRoot.transform, false);
             sLight = lightObject.AddHDLight(HDLightTypeAndShape.Point);
             sLight.SetRange(20f);
+            sLight.EnableShadows(true);
 
             Load(sBallFx);
             Load(sCoreFx);
@@ -222,6 +223,8 @@ namespace TheExpanse
 
         // Every frame. ballDiameter is the size right now (pulse included); level is the color step (1 safe,
         // 2 unstable, 3 badly unbalanced); unstable wraps the ball in fire; fade 1 = full, 0 = gone.
+        const float MovingSpeed = 1f;       // m/s of ship speed above which the effects give way to the stand-in
+
         internal static void Show(Vector3 center, float ballDiameter, int level, bool unstable, float fade)
         {
             if (sRoot == null || sBall == null) return;
@@ -243,9 +246,12 @@ namespace TheExpanse
             float ballScale = Mathf.Max(0.001f, ballDiameter / baseSize * fade * flicker);   // 1 = BallSize
 
             // The ball: the game's fire and glow at BallSize times the pulse; the stand-in until it loads.
-            bool ballReady = sBallFx.Shown != null;
-            Place(sBallFx, fade > 0.001f, Vector3.one * ballScale);
-            Place(sCoreFx, fade > 0.001f, Vector3.one * ballScale);
+            // The game's effects leave their particles in world space: with the ship under way they stream out behind it,
+            // through the hull. While it moves, the plain glowing stand-in is shown instead.
+            bool underWay = FlightModel.UnderWay && FlightModel.Speed > MovingSpeed;
+            bool ballReady = sBallFx.Shown != null && !underWay;
+            Place(sBallFx, fade > 0.001f && !underWay, Vector3.one * ballScale);
+            Place(sCoreFx, fade > 0.001f && !underWay, Vector3.one * ballScale);
             sBall.SetActive(!ballReady);
             if (!ballReady)
             {
@@ -257,12 +263,13 @@ namespace TheExpanse
             {
                 sLight.SetColor(color);
                 sLight.SetIntensity(Mathf.Max(0f, Plugin.ReactorLightLumens.Value) * fade * (ballDiameter / baseSize) * sShownBright, LightUnit.Lumen);
-                sLight.SetRange(Mathf.Max(1f, ballDiameter * 6f));
+                // short reach, and the hull's shadow: the pulse stays in the chamber instead of glowing through the hull
+                sLight.SetRange(Mathf.Max(1f, ballDiameter * 3f));
             }
 
             // Unstable: the fire cloud wraps the ball, just past its surface; it comes and goes over half a second.
             sCloudShown = Mathf.MoveTowards(sCloudShown, unstable ? 1f : 0f, Time.deltaTime * 2f);
-            bool cloud = sCloudShown > 0.001f;
+            bool cloud = sCloudShown > 0.001f && !underWay;
             Place(sCloudFx, cloud, Vector3.one);
             if (cloud) SetFloat(sCloudFx, "Radius", Mathf.Max(0.05f, ballDiameter * 0.5f * (1.15f + 0.2f * (level - 2)) * sCloudShown * fade));
 

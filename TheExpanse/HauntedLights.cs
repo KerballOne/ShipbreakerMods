@@ -190,7 +190,7 @@ namespace TheExpanse
 
             float radius = Mathf.Max(0.1f, Plugin.HelmetFlickerRadius.Value);
             float nearest = float.MaxValue;                 // distance as a share of that node's reach
-            if (Plugin.HelmetFlicker.Value && Plugin.Enabled.Value && PartSeparation.CustomShip)
+            if (Plugin.HelmetFlicker.Value && Plugin.Enabled.Value && Plugin.HauntThisShip)
             {
                 Vector3 at = sHelmet.transform.position;
                 for (int i = 0; i < GhostNodes.Positions.Count; i++)

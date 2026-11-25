@@ -1322,7 +1322,8 @@ namespace TheExpanse
             if (sCore == null) return;
             var center = sCore.transform.TransformPoint(sLocalCenter);
             var rotation = sCore.transform.rotation;
-            if (sTracked && ((center - sWorldCenter).sqrMagnitude > JumpMeters * JumpMeters || Quaternion.Angle(rotation, sLastCoreRotation) > JumpDegrees))
+            // (not while the ship is flown: then the core really does move that far between frames)
+            if (sTracked && !FlightModel.UnderWay && ((center - sWorldCenter).sqrMagnitude > JumpMeters * JumpMeters || Quaternion.Angle(rotation, sLastCoreRotation) > JumpDegrees))
             {
                 if (sJumpFrameSeen != Time.frameCount) { sJumpFrameSeen = Time.frameCount; sJumpFrames++; }
                 if (sJumpFrames <= JumpFrames)

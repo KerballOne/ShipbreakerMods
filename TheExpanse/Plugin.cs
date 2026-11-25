@@ -34,6 +34,7 @@ namespace TheExpanse
         internal static ConfigEntry<float> RollStartShare = null!;
         internal static ConfigEntry<float> RollFrequencyRamp = null!;
         internal static ConfigEntry<float> RollSpeedRamp = null!;
+        internal static ConfigEntry<bool> HauntStockShips = null!;
         internal static ConfigEntry<bool> LightFlicker = null!;
         internal static ConfigEntry<bool> LightBlackout = null!;
         internal static ConfigEntry<float> LightMinInterval = null!;
@@ -107,6 +108,25 @@ namespace TheExpanse
         internal static ConfigEntry<float> PlumeStreak = null!;
         internal static ConfigEntry<float> PlumeLightLumens = null!;
         internal static ConfigEntry<float> PlumeTestThrottle = null!;
+        internal static ConfigEntry<bool> FlightControl = null!;
+        internal static ConfigEntry<float> FlightSitDistance = null!;
+        internal static ConfigEntry<UnityEngine.Vector3> FlightSeatOffset = null!;
+        internal static ConfigEntry<float> FlightSeatYaw = null!;
+        internal static ConfigEntry<float> FlightCameraDistance = null!;
+        internal static ConfigEntry<float> FlightDriveAcceleration = null!;
+        internal static ConfigEntry<float> FlightThrusterAcceleration = null!;
+        internal static ConfigEntry<float> FlightTurnAcceleration = null!;
+        internal static ConfigEntry<float> FlightMaxTurnRate = null!;
+        internal static ConfigEntry<float> FlightMouseSensitivity = null!;
+        internal static ConfigEntry<bool> FlightFreeJacks = null!;
+        internal static ConfigEntry<float> FlightMasterJackMass = null!;
+        internal static ConfigEntry<float> FlightLightJackMass = null!;
+        internal static ConfigEntry<bool> SpaceLimits = null!;
+        internal static ConfigEntry<float> SpaceWorkAreaMultiplier = null!;
+        internal static ConfigEntry<bool> SpaceFlatEarthMode = null!;
+        internal static ConfigEntry<bool> SpaceAnglePinning = null!;
+        internal static ConfigEntry<float> SpaceTriggerDistance = null!;
+        internal static ConfigEntry<bool> SpaceDebugPrint = null!;
 
         const float HauntingSeconds = 0.5f;
         static float sHauntingDue;
@@ -143,6 +163,9 @@ namespace TheExpanse
                 "eased apart at 0.3 m/s, parts up to 100 kg keep the game's speed, and parts in between fall on a smooth slide. The " +
                 "grapple, tethers, explosions and decompression are not changed. The game's own ships are left alone.");
 
+            HauntStockShips = Config.Bind("Haunting", "HauntStockShips", false,
+                "Also add this mod's haunting (ship roll, haunted lights, helmet flicker, node radiation, growth removal) to the " +
+                "game's own ghost ships. Off: only custom ghost ships get it. The game's own haunting is not changed either way.");
             RollShip = Config.Bind("Haunting", "RollShip", true,
                 "On custom ghost ships, add a haunting action to the game's own three (doors, room pressure, electricity): now and " +
                 "then the ship rolls slowly about its long axis, pushing loose parts and you with it. It stops for good when the last " +
@@ -361,6 +384,55 @@ namespace TheExpanse
             PlumeLightLumens = Config.Bind("Drive", "LightLumens", 150000f,
                 "How much light the plume casts on the nozzle and the hull, in lumens.");
 
+            FlightControl = Config.Bind("Flight", "FlightControl", false,
+                "Sit at the MCRN Corvette's controls: near a command chair, press Interact. Seated, the view goes outside the ship " +
+                "(the tool mode button switches between outside and the seat; hold the right mouse button or the View button to look " +
+                "around and zoom) and Interact gets you up again. The flight controls themselves are still to come.");
+            FlightSitDistance = Config.Bind("Flight", "SitDistance", 2.5f,
+                "How close to a command chair you have to be to sit in it, in meters.");
+            FlightSeatOffset = Config.Bind("Flight", "SeatOffset", new UnityEngine.Vector3(0f, 0.9f, 0f),
+                "Where you sit, from the chair's origin, in the chair's own axes (x right, y up, z forward), in meters.");
+            FlightSeatYaw = Config.Bind("Flight", "SeatYaw", 0f,
+                "Which way you face in the chair: degrees turned about the chair's up from its forward.");
+            FlightCameraDistance = Config.Bind("Flight", "CameraDistance", 0f,
+                "How far the outside view starts from the ship's middle, in meters. 0: 1.3 times the ship's length.");
+            FlightDriveAcceleration = Config.Bind("Flight", "DriveAcceleration", 5f,
+                "How hard the main drive pushes at full throttle, in meters per second per second (9.8 is 1 g).");
+            FlightThrusterAcceleration = Config.Bind("Flight", "ThrusterAcceleration", 1f,
+                "How hard the side thrusters push the ship, in meters per second per second. The brake uses them too.");
+            FlightTurnAcceleration = Config.Bind("Flight", "TurnAcceleration", 10f,
+                "How quickly the ship starts and stops turning, in degrees per second per second.");
+            FlightMaxTurnRate = Config.Bind("Flight", "MaxTurnRate", 20f,
+                "The fastest the ship turns, in degrees per second.");
+            FlightMouseSensitivity = Config.Bind("Flight", "MouseSensitivity", 1f,
+                "How much turning the mouse gives: degrees per second of turn added per unit of mouse movement.");
+            FlightFreeJacks = Config.Bind("Flight", "FreeJacks", true,
+                "When the ship first moves under its own power, let go of the bay's jacks: they get a weight and are shoved out of " +
+                "the way by the hull instead of being passed through. They stay where they drift until the next level load.");
+            FlightMasterJackMass = Config.Bind("Flight", "MasterJackMass", 200f,
+                "With FreeJacks on: the Master Jack's weight, in tonnes.");
+            FlightLightJackMass = Config.Bind("Flight", "LightJackMass", 20f,
+                "With FreeJacks on: each light jack's weight, in tonnes.");
+
+            SpaceLimits = Config.Bind("Space", "ExtendedLimits", true,
+                "Room to fly. The ship and loose pieces are not destroyed for straying from the work area (see WorkAreaRadiusMultiplier; " +
+                "never while the ship is under way), the seated pilot has no speed cap, and, without the NewtonianPhysics mod, the " +
+                "player's work-area warning is lifted the same way and the planets and background are kept right far from the bay. " +
+                "With NewtonianPhysics installed, its own settings handle the player's work area and the background.");
+            SpaceWorkAreaMultiplier = Config.Bind("Space", "WorkAreaRadiusMultiplier", 0f,
+                "How far from the game's work areas things may go before the game warns, hurts or destroys: 1 is stock, 2 twice " +
+                "as far, 0 no limit at all.");
+            SpaceFlatEarthMode = Config.Bind("Space", "FlatEarthMode", false,
+                "Without NewtonianPhysics: the celestial bodies stay at a fixed offset from you once you are TriggerDistance from " +
+                "the bay, instead of drifting past as stock. On restores the stock behavior.");
+            SpaceAnglePinning = Config.Bind("Space", "AnglePinning", false,
+                "Without NewtonianPhysics: off keeps the flat background cards at a constant distance from you; on locks each " +
+                "card's angle where it was when pinning started. Takes effect on the next shift.");
+            SpaceTriggerDistance = Config.Bind("Space", "TriggerDistance", 250f,
+                "Without NewtonianPhysics: how far from the work bay, in meters, the background pinning starts.");
+            SpaceDebugPrint = Config.Bind("Space", "DebugPrint", false,
+                "Extra lines in the log from the background pinning.");
+
             TestTools = Config.Bind("Debug", "TestTools", false,
                 "For testing the ghost ship additions and reactor control: show how many nodes are left and the reactor's state on " +
                 "screen, destroy half of the nodes with KillHalfNodesKey, and pretend to disconnect injectors with ReactorRightKey " +
@@ -388,6 +460,11 @@ namespace TheExpanse
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
             Main.EventSystem.AddHandler<ShipAllSpawnWrapperEvent>(ev =>
             {
+                if (ev.State == ShipAllSpawnWrapperEvent.SpawnState.Start)
+                {
+                    try { FlightJacks.RecordBaked(); }
+                    catch (Exception ex) { Log.LogError("[Flight] " + ex); }
+                }
                 if (ev.State != ShipAllSpawnWrapperEvent.SpawnState.Complete) return;
                 GrowthCleanup.OnShipSpawned();
                 TheExpanse.ReactorControl.OnShipSpawned();
@@ -454,14 +531,31 @@ namespace TheExpanse
 
         private void OnGUI()
         {
-            try { NodeTestTools.Draw(); TheExpanse.ReactorControl.DrawTest(); }
+            try { NodeTestTools.Draw(); TheExpanse.ReactorControl.DrawTest(); FlightSeat.Draw(); }
             catch (Exception ex) { Log.LogError("[Test] " + ex); }
+        }
+
+        // After every plugin's Awake: whether NewtonianPhysics is there is known by now.
+        private void Start()
+        {
+            try
+            {
+                TheExpanse.SpaceLimits.Install(new Harmony(PluginInfo.PLUGIN_GUID + ".space"));
+                Main.EventSystem.AddHandler<GameStateChangedEvent>(TheExpanse.SpaceLimits.OnGameStateChanged);
+            }
+            catch (Exception ex) { Log.LogError("[Space] " + ex); }
         }
 
         private void Update()
         {
             try { NodeTestTools.Tick(); TheExpanse.ReactorControl.TestKeys(); }
             catch (Exception ex) { Log.LogError("[Test] " + ex); }
+            try { TheExpanse.SpaceLimits.Tick(); }
+            catch (Exception ex) { Log.LogError("[Space] " + ex); }
+            try { FlightModel.SampleFrame(); }
+            catch (Exception ex) { Log.LogError("[Flight] " + ex); }
+            try { FlightSeat.Tick(); }
+            catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             // Wait for the editor to finish writing before reading the file.
             if (sSettingsFileChanged)
             {
@@ -495,14 +589,23 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Reactor] " + ex); }
             try { TheExpanse.DrivePlume.Frame(); }
             catch (Exception ex) { Log.LogError("[Drive] " + ex); }
+            try { TheExpanse.SpaceLimits.LateTick(); }
+            catch (Exception ex) { Log.LogError("[Space] " + ex); }
+            try { FlightJacks.Frame(); }
+            catch (Exception ex) { Log.LogError("[Flight] " + ex); }
+            try { FlightCamera.Frame(); }
+            catch (Exception ex) { Log.LogError("[Flight] " + ex); }
         }
+
+        // The haunting additions run on custom ships, and on the game's own ships too with HauntStockShips on.
+        internal static bool HauntThisShip => PartSeparation.CustomShip || HauntStockShips.Value;
 
         // The ghost ship additions, a couple of times a second of game time (so not while paused).
         private static void HauntingTick()
         {
             if (UnityEngine.Time.time < sHauntingDue) return;
             sHauntingDue = UnityEngine.Time.time + HauntingSeconds;
-            if (!Enabled.Value || !PartSeparation.CustomShip)
+            if (!Enabled.Value || !HauntThisShip)
             {
                 GhostNodes.Reset();
                 ShipRoll.Schedule();            // with no nodes counted, this eases any roll under way to a stop
@@ -518,8 +621,11 @@ namespace TheExpanse
 
         private void FixedUpdate()
         {
+            FlightModel.MarkStep();
             try { ShipRoll.FixedStep(); }
             catch (Exception ex) { Log.LogError("[Haunting] " + ex); }
+            try { FlightSeat.FixedTick(); }
+            catch (Exception ex) { Log.LogError("[Flight] " + ex); }
         }
 
         // Start is posted before the scenes load.
@@ -534,6 +640,8 @@ namespace TheExpanse
             TheExpanse.NodeRadiation.Reset();
             TheExpanse.ReactorControl.Reset();
             TheExpanse.DrivePlume.Reset();
+            FlightSeat.Reset();
+            FlightJacks.Reset();
             sHauntingDue = 0f;
             // Pick up edits made to the settings file while the game was running, before the next ship loads.
             if (!EditSession.IsOpen) try { Instance.Config.Reload(); }

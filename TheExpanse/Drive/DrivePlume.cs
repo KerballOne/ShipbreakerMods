@@ -20,7 +20,7 @@ namespace TheExpanse
         const string NozzlePrefix = "EngineNozzle";
         const float TestHeight = 15f;
         const float TestMouthDiameter = 5f;
-        const int TexAcross = 48, TexAlong = 192;
+        const int TexAcross = 32, TexAlong = 160;     // painted every frame: kept small (48 x 192 took 2.2 ms)
         const float PaintInterval = 0f;             // every frame: at drive speeds the billows jump otherwise
         const float BillowStretch = 4f;             // billows this many times longer along the flow than across
 
@@ -45,7 +45,9 @@ namespace TheExpanse
         static Vector3 Mouth => sAnchor != null ? sAnchor.TransformPoint(sLocalMouth) : Vector3.zero;
         static Vector3 Axis => sAnchor != null ? sAnchor.TransformDirection(sLocalAxis).normalized : Vector3.up;
         // 0..1. For now a fixed test value from the settings; the flight controls will drive it later.
-        static float Throttle => Mathf.Clamp(Plugin.PlumeTestThrottle.Value, 0.01f, 1f);
+        // At the controls: the pilot's throttle. Otherwise the test value.
+        static float Throttle => FlightModel.UnderWay ? Mathf.Clamp(FlightModel.Throttle, 0.01f, 1f) : Mathf.Clamp(Plugin.PlumeTestThrottle.Value, 0.01f, 1f);
+        static bool Burning => FlightModel.UnderWay ? FlightModel.Throttle > 0.001f : Plugin.DrivePlume.Value;
         static bool AtNozzle => string.Equals(Plugin.PlumeAt.Value.Trim(), "Bell", System.StringComparison.OrdinalIgnoreCase);
 
         internal static void Reset()
@@ -68,7 +70,7 @@ namespace TheExpanse
         // Every frame (LateUpdate).
         internal static void Frame()
         {
-            if (!Plugin.Enabled.Value || !Plugin.DrivePlume.Value) { if (sRoot != null) Reset(); return; }
+            if (!Plugin.Enabled.Value || !(Plugin.DrivePlume.Value || FlightModel.UnderWay)) { if (sRoot != null) Reset(); return; }
 
             // lost the anchor (cut off, level change) or the setting changed: look again, once a second
             // the ship may finish spawning after the bay has loaded: keep looking for the nozzle (every 2 s) until found
@@ -91,7 +93,8 @@ namespace TheExpanse
 
             if (sRoot == null) Build();
             if (sRoot == null) return;
-            sRoot.SetActive(true);
+            sRoot.SetActive(Burning);
+            if (!Burning) return;
             Show();
         }
 
@@ -122,12 +125,19 @@ namespace TheExpanse
             return true;
         }
 
+        // The way the exhaust goes (aft), from the engine bell or nozzle. False if neither is on the ship.
+        internal static bool TryDriveAxis(out Vector3 axis)
+        {
+            bool found = FindNozzle(out _, out _, out axis, out _, log: false);
+            return found && axis.sqrMagnitude > 0.5f;
+        }
+
         static Transform? FindMasterJack()
         {
             var named = GameObject.Find("PRF_MasterJack_NoSpawner");
             if (named != null) return named.transform;
-            foreach (var t in Object.FindObjectsOfType<Transform>())
-                if (t != null && t.parent == null && t.name.StartsWith("PRF_MasterJack", System.StringComparison.Ordinal)) return t;
+            foreach (var t in SceneLookup.Roots())
+                if (t.name.StartsWith("PRF_MasterJack", System.StringComparison.Ordinal)) return t;
             return null;
         }
 
@@ -537,6 +547,11 @@ namespace TheExpanse
             sBeamTexture.Apply(false, false);
         }
 
+        // How long painting the beam takes, summed since last read (for the flight's frame-time line).
+        static readonly System.Diagnostics.Stopwatch sPaintWatch = new System.Diagnostics.Stopwatch();
+        internal static float PaintMs;
+        internal static int PaintCount;
+
         static void Show()
         {
             // Length and FlowSpeed are full throttle; the plume keeps its cone angle, so a shorter one ends narrower
@@ -547,10 +562,16 @@ namespace TheExpanse
             float brightness = Mathf.Max(0f, Plugin.PlumeBrightness.Value);
             float flicker = 1f + 0.06f * (Mathf.PerlinNoise(Time.time * 9f, 2.1f) - 0.5f);
 
-            if (Time.unscaledTime >= sNextPaint)
+            // only painted while some camera drew the beam last frame (not from the seat or the nose)
+            bool seen = sBeam != null && sBeam.GetComponent<MeshRenderer>().isVisible;
+            if (seen && Time.unscaledTime >= sNextPaint)
             {
                 sNextPaint = Time.unscaledTime + PaintInterval;
+                sPaintWatch.Restart();
                 PaintBeam(length, mouth, spread);
+                sPaintWatch.Stop();
+                PaintMs += (float)sPaintWatch.Elapsed.TotalMilliseconds;
+                PaintCount++;
             }
             SetBrightness(sBeamMaterial, brightness * flicker);
             SetBrightness(sGlowMaterial, brightness * 0.5f * Mathf.Max(0.1f, Plugin.PlumeCore.Value / 4f) * flicker);
@@ -569,7 +590,7 @@ namespace TheExpanse
                 sLight.transform.position = Mouth + axis * (mouth * 0.6f);
                 sLight.SetColor(Color.Lerp(PlumeColor(), Color.white, 0.3f));
                 sLight.SetIntensity(Mathf.Max(0f, Plugin.PlumeLightLumens.Value) * flicker, LightUnit.Lumen);
-                sLight.SetRange(Mathf.Max(5f, length));
+                sLight.SetRange(Mathf.Clamp(length, 5f, mouth * 3f));      // the bell and the hull near it; a 150 m reach cost frame rate
             }
         }
 

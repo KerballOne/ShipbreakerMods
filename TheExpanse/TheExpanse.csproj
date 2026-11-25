@@ -85,6 +85,9 @@
     <Reference Include="Wwise.Unity"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Wwise.Unity.dll"
                Private="false" />
+    <Reference Include="UnityEngine.InputLegacyModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.InputLegacyModule.dll"
+               Private="false" />
     <Reference Include="Unity.Mathematics"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Unity.Mathematics.dll"
                Private="false" />

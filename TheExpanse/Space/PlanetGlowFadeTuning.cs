@@ -1,0 +1,139 @@
+// Copied from the NewtonianPhysics mod (mods share no code), so TheExpanse's flights look right without it. It runs
+// only when NewtonianPhysics is not installed; with it installed, NewtonianPhysics does this itself. See SpaceLimits.
+using System.Linq;
+using BBI.Unity.Game;
+using UnityEngine;
+
+namespace TheExpanse
+{
+    // Shrinks PRF_PlanetGlow to zero scale as the player travels from
+    // Plugin.SpaceTriggerDistance out to FadeEndMeters (500m) from the work bay, and grows
+    // it back symmetrically if the player returns closer - distance-based, not time-based, so the
+    // shrink always lines up with the same physical distance regardless of how fast the player is
+    // flying.
+    //
+    // Confirmed via direct testing that color-based fading doesn't work here at all: neither
+    // Material.SetColor with a computed intermediate alpha, nor MaterialPropertyBlock (the
+    // SRP-Batcher-safe per-renderer override path), ever visibly changed the glow's brightness -
+    // only a literal Material.SetColor(propName, Color.clear) had any visible effect, and only as
+    // a binary on/off, never a gradual fade. Whatever this shader does with its color/alpha
+    // properties, intermediate values between full and Color.clear aren't rendered.
+    //
+    // Transform.localScale, by contrast, is proven to work smoothly and continuously -
+    // BackgroundParallaxTuning already reads and writes Transform.position on these same kinds of
+    // objects every frame with no rendering issues, so scale (also just a Transform property, not
+    // a shader property) should behave the same way. Animating scale down to zero is a simpler,
+    // more reliable way to "fade out" a flat card mesh than fighting the material any further.
+    //
+    // IMPORTANT: caching the glow Transform reference (found once, then reused every frame) was
+    // tried and confirmed BROKEN - the scale writes/reads all succeeded with no errors, but the
+    // shrink was never visible in-game. The working theory is that the cached reference silently
+    // goes stale (points at an object no longer actually being rendered, e.g. replaced/rebuilt by
+    // something else in the game) even though Unity's null-check doesn't catch that case - only
+    // true destruction is caught that way, not replacement. So the glow Transform is instead
+    // re-found fresh via Resources.FindObjectsOfTypeAll every time it's actually touched, matching
+    // the original confirmed-working approach.
+    //
+    // What IS safe to cache: the bay root. It's only ever used for a distance calculation, never
+    // mutated, and its identity doesn't need to match some other system's live rendered object -
+    // even a "stale" cached reference to it would still report accurate world position as long as
+    // it isn't destroyed outright, which nothing in this mod or the base game has any reason to do
+    // to a static station structure. So the expensive full-scene re-scan only happens for the
+    // glow, and only while actually in fade range (>=250m) - not every frame regardless of
+    // distance, and not for the bay root at all after the first successful find.
+    internal static class PlanetGlowFadeTuning
+    {
+        private const float FadeEndMeters = 500f;
+
+        private static Transform? _bayRoot;
+        private static Vector3? _originalScale;
+
+        // Tracks whether the glow is known to already be fully shrunk, so a player sitting past
+        // 500m (e.g. loading a save already that far out) doesn't leave it stuck at full size
+        // forever just because the normal 250m-500m fade window is never entered - this forces
+        // one snap-to-zero the first time distance is found to be >=500m, then leaves it alone.
+        private static bool _confirmedFullyShrunk;
+
+        // Clears cached scene state so the next Tick() re-scans from scratch - called on the
+        // Gameplay/new-shift transition (see Plugin.OnGameStateChanged). _originalScale is also
+        // cleared since it's captured from whatever glow Transform is found in the CURRENT shift's
+        // scene - reusing a scale value captured from a previous shift's (possibly differently
+        // sized/scaled) glow object would be wrong.
+        private static Transform? _glow;
+        private static float _nextGlowSearch;
+
+        public static void ResetState()
+        {
+            _bayRoot = null;
+            _originalScale = null;
+            _confirmedFullyShrunk = false;
+            _glow = null;
+            _nextGlowSearch = 0f;
+        }
+
+        public static void Tick()
+        {
+            if (!SpaceLimits.PinningOn)
+                return;
+
+            if (_bayRoot == null)
+            {
+                FindBayRoot();
+                if (_bayRoot == null)
+                    return;
+            }
+
+            Transform? player = LynxCameraController.MainCameraTransform;
+            if (player == null)
+                return;
+
+            float distFromBay = Vector3.Distance(player.position, _bayRoot.position);
+            float triggerDistance = Plugin.SpaceTriggerDistance.Value;
+
+            // Cheap every-frame check using only the cached bay root - the glow itself is never
+            // touched at all inside the trigger distance (still full size, nothing to do) or once
+            // already confirmed fully shrunk past 500m (nothing left to do either).
+            if (distFromBay < triggerDistance)
+                return;
+            if (distFromBay >= FadeEndMeters && _confirmedFullyShrunk)
+                return;
+
+            // If TriggerDistance has been configured at or beyond FadeEndMeters, there's no window
+            // left to fade across - snap straight to fully shrunk instead of dividing by a zero or
+            // negative span (which Clamp01 alone wouldn't protect against, since the numerator could
+            // also go negative and produce a nonsensical result rather than clamping to 0/1 as intended).
+            float scale01 = FadeEndMeters > triggerDistance
+                ? 1f - Mathf.Clamp01((distFromBay - triggerDistance) / (FadeEndMeters - triggerDistance))
+                : 0f;
+
+            // Looked up once and kept: searching every loaded object (about 220,000 of them) every frame across the whole
+            // fade window halved the frame rate there.
+            if (_glow == null || !_glow.gameObject.activeInHierarchy)
+            {
+                if (Time.unscaledTime < _nextGlowSearch)
+                    return;
+                _nextGlowSearch = Time.unscaledTime + 5f;
+                _glow = SceneLookup.Known("PRF_PlanetGlow");
+            }
+            Transform? glowTransform = _glow;
+            if (glowTransform == null)
+                return;
+
+            if (_originalScale == null)
+                _originalScale = glowTransform.localScale;
+
+            glowTransform.localScale = _originalScale.Value * scale01;
+
+            // Only meaningful past FadeEndMeters (see the early-out above) - explicitly false
+            // whenever this runs from inside the 250m-500m window so re-entering that window after
+            // being fully shrunk doesn't get skipped by a stale true value.
+            _confirmedFullyShrunk = distFromBay >= FadeEndMeters;
+        }
+
+        private static void FindBayRoot()
+        {
+            _bayRoot = SceneLookup.Root(BackgroundConstants.BayRootObjectName);
+
+        }
+    }
+}

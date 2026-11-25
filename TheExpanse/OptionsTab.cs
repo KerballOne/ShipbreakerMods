@@ -73,6 +73,7 @@ namespace TheExpanse
             new Setting("LIVE REACTOR", "Balance Mode", Plugin.ReactorModeBalance),
             new Setting("LIVE REACTOR", "Memorize Mode", Plugin.ReactorModeMemorize),
             new Setting("LIVE REACTOR", "Resonance Mode", Plugin.ReactorModeResonance),
+            new Setting("HAUNTING", "Haunt Stock Ships", Plugin.HauntStockShips),
             new Setting("HAUNTING", "Ship Roll", Plugin.RollShip),
             new Setting("HAUNTING", "Haunted Lights", Plugin.LightFlicker)
                 { AlsoSwitches = new[] { Plugin.LightBlackout, Plugin.HelmetFlicker } },
