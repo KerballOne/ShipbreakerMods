@@ -2,6 +2,17 @@ Changelog for the TheExpanse page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+0.7.2
+Three ways to shut the reactor down, picked at random per ship: Balance, Memorize and Resonance (each can be switched off in the options).
+Memorize: the engineering deck terminals flash the order to take the injectors off in. Resonance: release the injector whose handle lights tick with the core's beat.
+Two nav terminals on the engineering deck show the shutdown screen, with a pin marking where each one stands around the reactor.
+The core pulses on a steady beat and shows its level by color: blue, orange, red, purple.
+A wrong injector turns the core red and up a level; the right one brings it back down.
+Handle lights: use the handle while its three lights are dark, or the plasma flashes back and sets you on fire.
+Level 3: a ring of plasma destroys the injectors, then the reactor melts down. When it blows, the core detonates with it.
+New options tab, EXPANSE: Live Reactor, escalation, meltdown, ship and player damage, and the three modes.
+Shorter hitch when the ship spawns.
+
 0.7.1
 Reactor control on the MCRN Corvette: a ball of fusion plasma burns in the reactor chamber, held by the eight plasma injectors around it.
 Each connected injector feeds the plasma through a beam; disconnecting one turns its beam off.
