@@ -119,6 +119,7 @@ namespace TheExpanse
         internal static ConfigEntry<float> FlightMaxTurnRate = null!;
         internal static ConfigEntry<float> FlightMouseSensitivity = null!;
         internal static ConfigEntry<bool> FlightFreeJacks = null!;
+        internal static ConfigEntry<float> FlightAboardPull = null!;
         internal static ConfigEntry<float> FlightMasterJackMass = null!;
         internal static ConfigEntry<float> FlightLightJackMass = null!;
         internal static ConfigEntry<bool> SpaceLimits = null!;
@@ -127,6 +128,7 @@ namespace TheExpanse
         internal static ConfigEntry<bool> SpaceAnglePinning = null!;
         internal static ConfigEntry<float> SpaceTriggerDistance = null!;
         internal static ConfigEntry<bool> SpaceDebugPrint = null!;
+        internal static ConfigEntry<bool> SpaceDust = null!;
 
         const float HauntingSeconds = 0.5f;
         static float sHauntingDue;
@@ -353,7 +355,7 @@ namespace TheExpanse
                 new ConfigDescription("Where the plume burns. Bell: out of the mouth of the ship's engine bell (its EngineNozzle parts if the " +
                     "bell is gone). MasterJack: a test spot 15 m above the bay's Master Jack, pointing up.",
                     new AcceptableValueList<string>("Bell", "MasterJack")));
-            PlumeLength = Config.Bind("Drive", "Length", 150f,
+            PlumeLength = Config.Bind("Drive", "Length", 75f,
                 "How far the plume reaches from the engine bell at full throttle, in meters. Lower throttle shortens it in proportion.");
             PlumeTestThrottle = Config.Bind("Drive", "TestThrottle", 0.25f,
                 "For testing until the flight controls drive it: the throttle the plume burns at, 0.01 to 1. Length and FlowSpeed scale with it.");
@@ -406,6 +408,9 @@ namespace TheExpanse
                 "The fastest the ship turns, in degrees per second.");
             FlightMouseSensitivity = Config.Bind("Flight", "MouseSensitivity", 1f,
                 "How much turning the mouse gives: degrees per second of turn added per unit of mouse movement.");
+            FlightAboardPull = Config.Bind("Flight", "AboardPull", 0f,
+                "Out of the seat, aboard a ship under way: how strongly the drive's push pulls you toward the stern, as a share of " +
+                "the ship's acceleration. 1 is the full push, 0 (the default for now) floats you with the ship as if it were coasting.");
             FlightFreeJacks = Config.Bind("Flight", "FreeJacks", true,
                 "When the ship first moves under its own power, let go of the bay's jacks: they get a weight and are shoved out of " +
                 "the way by the hull instead of being passed through. They stay where they drift until the next level load.");
@@ -431,7 +436,9 @@ namespace TheExpanse
             SpaceTriggerDistance = Config.Bind("Space", "TriggerDistance", 250f,
                 "Without NewtonianPhysics: how far from the work bay, in meters, the background pinning starts.");
             SpaceDebugPrint = Config.Bind("Space", "DebugPrint", false,
-                "Extra lines in the log from the background pinning.");
+                "Extra lines in the log: the background pinning, and while flying the frame rate every few seconds and the suit's speed aboard twice a second.");
+            SpaceDust = Config.Bind("Space", "SpaceDust", false,
+                "Show the game's space dust: the drifting specks and speed streaks around you. Off by default.");
 
             TestTools = Config.Bind("Debug", "TestTools", false,
                 "For testing the ghost ship additions and reactor control: show how many nodes are left and the reactor's state on " +
@@ -453,6 +460,9 @@ namespace TheExpanse
             foreach (var type in AccessTools.GetTypesFromAssembly(typeof(Plugin).Assembly))
             {
                 if (!type.IsDefined(typeof(HarmonyPatch), inherit: false)) continue;
+                // SpaceLimits patches its own classes in Start, some only when NewtonianPhysics is absent; patched twice,
+                // each took the ship's speed off the suit twice and put it back twice (the doubled speed aboard)
+                if (type.DeclaringType == typeof(TheExpanse.SpaceLimits)) continue;
                 try { harmony.CreateClassProcessor(type).Patch(); }
                 catch (Exception ex) { Log.LogError($"Patch {type.Name} failed; the EXPANSE options page may not work: {ex.GetBaseException().Message}"); }
             }
@@ -531,7 +541,7 @@ namespace TheExpanse
 
         private void OnGUI()
         {
-            try { NodeTestTools.Draw(); TheExpanse.ReactorControl.DrawTest(); FlightSeat.Draw(); }
+            try { NodeTestTools.Draw(); TheExpanse.ReactorControl.DrawTest(); }
             catch (Exception ex) { Log.LogError("[Test] " + ex); }
         }
 
@@ -591,7 +601,11 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Drive] " + ex); }
             try { TheExpanse.SpaceLimits.LateTick(); }
             catch (Exception ex) { Log.LogError("[Space] " + ex); }
+            try { FlightHud.Frame(); }
+            catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightJacks.Frame(); }
+            catch (Exception ex) { Log.LogError("[Flight] " + ex); }
+            try { FlightModel.LateFrame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightCamera.Frame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
@@ -642,6 +656,7 @@ namespace TheExpanse
             TheExpanse.DrivePlume.Reset();
             FlightSeat.Reset();
             FlightJacks.Reset();
+            FlightHud.Reset();
             sHauntingDue = 0f;
             // Pick up edits made to the settings file while the game was running, before the next ship loads.
             if (!EditSession.IsOpen) try { Instance.Config.Reload(); }

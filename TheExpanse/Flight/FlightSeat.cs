@@ -26,11 +26,15 @@ namespace TheExpanse
         static Transform? sSeat;                // the chair sat in
         static float sSatAt;
         static Rigidbody? sBody;
+        internal static Rigidbody? PlayerBody => FindBody() ? sBody : null;
         static Collider? sBodyCollider;
         static bool sColliderWasEnabled;
         static readonly Dictionary<PlayerAction, bool> sDisabled = new Dictionary<PlayerAction, bool>();
         static Transform? sNearest;             // the chair in reach, for the prompt
 
+        static Vector3 sStandLocalPosition;     // where the player stood before sitting, in the ship's frame (or the chair's)
+        static Quaternion sStandLocalRotation;
+        static bool sStandOnFrame;
         static Vector3 sSeatLocalPosition;      // the seat in the ship's frame, while the flight model carries it
         static Quaternion sSeatLocalRotation;
 
@@ -42,6 +46,7 @@ namespace TheExpanse
         internal static void Reset()
         {
             if (Seated) Stand("level change");
+            if (sGiveBackPending) GiveSuitBack();
             FlightModel.Reset();
             sChairs.Clear();
             sChairsLogged = false;
@@ -52,9 +57,35 @@ namespace TheExpanse
             sBodyCollider = null;
         }
 
+        static bool sGiveBackPending;
+
+        static void GiveSuitBack()
+        {
+            sGiveBackPending = false;
+            Main.EventSystem.Post(ForceEquipEvent.GetEvent(ForceEquipEvent.EquipState.Equip));
+            // each action's held state is cleared as it comes back: one held when the seat took it (the Interact press
+            // that sat the player down is also the grapple's push) would otherwise come back "released" and fire
+            foreach (var pair in sDisabled)
+                if (pair.Key != null) { pair.Key.ClearInputState(); pair.Key.Enabled = pair.Value; }
+            sDisabled.Clear();
+        }
+
+        static bool InteractHeld(LynxControls controls)
+        {
+            if (controls.GetInputIsPressed(GameplayActions.GameplayActionSet.Interact)) return true;
+            var pad = InputManager.ActiveDevice;
+            return Input.GetKey(KeyCode.F) || (pad != null && pad.Action3.IsPressed);
+        }
+
         // Every frame (Update).
         internal static void Tick()
         {
+            if (sGiveBackPending)
+            {
+                var c = LynxControls.Instance;
+                if (c != null && InteractHeld(c)) { KeepActionsOff(); return; }
+                GiveSuitBack();
+            }
             if (!Allowed) { if (Seated) Stand("Flight Control turned off"); sNearest = null; return; }
             var controls = LynxControls.Instance;
             if (controls == null || !FindBody()) return;
@@ -99,19 +130,16 @@ namespace TheExpanse
             sBody.angularVelocity = chairBody != null ? chairBody.angularVelocity : Vector3.zero;
         }
 
-        internal static void Draw()
-        {
-            FlightModel.Draw();
-            if (Seated || sNearest == null || !Allowed) return;
-            var style = new GUIStyle(GUI.skin.label) { fontSize = 22, alignment = TextAnchor.MiddleCenter };
-            style.normal.textColor = new Color(1f, 0.85f, 0.4f);
-            GUI.Label(new Rect(0, Screen.height * 0.62f, Screen.width, 40), "Interact: sit at the controls", style);
-        }
+        // A command chair in reach (FlightHud shows the prompt).
+        internal static bool NearChair => !Seated && sNearest != null && Allowed;
 
         // ---- sitting -----------------------------------------------------------------------------------------------
 
         static void Sit(Transform chair)
         {
+            // where the player stood, to put them back there on standing up
+            var stoodAt = sBody != null ? sBody.position : chair.position;
+            var stoodFacing = sBody != null ? sBody.rotation : chair.rotation;
             sSeat = chair;
             sSatAt = Time.unscaledTime;
             if (sBodyCollider != null) { sColliderWasEnabled = sBodyCollider.enabled; sBodyCollider.enabled = false; }
@@ -129,6 +157,11 @@ namespace TheExpanse
                 sSeatLocalPosition = frame.InverseTransformPoint(seatPosition);
                 sSeatLocalRotation = Quaternion.Inverse(frame.rotation) * seatRotation;
             }
+            // kept in the ship's frame (it goes where the ship goes), or the chair's if the ship is not carried
+            var keep = frame != null ? frame : chair;
+            sStandLocalPosition = keep.InverseTransformPoint(stoodAt);
+            sStandLocalRotation = Quaternion.Inverse(keep.rotation) * stoodFacing;
+            sStandOnFrame = frame != null;
             Plugin.Log.LogInfo($"[Flight] seated in '{Path(chair)}' at {chair.position}; chair axes fwd {chair.forward} up {chair.up}; " +
                                $"{sDisabled.Count} suit action(s) switched off.");
         }
@@ -137,8 +170,15 @@ namespace TheExpanse
         {
             var chair = sSeat;
             // where the seat is now: on the ship's frame if it has been flown (the chair itself may not have moved)
+            // back where the player stood before sitting down (on the ship, wherever it has gone since)
             var outPosition = Vector3.zero; var outRotation = Quaternion.identity;
-            if (chair != null)
+            var keep = sStandOnFrame ? FlightModel.Frame : chair;
+            if (keep != null)
+            {
+                outPosition = keep.TransformPoint(sStandLocalPosition);
+                outRotation = keep.rotation * sStandLocalRotation;
+            }
+            else if (chair != null)
             {
                 CurrentSeatPose(out outPosition, out outRotation);
                 outPosition += outRotation * Vector3.forward * 0.6f;
@@ -146,10 +186,9 @@ namespace TheExpanse
             sSeat = null;
             FlightModel.End();
             FlightCamera.End();
-            Main.EventSystem.Post(ForceEquipEvent.GetEvent(ForceEquipEvent.EquipState.Equip));
-            foreach (var pair in sDisabled)
-                if (pair.Key != null) pair.Key.Enabled = pair.Value;
-            sDisabled.Clear();
+            // the suit's actions and tool come back once the Interact button that stood the player up is let go: it is
+            // also the grapple's push, and the held press fired it on the way out
+            sGiveBackPending = true;
             if (sBodyCollider != null) sBodyCollider.enabled = sColliderWasEnabled;
             if (sBody != null && chair != null)
             {
@@ -172,7 +211,7 @@ namespace TheExpanse
             foreach (var action in set.Actions)
             {
                 if (action == null || action.Name == interact || action.Name == pause) continue;
-                if (!sDisabled.ContainsKey(action)) sDisabled[action] = action.Enabled;
+                if (!sDisabled.ContainsKey(action)) { sDisabled[action] = action.Enabled; action.ClearInputState(); }
                 if (action.Enabled) action.Enabled = false;
             }
         }

@@ -41,6 +41,8 @@ namespace TheExpanse
             Patch(harmony, typeof(NoCrushAboard));
             Patch(harmony, typeof(SeatedStill));
             Patch(harmony, typeof(ShipFrame));
+            Patch(harmony, typeof(ShipFrameThrustUpdate));
+            Patch(harmony, typeof(ShipFrameThrustStep));
             if (NewtonianInstalled)
                 Plugin.Log.LogInfo("[Space] NewtonianPhysics is installed: it handles the player's work area and the sky; TheExpanse " +
                                    "handles the ship's limit and the pilot's speed.");
@@ -68,6 +70,7 @@ namespace TheExpanse
         internal static void Tick()
         {
             ObjectLimit();
+            SpaceDust();
             if (!PinningOn) return;
             var camera = LynxCameraController.MainCamera;
             if (camera != null && camera.farClipPlane != FarClipPlaneMeters) camera.farClipPlane = FarClipPlaneMeters;
@@ -80,6 +83,36 @@ namespace TheExpanse
             BackgroundParallaxTuning.Tick();
             PlanetGlowFadeTuning.Tick();
             FlatCardBillboarding.Tick();
+        }
+
+        // The space dust: the game's drifting specks and speed streaks around the player (StreamFXControllerLynx, driving
+        // a Kvant.Stream). Off by default ([Space] SpaceDust): the effect's components are switched off, and back on with
+        // the setting. Checked every couple of seconds (a narrow lookup by type).
+        static System.Type? sDustControllerType, sDustStreamType;
+        static float sNextDustCheck;
+        static bool sDustTypesLooked;
+
+        static void SpaceDust()
+        {
+            if (Time.unscaledTime < sNextDustCheck) return;
+            sNextDustCheck = Time.unscaledTime + 2f;
+            if (!sDustTypesLooked)
+            {
+                sDustTypesLooked = true;
+                sDustControllerType = AccessTools.TypeByName("StreamFXControllerLynx");
+                sDustStreamType = AccessTools.TypeByName("Kvant.Stream");
+                Plugin.Log.LogInfo($"[Space] space dust effect {(sDustControllerType != null ? "found" : "not found")}.");
+            }
+            if (sDustControllerType == null) return;
+            bool show = !Plugin.Enabled.Value || Plugin.SpaceDust.Value;
+            foreach (var found in Object.FindObjectsOfType(sDustControllerType))
+            {
+                if (!(found is Behaviour controller)) continue;
+                if (controller.enabled != show) controller.enabled = show;
+                if (sDustStreamType != null)
+                    foreach (var stream in controller.GetComponentsInChildren(sDustStreamType, true))
+                        if (stream is Behaviour b && b.enabled != show) b.enabled = show;
+            }
         }
 
         // How far pieces of salvage may stray from the work area before the game destroys them. The game reads the
@@ -141,6 +174,57 @@ namespace TheExpanse
             }
         }
 
+        // The suit's thrusters and brake live in the game's ThrustController, apart from its motion: the brake set the
+        // suit's speed to zero against the bay (so the ship's deck came up and bounced it), and the thrusters stopped
+        // pushing at their top speed measured against the bay (so with the ship at speed they would not push ahead).
+        // Aboard a ship under way both work against the ship's motion, the same way as the suit's own step below.
+        static readonly System.Reflection.FieldInfo? sThrustBody = AccessTools.Field(typeof(ThrustController), "m_Rigidbody");
+
+        // What the suit's speed was taken down by (the ship's speed there) and what it was then, for putting it back and
+        // for noting any sudden change the game's own code made in between (diagnostic).
+        internal struct Taken { internal Vector3 Ship; internal Vector3 Relative; }
+
+        static Taken Take(Rigidbody? body)
+        {
+            if (FlightSeat.Seated || body == null || !FlightModel.UnderWay || !FlightModel.Aboard(body.position)) return default;
+            var ship = FlightModel.PointVelocity(body.position);
+            body.velocity -= ship;
+            return new Taken { Ship = ship, Relative = body.velocity };
+        }
+
+        static void Give(Rigidbody? body, Taken taken, string where)
+        {
+            if (taken.Ship == Vector3.zero || body == null) return;
+            var change = body.velocity - taken.Relative;
+            if (change.sqrMagnitude > 0.3f * 0.3f && Time.time >= sNextChangeLog)
+            {
+                sNextChangeLog = Time.time + 0.25f;
+                Plugin.Log.LogInfo($"[Flight] aboard: {where} changed the suit's speed against the ship by {change.magnitude:0.00} m/s " +
+                                   $"({taken.Relative.magnitude:0.00} -> {body.velocity.magnitude:0.00}); ship there {taken.Ship.magnitude:0.00} m/s.");
+            }
+            body.velocity += taken.Ship;
+        }
+
+        static float sNextChangeLog;
+
+        [HarmonyPatch(typeof(ThrustController), "Update")]
+        static class ShipFrameThrustUpdate
+        {
+            [HarmonyPriority(Priority.First)]
+            static void Prefix(ThrustController __instance, out Taken __state) => __state = Take(sThrustBody?.GetValue(__instance) as Rigidbody);
+            [HarmonyPriority(Priority.Last)]
+            static void Postfix(ThrustController __instance, Taken __state) => Give(sThrustBody?.GetValue(__instance) as Rigidbody, __state, "the thrusters (Update)");
+        }
+
+        [HarmonyPatch(typeof(ThrustController), "FixedUpdate")]
+        static class ShipFrameThrustStep
+        {
+            [HarmonyPriority(Priority.First)]
+            static void Prefix(ThrustController __instance, out Taken __state) => __state = Take(sThrustBody?.GetValue(__instance) as Rigidbody);
+            [HarmonyPriority(Priority.Last)]
+            static void Postfix(ThrustController __instance, Taken __state) => Give(sThrustBody?.GetValue(__instance) as Rigidbody, __state, "the thrusters (step)");
+        }
+
         // Aboard a ship under way, the suit moves relative to the ship: its thrusters, brake, drag and speed limit all
         // work against the ship's motion instead of against the bay. The ship's own speed is taken off before the
         // suit's step and put back after, so whatever the ship gains in that step (the drive burning, a turn) the suit
@@ -151,22 +235,10 @@ namespace TheExpanse
             static readonly System.Reflection.FieldInfo? sBodyField = AccessTools.Field(typeof(PlayerMotion), "mRigidbody");
 
             [HarmonyPriority(Priority.First)]
-            static void Prefix(PlayerMotion __instance, out Vector3 __state)
-            {
-                __state = Vector3.zero;
-                if (FlightSeat.Seated || sBodyField == null) return;
-                var body = sBodyField.GetValue(__instance) as Rigidbody;
-                if (body == null || !FlightModel.Aboard(body.position)) return;
-                __state = FlightModel.PointVelocity(body.position);
-                body.velocity -= __state;
-            }
+            static void Prefix(PlayerMotion __instance, out Taken __state) => __state = Take(sBodyField?.GetValue(__instance) as Rigidbody);
 
             [HarmonyPriority(Priority.Last)]
-            static void Postfix(PlayerMotion __instance, Vector3 __state)
-            {
-                if (__state == Vector3.zero || sBodyField == null) return;
-                if (sBodyField.GetValue(__instance) is Rigidbody body) body.velocity += __state;
-            }
+            static void Postfix(PlayerMotion __instance, Taken __state) => Give(sBodyField?.GetValue(__instance) as Rigidbody, __state, "the suit's motion step");
         }
 
         // The player's own warning and danger zone (copied from NewtonianPhysics; only patched without it).

@@ -28,6 +28,7 @@ namespace TheExpanse
         // the ship is let go.
         struct Carried { internal Rigidbody Body; internal Transform Transform; internal Vector3 Position; internal Quaternion Rotation; internal bool WasFree; }
         static readonly List<Carried> sBodies = new List<Carried>();
+        static readonly List<Rigidbody> sInterpolated = new List<Rigidbody>();
         // Parts of the ship with no body of their own (the command chairs and other fittings, under the ship's own root
         // object): moved by their transform.
         static readonly List<Carried> sRiders = new List<Carried>();
@@ -65,6 +66,18 @@ namespace TheExpanse
         static Vector3 sFelt;                               // m/s^2
 
         internal static bool Flying => sFlying;
+
+        // For the flight readout.
+        internal static float RcsLevel { get; private set; }
+        internal static float ForwardSpeed => Vector3.Dot(sVelocity, Forward);
+        // The ship's velocity in its own axes: x to starboard, y up, z ahead.
+        internal static Vector3 LocalVelocity => Quaternion.Inverse(ShipRotation) * sVelocity;
+        internal static float FeltAcceleration => sFelt.magnitude;
+        internal static float FeltG => sFelt.magnitude / StandardGravity;
+        internal static float TurnRate => sSpin.magnitude * Mathf.Rad2Deg;
+        internal static bool Holding => sHold;
+        internal static string AutoStatus => AutoLine().Trim();
+        internal static bool AutoActive => sAuto != Auto.None;
         internal static bool UnderWay => sMoving;
 
         // The ship's long axis: a point on it (its middle) and its forward direction, while it is carried.
@@ -95,13 +108,14 @@ namespace TheExpanse
                 CollectRiders(chair);
                 sMoving = true;
                 FlightJacks.Release();
+                Throttle = 0f;
+                sHold = true;
+                sAuto = Auto.None;
                 Plugin.Log.LogInfo($"[Flight] at the controls: {sBodies.Count} body(ies) carried as the ship ({held} held fixed by the game); " +
                                    $"middle {center}, forward {forward}.");
             }
-            else Plugin.Log.LogInfo($"[Flight] back at the controls, drifting at {Speed:0.0} m/s.");
-            Throttle = 0f;
-            sHold = true;
-            sAuto = Auto.None;
+            else Plugin.Log.LogInfo($"[Flight] back at the controls at {Speed:0.0} m/s, throttle {Throttle * 100f:0}%.");
+            // a ship still under way keeps its throttle, attitude hold and any flip and burn: the pilot takes over as set
             sThrust = sTurn = sMouseTurn = Vector3.zero;
             sBrake = false;
             sFlying = true;
@@ -138,6 +152,8 @@ namespace TheExpanse
                         carried.Body.angularVelocity = sSpin;
                     }
             sMoving = false;
+            foreach (var body in sInterpolated) if (body != null) body.interpolation = RigidbodyInterpolation.None;
+            sInterpolated.Clear();
             sBodies.Clear();
             sRiders.Clear();
             Throttle = 0f;
@@ -251,6 +267,70 @@ namespace TheExpanse
             sModes.Clear();
         }
 
+        // ---- the suit aboard -----------------------------------------------------------------------------------------
+        // Unseated aboard a ship under way, the suit is carried: each step it gains whatever the ship's motion gained
+        // where it is, so the hull never has to ram it along (that ramming, 50 times a second, bounced the suit about
+        // and pushed it through thin plates). The drive's push is then felt as a gentle, smooth pull toward the stern:
+        // [Flight] AboardPull times the ship's acceleration, with the fall speed capped so landings stay soft. While
+        // aboard, the suit's collisions are checked continuously.
+        const float FallSpeedCap = 3f;                      // m/s, relative to the ship, along the pull
+        static CollisionDetectionMode? sPlayerMode;
+
+        static void CarryAboard(Rigidbody? player, bool aboard, Vector3 shipVelocityBefore, Vector3 accel, float dt)
+        {
+            // diagnostic: a sudden change since the end of the last step, made by something outside the patched code
+            if (player != null && aboard && sLastPlayerVelocity.HasValue)
+            {
+                var jump = player.velocity - sLastPlayerVelocity.Value;
+                if (jump.sqrMagnitude > 0.5f * 0.5f && Time.time >= sNextJumpLog)
+                {
+                    sNextJumpLog = Time.time + 0.25f;
+                    Plugin.Log.LogInfo($"[Flight] aboard: between physics steps something changed the suit's speed by {jump.magnitude:0.00} m/s " +
+                                       $"({sLastPlayerVelocity.Value.magnitude:0.00} -> {player.velocity.magnitude:0.00}); ship there {shipVelocityBefore.magnitude:0.00} m/s.");
+                }
+            }
+            if (player == null || !aboard)
+            {
+                sLastPlayerVelocity = null;
+                if (player != null && sPlayerMode.HasValue) { player.collisionDetectionMode = sPlayerMode.Value; sPlayerMode = null; }
+                return;
+            }
+            if (!sPlayerMode.HasValue)
+            {
+                sPlayerMode = player.collisionDetectionMode;
+                player.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+                Plugin.Log.LogInfo($"[Flight] the suit is aboard a ship under way ({player.mass:0} kg): carried, with a pull of {Plugin.FlightAboardPull.Value:0.##}x the ship's acceleration.");
+            }
+            var shipVelocityAfter = PointVelocity(player.position + player.velocity * dt);
+            var pull = -accel * Mathf.Clamp01(Plugin.FlightAboardPull.Value);
+            var velocity = player.velocity + (shipVelocityAfter - shipVelocityBefore) + pull * dt;
+            // soft landings: the fall along the pull, relative to the ship, is capped
+            float pullSize = pull.magnitude;
+            if (pullSize > 1e-4f)
+            {
+                var down = pull / pullSize;
+                var relative = velocity - shipVelocityAfter;
+                float falling = Vector3.Dot(relative, down);
+                if (falling > FallSpeedCap) velocity -= down * (falling - FallSpeedCap);
+            }
+            player.velocity = velocity;
+            sLastPlayerVelocity = velocity;
+
+            // diagnostic, twice a second: the suit's speed against the ship's where it is
+            if (Plugin.SpaceDebugPrint.Value && Time.time >= sNextAboardLog)
+            {
+                sNextAboardLog = Time.time + 0.5f;
+                var relative = velocity - shipVelocityAfter;
+                var local = Quaternion.Inverse(ShipRotation) * relative;
+                Plugin.Log.LogInfo($"[Flight] aboard: suit {velocity.magnitude:0.00} m/s, ship there {shipVelocityAfter.magnitude:0.00} m/s, " +
+                                   $"suit against ship {relative.magnitude:0.00} m/s (starboard {local.x:0.00}, up {local.y:0.00}, ahead {local.z:0.00}); " +
+                                   $"ship accel {accel.magnitude:0.00} m/s2, pull {pull.magnitude:0.00}.");
+            }
+        }
+
+        static float sNextAboardLog, sNextJumpLog;
+        static Vector3? sLastPlayerVelocity;
+
         // ---- frame time around a burn --------------------------------------------------------------------------------
         // Frame and physics-step times for 3 s before and 3 s after the drive lights, to tell whether a slowdown comes
         // with the burn starting or with speed.
@@ -285,7 +365,7 @@ namespace TheExpanse
             // every 3 s under way: the frame rate there, and where the ship is
             if (now >= sNextPerfLog)
             {
-                if (sNextPerfLog > 0f)
+                if (sNextPerfLog > 0f && Plugin.SpaceDebugPrint.Value)
                     Plugin.Log.LogInfo($"[Flight] perf: {Stats()}; up to {sMaxStepsPerFrame} physics step(s) in a frame; " +
                                        $"ship middle at {sPivot}, {Speed:0.0} m/s, throttle {Throttle * 100f:0}%; view {FlightCamera.ViewName}" +
                                        (FlightCamera.ViewName == "outside" ? $" from {FlightCamera.CameraPosition}" : "") + ".");
@@ -435,10 +515,18 @@ namespace TheExpanse
             float maxRate = Mathf.Max(1f, Plugin.FlightMaxTurnRate.Value) * Mathf.Deg2Rad;
 
             bool autoStop = AutoStep(drive);
+            var player = FlightSeat.Seated ? null : FlightSeat.PlayerBody;
+            bool aboard = player != null && Aboard(player.position);
+            var playerShipVelocity = aboard ? PointVelocity(player!.position) : Vector3.zero;
 
             // speed: the drive pushes forward, the side thrusters any way; the brake fires them against the drift
-            var accel = Forward * (drive * Throttle) + (Right * sThrust.x + Up * sThrust.y + Forward * sThrust.z) * thrusters;
-            if (sBrake || autoStop) accel += Vector3.ClampMagnitude(-sVelocity / dt, thrusters);
+            var rcs = (Right * sThrust.x + Up * sThrust.y + Forward * sThrust.z) * thrusters;
+            if (sBrake || autoStop) rcs += Vector3.ClampMagnitude(-sVelocity / dt, thrusters);
+            var accel = Forward * (drive * Throttle) + rcs;
+            // how hard the side thrusters are working, 0..1, for the gauge (turning counts too)
+            float rcsLevel = thrusters > 0f ? Mathf.Clamp01(rcs.magnitude / thrusters) : 0f;
+            if (sTurn.sqrMagnitude > 0.01f || sAuto == Auto.Flip) rcsLevel = Mathf.Max(rcsLevel, 0.5f);
+            RcsLevel = Mathf.Lerp(RcsLevel, rcsLevel, 1f - Mathf.Exp(-dt / 0.15f));
             sVelocity += accel * dt;
             // what the crew feels: the ship's change of speed, eased over about a quarter second for the readout
             sFelt = Vector3.Lerp(sFelt, accel, 1f - Mathf.Exp(-dt / 0.25f));
@@ -461,6 +549,7 @@ namespace TheExpanse
             sSpin = Quaternion.Inverse(local) * spinLocal;
 
             Move(dt);
+            CarryAboard(player, aboard, playerShipVelocity, accel, dt);
         }
 
         // Flip and burn, one step. Keeps the target on the way the ship is going; sets the throttle while burning;
@@ -527,8 +616,30 @@ namespace TheExpanse
             return Vector3.MoveTowards(spinLocal, want, turnAccel * dt);
         }
 
+        // The ship's pose at the previous physics step, for drawing between steps.
+        static Vector3 sPrevPivot;
+        static Quaternion sPrevRotation = Quaternion.identity;
+
+        // Every frame, before the cameras (LateUpdate): the ship is drawn where it is between two physics steps, not
+        // where the last step left it (the frame rate and the 50 steps a second do not line up, and the difference
+        // showed as shaking). The ship's frame (cameras, seat) and its plain fittings follow it; its bodies are moved
+        // smoothly by the physics engine itself (interpolation, set while carried).
+        internal static void LateFrame()
+        {
+            if (!sMoving || sFrame == null) return;
+            float alpha = Time.fixedDeltaTime > 0f ? Mathf.Clamp01((Time.time - Time.fixedTime) / Time.fixedDeltaTime) : 1f;
+            var pivot = Vector3.Lerp(sPrevPivot, sPivot, alpha);
+            var rotation = Quaternion.Slerp(sPrevRotation, ShipRotation, alpha);
+            sFrame.SetPositionAndRotation(pivot, rotation);
+            foreach (var rider in sRiders)
+                if (rider.Body == null && rider.Transform != null)
+                    rider.Transform.SetPositionAndRotation(pivot + rotation * rider.Position, rotation * rider.Rotation);
+        }
+
         static void Move(float dt)
         {
+            sPrevPivot = sPivot;
+            sPrevRotation = ShipRotation;
             float rate = sSpin.magnitude;
             var turn = rate > 1e-6f ? Quaternion.AngleAxis(rate * dt * Mathf.Rad2Deg, sSpin / rate) : Quaternion.identity;
             sPivot += sVelocity * dt;
@@ -613,6 +724,7 @@ namespace TheExpanse
                 }
                 bool free = !body.isKinematic;
                 if (free) { body.isKinematic = true; freed++; }
+                if (body.interpolation == RigidbodyInterpolation.None) { body.interpolation = RigidbodyInterpolation.Interpolate; sInterpolated.Add(body); }
                 else
                 {
                     held++;
@@ -778,7 +890,6 @@ namespace TheExpanse
 
         // ---- readout ---------------------------------------------------------------------------------------------
 
-        static GUIStyle? sStyle;
 
         // The flip and burn line: what it is doing and how to stop it, or briefly how it ended.
         static string AutoLine()
@@ -792,19 +903,6 @@ namespace TheExpanse
                 case Auto.Stop: return $"\nFLIP AND BURN: STOPPING on thrusters ({cancel} to cancel)";
             }
             return Time.unscaledTime < sAutoNoteUntil ? "\nFLIP AND BURN: " + sAutoNote : "";
-        }
-
-        internal static void Draw()
-        {
-            if (!sFlying) return;
-            sStyle ??= new GUIStyle(GUI.skin.label) { fontSize = 18 };
-            sStyle.normal.textColor = new Color(1f, 0.8f, 0.35f);
-            float closing = Vector3.Dot(sVelocity, Forward);
-            string text = $"THROTTLE {Throttle * 100f:0}%\nSPEED {Speed:0.0} m/s ({(closing >= 0f ? "fwd" : "aft")} {Mathf.Abs(closing):0.0})\n" +
-                          $"ACCEL {sFelt.magnitude:0.00} m/s² ({sFelt.magnitude / StandardGravity:0.00} g)\n" +
-                          $"TURN {sSpin.magnitude * Mathf.Rad2Deg:0.0} deg/s\n" +
-                          (sHold ? "HOLD ATTITUDE" : "FREE") + AutoLine();
-            GUI.Label(new Rect(24, Screen.height * 0.55f, 460, 150), text, sStyle);
         }
     }
 }

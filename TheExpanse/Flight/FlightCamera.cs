@@ -205,19 +205,41 @@ namespace TheExpanse
             sRotation = Quaternion.LookRotation(center - sPosition, up);
         }
 
-        // How far out from the ship's middle the camera can go along a direction before something that is not the
-        // ship is in the way (the bay's walls, the elevator, the jacks).
+        // How far out from the ship's middle the camera can go along a direction and still see the ship. Sight lines
+        // run from five points on the ship (its middle, toward the bow, toward the stern, above and below) to where
+        // the camera wants to be; the camera is pulled in only as far as needed for most of them (three of five) to be
+        // clear. So a wall or the bay's structure brings it in, but something small in the way of one or two lines (a
+        // jack) does not. Only fixed things block: anything free to move (a let-go jack, loose debris) is ignored.
+        static readonly float[] sClear = new float[5];
+
         static float ClearDistance(Vector3 center, Vector3 direction, float wanted)
         {
-            int count = Physics.RaycastNonAlloc(center, direction, sHits, wanted + WallMargin, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
-            float clear = wanted;
-            for (int i = 0; i < count; i++)
+            var forward = sFrame != null ? sFrame.TransformDirection(sLocalForward).normalized : Vector3.forward;
+            var up = sFrame != null ? sFrame.TransformDirection(sLocalUp).normalized : Vector3.up;
+            float along = sShipLength * 0.35f, across = sShipLength * 0.12f;
+            var camera = center + direction * wanted;
+            for (int k = 0; k < 5; k++)
             {
-                var hit = sHits[i];
-                if (hit.collider == null || IsShip(hit.collider)) continue;
-                clear = Mathf.Min(clear, hit.distance - WallMargin);
+                var from = center + (k == 1 ? forward * along : k == 2 ? -forward * along : k == 3 ? up * across : k == 4 ? -up * across : Vector3.zero);
+                var line = camera - from;
+                float length = line.magnitude;
+                sClear[k] = wanted;
+                if (length < 0.01f) continue;
+                int count = Physics.RaycastNonAlloc(from, line / length, sHits, length + WallMargin, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+                float nearest = float.MaxValue;
+                for (int i = 0; i < count; i++)
+                {
+                    var hit = sHits[i];
+                    if (hit.collider == null || IsShip(hit.collider)) continue;
+                    var body = hit.collider.attachedRigidbody;
+                    if (body != null && !body.isKinematic) continue;            // free to move: not a wall
+                    nearest = Mathf.Min(nearest, hit.distance);
+                }
+                // blocked at a share of the way out: the camera may come that share of the way
+                if (nearest < float.MaxValue) sClear[k] = Mathf.Max(0f, wanted * (nearest - WallMargin) / length);
             }
-            return Mathf.Max(2f, clear);
+            System.Array.Sort(sClear);
+            return Mathf.Max(2f, sClear[2]);        // clear for at least three of the five
         }
 
         static readonly Dictionary<Collider, bool> sShipCache = new Dictionary<Collider, bool>();

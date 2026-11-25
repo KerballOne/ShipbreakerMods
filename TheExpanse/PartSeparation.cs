@@ -52,7 +52,7 @@ namespace TheExpanse
             sNextSweep = Time.unscaledTime + SweepSeconds;
             foreach (var body in Object.FindObjectsOfType<Rigidbody>())
             {
-                if (body == null) continue;
+                if (body == null || body.GetComponent<BBI.Unity.Game.Player>() != null) continue;     // the suit keeps the game's own
                 float want = LimitFor(body.mass);
                 if (Mathf.Abs(body.maxDepenetrationVelocity - want) > 0.01f * want) body.maxDepenetrationVelocity = want;
             }
