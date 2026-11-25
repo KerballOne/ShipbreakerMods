@@ -33,6 +33,7 @@ namespace PartInfoLogger
         internal static ConfigEntry<float> BayGeometryRadius = null!;
         internal static ConfigEntry<int> BayGeometryMaxVerts = null!;
         internal static ConfigEntry<KeyCode> CensusHotkey = null!;
+        internal static ConfigEntry<KeyCode> NetworkHotkey = null!;
         internal static ConfigEntry<float> SpawnSnapshotDelay = null!;
         internal static ConfigEntry<string> SpawnLooseExpected = null!;
         internal static ConfigEntry<float> FireWatchSeconds = null!;
@@ -166,6 +167,10 @@ namespace PartInfoLogger
                 "SpawnDiagnostics", "CensusHotkey", KeyCode.F10,
                 "Key that writes joint_census_live.csv (every part's jointed neighbours as they are at that moment, same " +
                 "columns as joint_census_spawn.csv). Press again to overwrite. None disables it.");
+            NetworkHotkey = Config.Bind(
+                "ElectricNetwork", "Hotkey", KeyCode.F9,
+                "Key that writes machine_network.csv (every electricity/cryo/fuel machine part: role, what it is receiving " +
+                "from right now, hazard components, MachinePartActions state) and logs breaker/generator state. None disables it.");
             SpawnSnapshotDelay = Config.Bind(
                 "SpawnDiagnostics", "SnapshotDelaySeconds", 1.5f,
                 "Seconds after gameplay start before the spawn snapshot is taken.");
@@ -313,6 +318,8 @@ namespace PartInfoLogger
         {
             PickupInspector.Tick();
             SpawnDiagnostics.Tick();
+            PerfProbe.Tick();
+            ElectricNetwork.Tick();
 
             if (SkipDiagnosticsEnabled == null || !SkipDiagnosticsEnabled.Value) return;
 

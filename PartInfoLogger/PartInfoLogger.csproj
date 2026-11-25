@@ -29,6 +29,15 @@
     <Reference Include="UnityEngine.PhysicsModule"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.PhysicsModule.dll"
                Private="false" />
+    <Reference Include="UnityEngine.VFXModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.VFXModule.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.ParticleSystemModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.ParticleSystemModule.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.AudioModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.AudioModule.dll"
+               Private="false" />
     <Reference Include="UnityEngine.InputLegacyModule"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.InputLegacyModule.dll"
                Private="false" />
