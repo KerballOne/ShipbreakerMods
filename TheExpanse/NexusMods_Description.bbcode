@@ -22,21 +22,28 @@ The MCRN Corvette runs on a Solomon Epstein torch drive. Its core is a pulsing b
 Pull a handle while its lights are lit and the plasma flashes back: you catch fire. You can also cut the purple pipe running up from an injector to the reactor's lid (freeze it first); that is never timed.
 
 [size=4][b]Watch the core's color[/b][/size]
-[list]
-[*][color=#8cbeff][b]Blue[/b][/color]: all good.
-[*][color=#ff8c28][b]Orange[/b][/color]: level 1, something is off.
-[*][color=#ff2814][b]Red[/b][/color]: level 2, unstable. A warning beep sounds in your helmet.
-[*][color=#be32ff][b]Purple[/b][/color]: level 3. EVACUATE! A burst of plasma will destroy every injector and the reactor starts to melt down. [b]Run.[/b]
-[/list]
+[table]
+[tr][td][b]Core[/b][/td][td][b]Level[/b][/td][td][b]What it means[/b][/td][/tr]
+[tr][td][color=#8cbeff][b]Blue[/b][/color][/td][td]0[/td][td]All good.[/td][/tr]
+[tr][td][color=#ff8c28][b]Orange[/b][/color][/td][td]1[/td][td]Something is off.[/td][/tr]
+[tr][td][color=#ff2814][b]Red[/b][/color][/td][td]2[/td][td]Unstable. A warning beep sounds in your helmet.[/td][/tr]
+[tr][td][color=#be32ff][b]Purple[/b][/color][/td][td]3[/td][td]EVACUATE! A burst of plasma will destroy every injector and the reactor starts to melt down. [b]Run.[/b][/td][/tr]
+[/table]
 Leave a problem alone and the core goes up a level by itself; the beep speeds up just before it does. Fix it and the core goes back to blue.
 
 [size=4][b]Three types of challenges to shut it down[/b][/size]
-Each ship picks two of the nav terminals on the engineering deck. There is a locator marker on each screen shows where that terminal stands around the reactor.
+Each ship picks two of the wall terminals on the engineering deck. There is a locator marker on each screen shows where that terminal stands around the reactor.
 [list]
 [*][b]Balance:[/b] take them off in opposite pairs, like the nuts on a car wheel: one, then the one straight across from it. The screen shows each opposite pair in its own color.  Start anywhere you like.
 [*][b]Memorize:[/b] the screen flashes the order, one injector at a time, and draws it as a path of arrows. Remember it, go down and take them off in that order.
 [*][b]Resonance:[/b] the right injector's handle lights blink exactly with the core's beat (brightest); the others blink a little out of step. The screen shows the beat as a wave.
 [/list]
+[table]
+[tr][td][center][img]https://raw.githubusercontent.com/KerballOne/ShipbreakerMods/kb1/TheExpanse/Docs/screen_balance_small.png[/img]
+Balance[/center][/td][td][center][img]https://raw.githubusercontent.com/KerballOne/ShipbreakerMods/kb1/TheExpanse/Docs/screen_memorize_small.png[/img]
+Memorize[/center][/td][td][center][img]https://raw.githubusercontent.com/KerballOne/ShipbreakerMods/kb1/TheExpanse/Docs/screen_resonance_small.png[/img]
+Resonance[/center][/td][/tr]
+[/table]
 A wrong injector flashes the core red and raises the level; take the right one next and it drops back to blue.
 
 [size=4][b]Good to know[/b][/size]
@@ -104,15 +111,20 @@ To remove it, delete the [b]TheExpanse[/b] folder.
 The settings file is created on first run:
 [code]Hardspace Shipbreaker\BepInEx\config\me.kerballone.TheExpanse.cfg[/code]
 Saving it while the game is running applies the change within a second.
-[list]
-[*][b]Enabled[/b] (default true): turns the whole mod on or off.
-[*][b]GentleSeparation[/b] (default true): limit how fast overlapping parts are pushed apart when they separate, by mass.
-[*][b]UsePressureTimes[/b] (default true): make each room's own pressurization and decompression time count.
-[*][b]ExtendPressureEffects[/b] (default true): keep the regulator's hiss and vent effect going for the whole of a slowed pressure change.
-[*][b]PressureEffectSeconds[/b] (default 2): how many seconds one play of the hiss and vent effect covers. Lower it if you notice pauses.
-[*][b]Haunting[/b] section: each ghost-ship addition can be switched off, and its timing, speed, reach and damage tuned. Every setting is explained in the file.
-[*][b]Reactor[/b] section: reactor control can be switched off, and the core's size and pulse, the escalation, the radiation, the fire, the instability threshold and the meltdown tuned.
-[/list]
+The main ones are also in the options menu, EXPANSE tab:
+[size=2][table]
+[tr][td][b]Option[/b][/td][td][b]Default[/b][/td][td][b]What it does[/b][/td][/tr]
+[tr][td]The Expanse[/td][td]on[/td][td]The whole mod on or off.[/td][/tr]
+[tr][td]Live Reactor[/td][td]on[/td][td]The live core and its shutdown. Off: a cold reactor.[/td][/tr]
+[tr][td]Escalate Seconds[/td][td]45[/td][td]A problem left alone goes up a level every N seconds. Far right: off.[/td][/tr]
+[tr][td]Core Meltdown[/td][td]on[/td][td]The game's meltdown follows the level 3 flare.[/td][/tr]
+[tr][td]Ship Damage[/td][td]100[/td][td]The flare destroying injectors, and the core's blast. Off: none.[/td][/tr]
+[tr][td]Player Damage[/td][td]on[/td][td]Radiation, fire, flashback, the flare and the blast hurt you.[/td][/tr]
+[tr][td]Balance / Memorize / Resonance Mode[/td][td]on[/td][td]Which shutdown modes a ship may pick.[/td][/tr]
+[tr][td]Ship Roll[/td][td]on[/td][td]A ghost ship rolls slowly now and then.[/td][/tr]
+[tr][td]Haunted Lights[/td][td]on[/td][td]A ghost ship's lights flicker and black out; your helmet light stutters near a node.[/td][/tr]
+[/table][/size]
+Everything else (timings, ranges, radiation, sounds, the haunting details) is in the settings file, each setting explained there.
 
 
 [size=5][b]Other custom ships[/b][/size]
