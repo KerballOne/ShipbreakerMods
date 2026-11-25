@@ -104,6 +104,7 @@ namespace NewtonianPhysics
         public static void ResetState()
         {
             _bayRoot = null;
+            _nextBayRootSearch = 0f;
             _cardsScanned = false;
             _salvageStationPins = null;
             _salvageStationDistancePins = null;
@@ -131,6 +132,8 @@ namespace NewtonianPhysics
         // out, the scene has had time to fully settle, and there's no need to touch any of this
         // machinery at all while the player is still near the bay where none of these cards need
         // pinning yet anyway.
+        private static float _nextBayRootSearch;
+
         public static void Tick()
         {
             if (!Plugin.ConfigEnabled.Value || Plugin.ConfigFlatEarthMode.Value)
@@ -138,14 +141,12 @@ namespace NewtonianPhysics
 
             if (_bayRoot == null)
             {
-                foreach (Transform t in Resources.FindObjectsOfTypeAll<Transform>())
-                {
-                    if (t != null && t.parent == null && t.name == BackgroundConstants.BayRootObjectName)
-                    {
-                        _bayRoot = t;
-                        break;
-                    }
-                }
+                // a whole-scene search (about 220,000 objects): no more than once every 10 s while it is missing
+                if (Time.unscaledTime < _nextBayRootSearch)
+                    return;
+                _nextBayRootSearch = Time.unscaledTime + 10f;
+                _bayRoot = SceneLookup.Root(BackgroundConstants.BayRootObjectName);
+
                 if (_bayRoot == null)
                     return;
             }
@@ -234,15 +235,11 @@ namespace NewtonianPhysics
                 // that at least one VillageSalvageStation duplicate exists under a "_HAB"
                 // hierarchy the same way GateCard does, and an unfiltered scan grabbed that
                 // duplicate instead of the real, visible instance.
-                _salvageStationPins = Resources.FindObjectsOfTypeAll<Transform>()
-                    .Where(t => t != null && t.gameObject.activeInHierarchy && t.name.StartsWith("VillageSalvageStation"))
-                    .Where(t => !GetFullPath(t).Contains("_HAB"))
+                _salvageStationPins = SceneLookup.Children("PRF_Village/PRF_Village_2DCards", "VillageSalvageStation")
                     .Select(t => new RotationPin(t))
                     .ToArray();
 
-                _waystationPins = Resources.FindObjectsOfTypeAll<Transform>()
-                    .Where(t => t != null && t.gameObject.activeInHierarchy && t.name.StartsWith("VillageWaystation"))
-                    .Where(t => !GetFullPath(t).Contains("_HAB"))
+                _waystationPins = SceneLookup.Children("PRF_Village/PRF_Village_2DCards", "VillageWaystation")
                     .Select(t => new RotationPin(t))
                     .ToArray();
 
@@ -256,15 +253,11 @@ namespace NewtonianPhysics
                 Quad1DistancePin.Reset(_bayRoot!);
                 Quad2DistancePin.Reset(_bayRoot!);
 
-                _salvageStationDistancePins = Resources.FindObjectsOfTypeAll<Transform>()
-                    .Where(t => t != null && t.gameObject.activeInHierarchy && t.name.StartsWith("VillageSalvageStation"))
-                    .Where(t => !GetFullPath(t).Contains("_HAB"))
+                _salvageStationDistancePins = SceneLookup.Children("PRF_Village/PRF_Village_2DCards", "VillageSalvageStation")
                     .Select(t => new DistancePin(t, _bayRoot!))
                     .ToArray();
 
-                _waystationDistancePins = Resources.FindObjectsOfTypeAll<Transform>()
-                    .Where(t => t != null && t.gameObject.activeInHierarchy && t.name.StartsWith("VillageWaystation"))
-                    .Where(t => !GetFullPath(t).Contains("_HAB"))
+                _waystationDistancePins = SceneLookup.Children("PRF_Village/PRF_Village_2DCards", "VillageWaystation")
                     .Select(t => new DistancePin(t, _bayRoot!))
                     .ToArray();
 
@@ -334,15 +327,8 @@ namespace NewtonianPhysics
                 // card sharing this same duplication pattern, even though none were confirmed to
                 // have a HAB duplicate as of this writing.
                 Transform? card = null;
-                foreach (Transform t in Resources.FindObjectsOfTypeAll<Transform>())
-                {
-                    if (t == null || t.name != _cardObjectName || !t.gameObject.activeInHierarchy)
-                        continue;
-                    if (GetFullPath(t).Contains("_HAB"))
-                        continue;
-                    card = t;
-                    break;
-                }
+                card = SceneLookup.Known(_cardObjectName!);
+
                 _card = card;
 
                 if (Plugin.ConfigDebugPrint.Value && _card == null)
@@ -449,15 +435,8 @@ namespace NewtonianPhysics
 
                 // Same _HAB-exclusion whole-scene search pattern as RotationPin.Reset().
                 Transform? card = null;
-                foreach (Transform t in Resources.FindObjectsOfTypeAll<Transform>())
-                {
-                    if (t == null || t.name != _cardObjectName || !t.gameObject.activeInHierarchy)
-                        continue;
-                    if (GetFullPath(t).Contains("_HAB"))
-                        continue;
-                    card = t;
-                    break;
-                }
+                card = SceneLookup.Known(_cardObjectName);
+
                 _card = card;
 
                 if (_card == null)
@@ -590,15 +569,8 @@ namespace NewtonianPhysics
                 // taken live during an active firing sequence) to have inactive _HAB duplicates,
                 // same recurring pattern as GateCard/VillageSalvageStation/planet cards.
                 Transform? found = null;
-                foreach (Transform t in Resources.FindObjectsOfTypeAll<Transform>())
-                {
-                    if (t == null || t.name != _objectName || !t.gameObject.activeInHierarchy)
-                        continue;
-                    if (GetFullPath(t).Contains("_HAB"))
-                        continue;
-                    found = t;
-                    break;
-                }
+                found = SceneLookup.Known(_objectName);
+
                 _satellite = found;
 
                 if (Plugin.ConfigDebugPrint.Value && _satellite == null)

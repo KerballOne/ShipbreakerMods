@@ -104,8 +104,10 @@ namespace NewtonianPhysics
 
         private static Transform? _planetsRoot;
         private static Transform? _bayRoot;
-        private static int _framesUntilRescan;
-        private const int RescanIntervalFrames = 90;
+        // While the roots are missing (the Hab, a level still loading) the whole scene is searched for them: about
+        // 220,000 objects, a visible hitch each time, so no more than once every RescanIntervalSeconds.
+        private static float _nextRescanTime;
+        private const float RescanIntervalSeconds = 10f;
 
         // Clears cached scene state so the next Tick() re-scans from scratch - called on the
         // Gameplay/new-shift transition (see Plugin.OnGameStateChanged). Without this, _planetsRoot/
@@ -118,7 +120,7 @@ namespace NewtonianPhysics
         {
             _planetsRoot = null;
             _bayRoot = null;
-            _framesUntilRescan = 0;
+            _nextRescanTime = 0f;
             OctanePin.ClearCache();
             MoonPin.ClearCache();
             SunPin.ClearCache();
@@ -131,24 +133,14 @@ namespace NewtonianPhysics
 
             if (_planetsRoot == null || _bayRoot == null)
             {
-                if (_framesUntilRescan > 0)
-                {
-                    _framesUntilRescan--;
+                if (Time.unscaledTime < _nextRescanTime)
                     return;
-                }
-                _framesUntilRescan = RescanIntervalFrames;
+                _nextRescanTime = Time.unscaledTime + RescanIntervalSeconds;
 
-                int totalTransformsScanned = 0;
-                foreach (Transform t in Resources.FindObjectsOfTypeAll<Transform>())
-                {
-                    if (t == null)
-                        continue;
-                    totalTransformsScanned++;
-                    if (t.parent == null && t.name == PlanetsRootObjectName)
-                        _planetsRoot = t;
-                    else if (t.parent == null && t.name == BackgroundConstants.BayRootObjectName)
-                        _bayRoot = t;
-                }
+                int totalTransformsScanned = 0;      // no longer a scan: found by name among the scenes' top objects
+                _planetsRoot = SceneLookup.Root(PlanetsRootObjectName);
+                _bayRoot = SceneLookup.Root(BackgroundConstants.BayRootObjectName);
+
                 if (Plugin.ConfigDebugPrint.Value)
                 {
                     Plugin.Log.LogInfo($"BackgroundParallaxTuning: SCAN totalTransformsScanned={totalTransformsScanned} planetsRootFound={_planetsRoot != null} bayRootFound={_bayRoot != null}");
@@ -245,7 +237,7 @@ namespace NewtonianPhysics
             }
 
             // Re-locates the card and re-derives its depth axis. Called once per periodic rescan
-            // (see RescanIntervalFrames in the enclosing class) rather than every frame, since
+            // (see RescanIntervalSeconds in the enclosing class) rather than every frame, since
             // scene lookups are comparatively expensive and the card's mesh/orientation is static.
             public void Reset(Transform planetsRoot, Transform bayRoot)
             {
@@ -256,14 +248,8 @@ namespace NewtonianPhysics
                 Transform? card = null;
                 if (_searchWholeScene)
                 {
-                    foreach (Transform t in Resources.FindObjectsOfTypeAll<Transform>())
-                    {
-                        if (t != null && t.name == _cardObjectName && t.gameObject.activeInHierarchy)
-                        {
-                            card = t;
-                            break;
-                        }
-                    }
+                    card = SceneLookup.Known(_cardObjectName);
+
                 }
                 else
                 {

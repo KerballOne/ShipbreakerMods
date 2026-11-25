@@ -57,11 +57,16 @@ namespace NewtonianPhysics
         // cleared since it's captured from whatever glow Transform is found in the CURRENT shift's
         // scene - reusing a scale value captured from a previous shift's (possibly differently
         // sized/scaled) glow object would be wrong.
+        private static Transform? _glow;
+        private static float _nextGlowSearch;
+
         public static void ResetState()
         {
             _bayRoot = null;
             _originalScale = null;
             _confirmedFullyShrunk = false;
+            _glow = null;
+            _nextGlowSearch = 0f;
         }
 
         public static void Tick()
@@ -99,8 +104,16 @@ namespace NewtonianPhysics
                 ? 1f - Mathf.Clamp01((distFromBay - triggerDistance) / (FadeEndMeters - triggerDistance))
                 : 0f;
 
-            Transform? glowTransform = Resources.FindObjectsOfTypeAll<Transform>()
-                .FirstOrDefault(t => t != null && t.name == "PRF_PlanetGlow" && t.gameObject.activeInHierarchy);
+            // Looked up once and kept: searching every loaded object (about 220,000 of them) every frame across the whole
+            // fade window halved the frame rate there.
+            if (_glow == null || !_glow.gameObject.activeInHierarchy)
+            {
+                if (Time.unscaledTime < _nextGlowSearch)
+                    return;
+                _nextGlowSearch = Time.unscaledTime + 5f;
+                _glow = SceneLookup.Known("PRF_PlanetGlow");
+            }
+            Transform? glowTransform = _glow;
             if (glowTransform == null)
                 return;
 
@@ -117,14 +130,8 @@ namespace NewtonianPhysics
 
         private static void FindBayRoot()
         {
-            foreach (Transform t in Resources.FindObjectsOfTypeAll<Transform>())
-            {
-                if (t != null && t.parent == null && t.name == BackgroundConstants.BayRootObjectName)
-                {
-                    _bayRoot = t;
-                    break;
-                }
-            }
+            _bayRoot = SceneLookup.Root(BackgroundConstants.BayRootObjectName);
+
         }
     }
 }
