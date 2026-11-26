@@ -355,7 +355,8 @@ namespace TheExpanse
                 "At this many meters from the ball the reactor can no longer be heard.");
 
             DrivePlume = Config.Bind("Drive", "DrivePlume", false,
-                "Draw the MCRN Corvette's drive plume. Off until the flight controls come; when on, it burns all the time at TestThrottle.");
+                "A test burn: the drive plume burns all the time at TestThrottle, without flying. In flight the plume follows the " +
+                "throttle whatever this is set to.");
             PlumeAt = Config.Bind("Drive", "PlumeAt", "Bell",
                 new ConfigDescription("Where the plume burns. Bell: out of the mouth of the ship's engine bell (its EngineNozzle parts if the " +
                     "bell is gone). MasterJack: a test spot 15 m above the bay's Master Jack, pointing up.",
@@ -363,7 +364,7 @@ namespace TheExpanse
             PlumeLength = Config.Bind("Drive", "Length", 75f,
                 "How far the plume reaches from the engine bell at full throttle, in meters. Lower throttle shortens it in proportion.");
             PlumeTestThrottle = Config.Bind("Drive", "TestThrottle", 0.25f,
-                "For testing until the flight controls drive it: the throttle the plume burns at, 0.01 to 1. Length and FlowSpeed scale with it.");
+                "With DrivePlume on and the ship not flying: the throttle the test burn shows, 0.01 to 1.");
             PlumeMouthDiameter = Config.Bind("Drive", "MouthDiameter", 0f,
                 "How wide the base plume is where it leaves the engine bell, in meters. 0: as wide as the bell's mouth, measured on the ship " +
                 "(also at the test spot; 5 m there until the bell is found).");
@@ -391,10 +392,10 @@ namespace TheExpanse
             PlumeLightLumens = Config.Bind("Drive", "LightLumens", 150000f,
                 "How much light the plume casts on the nozzle and the hull, in lumens.");
 
-            FlightControl = Config.Bind("Flight", "FlightControl", false,
-                "Sit at the MCRN Corvette's controls: near a command chair, press Interact. Seated, the view goes outside the ship " +
-                "(the tool mode button switches between outside and the seat; hold the right mouse button or the View button to look " +
-                "around and zoom) and Interact gets you up again. The flight controls themselves are still to come.");
+            FlightControl = Config.Bind("Flight", "FlightControl", true,
+                "Fly the ship: near any command chair, press Interact to sit at the controls, and Interact again to get up. " +
+                "V (D-pad right) switches between the outside, nose and seat views; hold the right mouse button or the View button " +
+                "to look around and zoom. The controls are in the README.");
             FlightSitDistance = Config.Bind("Flight", "SitDistance", 2.5f,
                 "How close to a command chair you have to be to sit in it, in meters.");
             FlightSeatOffset = Config.Bind("Flight", "SeatOffset", new UnityEngine.Vector3(0f, 0.9f, 0f),
@@ -464,8 +465,9 @@ namespace TheExpanse
                 "For testing the ghost ship additions and reactor control: show how many nodes are left and the reactor's state on " +
                 "screen, destroy half of the nodes with KillHalfNodesKey, and pretend to disconnect injectors with ReactorRightKey " +
                 "and ReactorWrongKey.");
-            PhysicsCostTestKey = Config.Bind("Debug", "PhysicsCostTestKey", new KeyboardShortcut(UnityEngine.KeyCode.F10, UnityEngine.KeyCode.LeftControl),
-                "Samples 5 s of where the physics time goes (anywhere: in the bay, flying, parked) and logs it.");
+            PhysicsCostTestKey = Config.Bind("Debug", "PhysicsCostTestKey", KeyboardShortcut.Empty,
+                "For measuring: samples 5 s of where the physics time goes (in the bay, flying, parked) and logs it. Empty: off " +
+                "(Ctrl+F10 was used while measuring).");
             KillHalfNodesKey = Config.Bind("Debug", "KillHalfNodesKey", new KeyboardShortcut(UnityEngine.KeyCode.F8),
                 "With TestTools on: destroys half of the nodes left (rounded up, so the last one goes too).");
             ReactorRightKey = Config.Bind("Debug", "ReactorRightKey", new KeyboardShortcut(UnityEngine.KeyCode.F11),

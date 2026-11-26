@@ -6,6 +6,7 @@ A companion mod for the MCRN Corvette ships in Hardspace: Shipbreaker (the Tachi
 - **Big rooms take longer to pressurize.** The game fills and empties every room in the same few seconds. With this mod, a room takes as long as the ship sets for it, and the regulator's hiss and vent effect last as long as the change does.
 - **Ghost ships are more haunted.** On top of the game's own haunting, the ship rolls, lights flicker and black out, the nodes radiate, and the growth disappears with the last node.
 - **The reactor has to be shut down.** The ship's Solomon Epstein torch drive burns a core of fusion plasma in the reactor chamber, held by eight plasma injectors. Take them off in the wrong order and it lashes out with fire.
+- **The ship flies.** Sit in a command chair and fly it out of the bay under the torch drive, then get up and walk its decks while it burns.
 
 ## Room pressure times
 
@@ -58,6 +59,34 @@ Each injector pushes on the core from its side. With all eight connected the pus
 - **Disconnecting an injector.** Pull its handle, or cut the purple pipe that runs from it up to the reactor's lid (freeze the pipe first, as with any pipe). Either one switches it off. With all eight disconnected, the plasma fades out.
 - **Pulling the reactor** while the plasma still burns detonates the core: the reactor's own explosion, at twice its reach.
 - **Hazards.** The plasma is radioactive within a few meters, and touching it sets you on fire. Holding the reactor, an injector or its pipe, you hear the core through your suit; a controller rumbles with each beat.
+
+## Flight control
+
+Sit in any command chair on the ship (near it, press Interact) and you are at the controls; Interact again gets you up. The view goes outside the ship.
+
+**Controls** (keyboard and mouse / controller):
+
+- **Side thrusters:** W A S D, Space up, C or Shift down / left stick, A up, B down.
+- **Turn:** move the mouse / right stick. **Roll:** Q and E / bumpers (or the stick clicks).
+- **Main drive:** mouse wheel / right and left triggers. **Z** full throttle, **X** (D-pad down) cut.
+- **Brake** (thrusters against the drift): Left Ctrl, or Q and E together / both stick clicks.
+- **Hold attitude** (thrusters stop any spin you did not ask for): T / D-pad up, on by default.
+- **Flip and burn:** R / Y. The ship turns tail-first, burns down to a crawl and stops on its thrusters. Press again, or touch the throttle, to cancel.
+- **Views:** V / D-pad right: outside, nose, seat. Outside, hold the right mouse button / View button to orbit and zoom.
+
+**The HUD** shows the drive and thruster gauges, the speed, a prograde / retrograde bubble, the turn rate, the acceleration in m/s² and g, and the flip and burn's progress. In the outside views a thin hexagon marks the work bay, with its distance; off screen it sits on the edge with an arrow.
+
+**The drive plume** burns out of the engine bell with the throttle: a white-hot core with shock diamonds inside a blue sheath that fans out and tapers to a point at full throttle.
+
+**On foot while under way.** Get up and the ship stops where it is, for real, while you walk around: the flight goes on (its speed, a burn, a flip and burn) and the ship catches up when you sit down again. So everything aboard behaves as in the bay: the grapple, the cutter, grabbing, the decks.
+
+- **Artificial gravity.** With the drive burning, you and the loose things aboard are pulled toward the stern. Things fall to the decks and land softly.
+- **Deck boots.** Under the pull your boots lock onto the decks by themselves: walk with the move keys, run with Shift (L3) to toggle, crouch with thrust down. Space (A) jumps: the boots let go for a moment, holding it lifts you a little, and they lock on again as you come down. Your suit's thrusters stay off meanwhile.
+- **Your suit's HUD** shows, top left, the distance to the Hab, the ship's speed and its acceleration.
+- **Far out** (past 30 km from the bay) the ship parks 30 km out, in the direction it has flown, where positions are still precise; nothing looks different and it catches up when you sit down.
+- If the MagBoots mod is installed, it is paused while the drive pulls aboard.
+
+**Space.** The work area's limits are lifted for the flight, the planet, Moon and Sun stay put in the sky however far you go, and the game's space dust is off (see **[Space]**). The bay's jacks are let go when the ship first moves, so the hull pushes them aside.
 
 ## Settings file
 
@@ -114,11 +143,32 @@ Saving the file while the game is running applies the change within a second.
 - **Meltdown** (true), **MeltdownAt** (2.4), **MeltdownSeconds** (5): level 3 starts at MeltdownAt; held that long, the donut flare comes, and with Meltdown on the game's meltdown follows.
 - **Brightness** (10), **LightLumens** (30000), **BallDepth** (3): the stand-in core's glow (used only if the game's fire cannot load), the light the plasma casts, and where the core sits if the ship's reactor marker is missing.
 
+**[Flight]**
+- **FlightControl** (default true): sit in a command chair to fly the ship. Also in the options menu.
+- **SitDistance** (2.5), **SeatOffset**, **SeatYaw**: how close to a chair you sit down, and where and which way you sit.
+- **DriveAcceleration** (5), **ThrusterAcceleration** (1), **TurnAcceleration** (10), **MaxTurnRate** (20), **MouseSensitivity** (1): how the ship flies.
+- **CameraDistance** (0): how far the outside view starts; 0 = 1.3 times the ship's length.
+- **AboardPull** (1): out of the seat, how strongly the drive's push pulls you toward the stern; 0 = no artificial gravity.
+- **StandHeight** (1.6): how high above the deck the deck boots hold you, in meters.
+- **ParkingSphere** (30): out of the seat, the ship parks no farther than this many km from the bay; 0 = always where it is.
+- **OutsideViewFog** (false): the game's fog in the outside and nose views; through the bay it darkens the whole view.
+- **FreeJacks** (true), **MasterJackMass** (200), **LightJackMass** (20): the bay's jacks are let go, with these weights in tonnes, when the ship first moves.
+
+**[Space]**
+- **ExtendedLimits** (true): room to fly: nothing is destroyed for straying from the work area while the ship is under way, the pilot has no speed cap, and (without the NewtonianPhysics mod) the player's work-area warning is lifted and the background is kept right far from the bay.
+- **WorkAreaRadiusMultiplier** (0): how far from the work areas things may go before the game warns, hurts or destroys; 1 = stock, 0 = no limit.
+- **FixedPlanets** (true): far from the bay the planet, Moon and Sun keep their distance whichever way you fly.
+- **FlatEarthMode** (false), **AnglePinning** (false), **TriggerDistance** (250): how the background cards are kept far from the bay (without NewtonianPhysics).
+- **SpaceDust** (false): the game's drifting specks and speed streaks.
+- **DebugPrint** (false): extra lines in the log.
+
 **[Drive]**
-- **DrivePlume** (default false): the MCRN Corvette's drive plume. Not finished; it will come with flight control.
+- **DrivePlume** (default false): a test burn of the plume without flying, at **TestThrottle** (0.25). In flight the plume follows the throttle.
+- **Length** (75), **MouthDiameter** (0 = the bell's), **Spread** (1.4), **Brightness** (1), **Color**, **Turbulence** (0.6), **Sheath** (0.6), **Core** (4), **CoreDiameter** (3), **FlowSpeed** (300), **ShockDiamonds** (4), **Streak** (1), **LightLumens** (150000): the plume's look, each explained in the settings file.
 
 **[Debug]**
 - **TestTools** (default false): for testing only. Shows how many nodes are left and the reactor's balance on screen. **KillHalfNodesKey** (F8) destroys half of the nodes; **ReactorRightKey** (F11) and **ReactorWrongKey** (Shift+F11) treat the best or the worst injector as disconnected.
+- **PhysicsCostTestKey** (empty = off): for measuring, logs where the physics time goes over 5 seconds.
 
 ## For ship authors
 

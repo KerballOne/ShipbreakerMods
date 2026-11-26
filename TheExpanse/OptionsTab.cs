@@ -64,6 +64,7 @@ namespace TheExpanse
         internal static Setting[] Settings => sSettings ??= new[]
         {
             new Setting("GENERAL", "The Expanse", Plugin.Enabled),
+            new Setting("FLIGHT", "Flight Control", Plugin.FlightControl),
             new Setting("LIVE REACTOR", "Live Reactor", Plugin.ReactorControl),
             new Setting("LIVE REACTOR", "Escalate Seconds", Plugin.ReactorEscalateSeconds, true, 5f, 120f, 5f)
                 { OffSwitch = Plugin.ReactorEscalation },

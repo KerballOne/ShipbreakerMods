@@ -2,6 +2,22 @@ Changelog for the TheExpanse page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+0.7.3
+Flight control: sit in any command chair on the MCRN Corvette and fly it out of the bay.
+Side thrusters, turning, roll, main drive throttle, brake, hold attitude and flip and burn, on keyboard and mouse or controller.
+Outside, nose and seat views; the outside view orbits and zooms.
+Flight HUD: drive and thruster gauges, speed, prograde and retrograde bubble, turn rate, acceleration in g, flip and burn progress.
+A thin hexagon marks the work bay and its distance in the outside views.
+The drive plume burns with the throttle: a white-hot core with shock diamonds inside a blue sheath that fans out and tapers to a point.
+Get up while under way: the ship stops where it is while you walk around and catches up when you sit down.
+Artificial gravity toward the stern while the drive burns; loose things fall to the decks.
+Deck boots: walk, run, crouch and jump on the decks under the drive's pull.
+Your suit's HUD shows the Hab's distance, the ship's speed and its acceleration.
+Room to fly: the work area's limits are lifted and the planet, Moon and Sun stay put in the sky.
+The bay's jacks are let go when the ship first moves.
+New options: Flight Control in the EXPANSE tab, and the [Flight], [Space] and [Drive] settings.
+The reactor's fire flares are off while the ship flies (no more stray flames).
+
 0.7.2
 Three ways to shut the reactor down, picked at random per ship: Balance, Memorize and Resonance (each can be switched off in the options).
 Memorize: the engineering deck terminals flash the order to take the injectors off in. Resonance: release the injector whose handle lights tick with the core's beat.
