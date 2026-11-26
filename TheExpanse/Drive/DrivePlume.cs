@@ -42,6 +42,10 @@ namespace TheExpanse
         static string sAnchoredTo = "";
         static bool sNozzleLogged;
 
+        // More drives from setup: a copy of the plume at each one past the first (same look, own size and place).
+        sealed class Extra { internal GameObject Root = null!; internal Transform? Beam, Glow, Streak, Light; internal Vector3 Axis = Vector3.up; }
+        static readonly List<Extra> sExtras = new List<Extra>();
+
         static Vector3 Mouth => sAnchor != null ? sAnchor.TransformPoint(sLocalMouth) : Vector3.zero;
         static Vector3 Axis => sAnchor != null ? sAnchor.TransformDirection(sLocalAxis).normalized : Vector3.up;
         // 0..1. For now a fixed test value from the settings; the flight controls will drive it later.
@@ -53,6 +57,8 @@ namespace TheExpanse
         internal static void Reset()
         {
             if (sRoot != null) Object.Destroy(sRoot);
+            foreach (var x in sExtras) if (x.Root != null) Object.Destroy(x.Root);
+            sExtras.Clear();
             foreach (var o in new Object?[] { sBeamMaterial, sGlowMaterial, sStreakMaterial, sBeamTexture, sGlowTexture, sStreakTexture })
                 if (o != null) Object.Destroy(o);
             sRoot = sBeam = sGlow = sStreak = null;
@@ -74,7 +80,7 @@ namespace TheExpanse
 
             // lost the anchor (cut off, level change) or the setting changed: look again, once a second
             // the ship may finish spawning after the bay has loaded: keep looking for the nozzle (every 2 s) until found
-            if (!sNozzleLogged && sNozzleTries < 30 && Time.unscaledTime >= sNextNozzleLook)
+            if (!sNozzleLogged && sNozzleTries < 30 && Time.unscaledTime >= sNextNozzleLook && !ShipSetup.TryDrive(out _, out _))
             {
                 sNextNozzleLook = Time.unscaledTime + 2f;
                 if (++sNozzleTries == 30) Plugin.Log.LogInfo("[Drive] stopped looking for the engine nozzle (none after a minute).");
@@ -85,6 +91,7 @@ namespace TheExpanse
             if (sAnchor == null || (sAnchoredTo == "nozzle") != wantNozzle)
             {
                 if (sRoot != null) { sRoot.SetActive(false); }
+                foreach (var x in sExtras) if (x.Root != null) x.Root.SetActive(false);
                 sAnchor = null;
                 if (Time.unscaledTime < sNextLook) return;
                 sNextLook = Time.unscaledTime + 1f;
@@ -94,7 +101,7 @@ namespace TheExpanse
             if (sRoot == null) Build();
             if (sRoot == null) return;
             sRoot.SetActive(Burning);
-            if (!Burning) return;
+            if (!Burning) { foreach (var x in sExtras) if (x.Root != null) x.Root.SetActive(false); return; }
             Show();
         }
 
@@ -102,6 +109,16 @@ namespace TheExpanse
 
         static bool Anchor(bool nozzle)
         {
+            if (nozzle && ShipSetup.TryDrive(out var mount, out var mountDiameter))
+            {
+                sAnchor = mount;
+                sLocalMouth = Vector3.zero;
+                sLocalAxis = Vector3.forward;
+                sMouthDiameter = mountDiameter;
+                sAnchoredTo = "nozzle";
+                Plugin.Log.LogInfo($"[Drive] plume at the drive set up for '{ShipSetup.Model}': {mountDiameter:0.0} m across.");
+                return true;
+            }
             if (nozzle)
             {
                 if (!FindNozzle(out var reference, out var mouth, out var axis, out var diameter, log: false)) return false;
@@ -128,6 +145,7 @@ namespace TheExpanse
         // The way the exhaust goes (aft), from the engine bell or nozzle. False if neither is on the ship.
         internal static bool TryDriveAxis(out Vector3 axis)
         {
+            if (ShipSetup.TryDrive(out var mount, out _)) { axis = mount.forward; return true; }
             bool found = FindNozzle(out _, out _, out axis, out _, log: false);
             return found && axis.sqrMagnitude > 0.5f;
         }
@@ -369,7 +387,7 @@ namespace TheExpanse
 
         // HDRP/Unlit, transparent, additive, both sides, no depth write. Starts from one of the game's own transparent
         // Unlit materials when one is loaded (so the shader variant is surely in the build), else from a plain one.
-        static Material AdditiveMaterial(Texture texture)
+        internal static Material AdditiveMaterial(Texture texture)
         {
             Material? template = null;
             foreach (var m in Resources.FindObjectsOfTypeAll<Material>())
@@ -432,7 +450,7 @@ namespace TheExpanse
             return lit ?? Shader.Find("Hidden/InternalErrorShader");
         }
 
-        static void SetBrightness(Material? material, float brightness)
+        internal static void SetBrightness(Material? material, float brightness)
         {
             if (material == null) return;
             var c = new Color(brightness, brightness, brightness, 1f);
@@ -605,6 +623,37 @@ namespace TheExpanse
                 sLight.SetIntensity(Mathf.Max(0f, Plugin.PlumeLightLumens.Value) * flicker, LightUnit.Lumen);
                 sLight.SetRange(Mathf.Clamp(length, 5f, mouth * 3f));      // the bell and the hull near it; a 150 m reach cost frame rate
             }
+            ShowExtras(length, spread, flicker);
+        }
+
+        static void ShowExtras(float length, float spread, float flicker)
+        {
+            var drives = ShipSetup.Drives;
+            int need = sAnchoredTo == "nozzle" && drives.Count > 1 && sAnchor == drives[0].mount ? drives.Count - 1 : 0;
+            while (sExtras.Count > need) { var last = sExtras[sExtras.Count - 1]; if (last.Root != null) Object.Destroy(last.Root); sExtras.RemoveAt(sExtras.Count - 1); }
+            while (sExtras.Count < need && sRoot != null)
+            {
+                var root = Object.Instantiate(sRoot);
+                root.name = "TheExpanse_DrivePlume_" + (sExtras.Count + 2);
+                sExtras.Add(new Extra { Root = root, Beam = root.transform.Find("Beam"), Glow = root.transform.Find("Glow"),
+                                        Streak = root.transform.Find("Streak"), Light = root.transform.Find("Light") });
+                Plugin.Log.LogInfo($"[Drive] plume {sExtras.Count + 1} of {drives.Count} at a drive set up for '{ShipSetup.Model}': {drives[sExtras.Count].diameter:0.0} m across.");
+            }
+            for (int i = 0; i < sExtras.Count; i++)
+            {
+                var x = sExtras[i];
+                var (mount, diameter) = drives[i + 1];
+                if (x.Root == null || mount == null) continue;
+                float mouth = Plugin.PlumeMouthDiameter.Value > 0f ? Plugin.PlumeMouthDiameter.Value : diameter;
+                x.Root.SetActive(true);
+                x.Axis = mount.forward;
+                x.Root.transform.position = mount.position;
+                if (x.Beam != null) x.Beam.localScale = new Vector3(mouth * spread, 1f, length);
+                float glow = Mathf.Max(Plugin.PlumeCoreDiameter.Value * 3f, mouth * 0.5f);
+                if (x.Glow != null) x.Glow.localScale = Vector3.one * glow * flicker;
+                if (x.Streak != null) { x.Streak.gameObject.SetActive(Plugin.PlumeStreak.Value > 0f); x.Streak.localScale = new Vector3(glow * 6f, glow * 0.2f, 1f); }
+                if (x.Light != null) x.Light.position = mount.position + x.Axis * (mouth * 0.6f);
+            }
         }
 
         // Before each camera draws: the beam turns about the drive axis to face it, the glow and streak face it.
@@ -613,6 +662,9 @@ namespace TheExpanse
         static void FaceCamera(ScriptableRenderContext context, Camera camera)
         {
             if (sRoot == null || !sRoot.activeInHierarchy || camera == null) return;
+            foreach (var x in sExtras)
+                if (x.Root != null && x.Root.activeInHierarchy)
+                    FaceOne(camera, x.Root.transform.position, x.Axis, x.Beam, x.Glow, x.Streak);
             var mouth = sRoot.transform.position;
             var axis = Axis;
             var toCamera = camera.transform.position - mouth;
@@ -633,6 +685,24 @@ namespace TheExpanse
             var glowAt = mouth + axis * (mouthSize * 0.15f) + toCamera.normalized * Mathf.Min(mouthSize * 0.5f, toCamera.magnitude * 0.5f);
             if (sGlow != null) { sGlow.transform.rotation = look; sGlow.transform.position = glowAt; }
             if (sStreak != null) { sStreak.transform.rotation = look; sStreak.transform.position = glowAt; }
+        }
+
+        // An extra plume turned toward the camera the same way (the materials are shared: the end-on fade follows the first).
+        static void FaceOne(Camera camera, Vector3 mouth, Vector3 axis, Transform? beam, Transform? glow, Transform? streak)
+        {
+            var toCamera = camera.transform.position - mouth;
+            if (beam != null)
+            {
+                var facing = Vector3.ProjectOnPlane(toCamera, axis);
+                if (facing.sqrMagnitude < 1e-6f) facing = Vector3.ProjectOnPlane(camera.transform.up, axis);
+                if (facing.sqrMagnitude > 1e-8f) beam.rotation = Quaternion.LookRotation(axis, facing);
+                beam.position = mouth;
+            }
+            var look = Quaternion.LookRotation(-camera.transform.forward, camera.transform.up);
+            float mouthSize = glow != null ? glow.localScale.x : 1f;
+            var glowAt = mouth + axis * (mouthSize * 0.15f) + toCamera.normalized * Mathf.Min(mouthSize * 0.5f, toCamera.magnitude * 0.5f);
+            if (glow != null) { glow.rotation = look; glow.position = glowAt; }
+            if (streak != null) { streak.rotation = look; streak.position = glowAt; }
         }
     }
 }

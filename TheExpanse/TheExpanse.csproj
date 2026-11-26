@@ -85,6 +85,12 @@
     <Reference Include="Wwise.Unity"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\Wwise.Unity.dll"
                Private="false" />
+    <Reference Include="Newtonsoft.Json"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\Newtonsoft.Json.dll"
+               Private="false" />
+    <Reference Include="UnityEngine.JSONSerializeModule"
+               HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.JSONSerializeModule.dll"
+               Private="false" />
     <Reference Include="UnityEngine.InputLegacyModule"
                HintPath="$(GameDir)\Shipbreaker_Data\Managed\UnityEngine.InputLegacyModule.dll"
                Private="false" />

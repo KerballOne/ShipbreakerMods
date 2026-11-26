@@ -28,6 +28,13 @@ namespace TheExpanse
 
         static GameObject? sCanvas;
         static RectTransform? sReadout, sDriveFill, sRcsFill, sPrompt;
+        static TextMeshProUGUI? sSetupText, sSetupShadow;
+        static TextMeshProUGUI? sClock;
+        static BBI.Unity.Game.UI.GameTimerUIController? sTimer;
+        static TextMeshProUGUI? sTimerText;
+        static float sNextTimerLook;
+        static bool sClockLogged;
+        static readonly System.Reflection.FieldInfo? sTimerTextField = HarmonyLib.AccessTools.Field(typeof(BBI.Unity.Game.UI.GameTimerUIController), "m_TimerText");
         static TextMeshProUGUI? sDriveText, sDrivePercent, sRcsText, sRcsPercent, sSpeedText, sTurnText, sAccelText, sAutoText, sPromptText, sPromptKey;
         static RectTransform? sBubble, sPrograde, sRetrograde;
         static RectTransform? sHome, sHomeArrow;
@@ -52,6 +59,10 @@ namespace TheExpanse
             sHome = sHomeArrow = null;
             sHomeText = null;
             sPromptIcon = null;
+            sClock = null;
+            sTimer = null; sTimerText = null;
+            sNextTimerLook = 0f;
+            sClockLogged = false;
         }
 
         // Every frame (LateUpdate).
@@ -59,7 +70,8 @@ namespace TheExpanse
         {
             bool readout = FlightModel.Flying;
             bool prompt = !FlightSeat.Seated && FlightSeat.NearChair;
-            if (!readout && !prompt)
+            string setup = ShipSetup.Status;
+            if (!readout && !prompt && setup.Length == 0)
             {
                 if (sCanvas != null && sCanvas.activeSelf) sCanvas.SetActive(false);
                 return;
@@ -69,8 +81,69 @@ namespace TheExpanse
             if (!sCanvas.activeSelf) sCanvas.SetActive(true);
             sReadout!.gameObject.SetActive(readout);
             sPrompt!.gameObject.SetActive(prompt);
+            sSetupText!.gameObject.SetActive(setup.Length > 0);
+            sSetupShadow!.gameObject.SetActive(setup.Length > 0);
+            if (setup.Length > 0) { sSetupText.text = setup; sSetupShadow.text = setup; }
             if (readout) ShowReadout();
             if (prompt) ShowPrompt();
+            ShowClock(readout && FlightCamera.HudHidden);
+        }
+
+        // The shift clock, as on the suit HUD: copied from the game's timer text while the suit HUD is faded out (outside
+        // and nose views), at the same place on the screen when that can be worked out, else top center.
+        static void ShowClock(bool want)
+        {
+            if (sClock == null) return;
+            if (want && sTimerText == null && Time.unscaledTime >= sNextTimerLook)
+            {
+                sNextTimerLook = Time.unscaledTime + 2f;
+                sTimer = Object.FindObjectOfType<BBI.Unity.Game.UI.GameTimerUIController>();
+                sTimerText = sTimer != null ? sTimerTextField?.GetValue(sTimer) as TextMeshProUGUI : null;
+                if (sTimerText != null) sClock.fontSize = sTimerText.fontSize;
+            }
+            bool show = want && sTimerText != null && sTimerText.enabled && !string.IsNullOrEmpty(sTimerText.text);
+            sClock.gameObject.SetActive(show);
+            if (!show) return;
+            sClock.text = sTimerText!.text;
+            var color = sTimerText.color; color.a = 1f;
+            sClock.color = color;
+            PlaceClock();
+        }
+
+        static void PlaceClock()
+        {
+            var rect = (RectTransform)sClock!.transform;
+            var gameCanvas = sTimerText!.canvas;
+            var ourCanvas = sCanvas!.GetComponent<Canvas>();
+            Vector2 local = default;
+            bool placed = false;
+            if (gameCanvas != null && ourCanvas != null)
+            {
+                var root = gameCanvas.rootCanvas;
+                var camera = root.renderMode == RenderMode.ScreenSpaceOverlay ? null : root.worldCamera;
+                var world = sTimerText.rectTransform.TransformPoint(sTimerText.rectTransform.rect.center);
+                var screen = RectTransformUtility.WorldToScreenPoint(camera, world);
+                placed = screen.x > 0f && screen.y > 0f && screen.x < Screen.width && screen.y < Screen.height
+                         && RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)ourCanvas.transform, screen,
+                                ourCanvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : ourCanvas.worldCamera, out local);
+                if (!sClockLogged)
+                {
+                    sClockLogged = true;
+                    Plugin.Log.LogInfo($"[Flight] shift clock copied from '{sTimerText.name}' on '{root.name}' ({root.renderMode}), " +
+                                       $"{sTimerText.fontSize:0} pt, at screen {screen} of {Screen.width}x{Screen.height}: " +
+                                       (placed ? "same place" : "off screen, top center instead") + ".");
+                }
+            }
+            if (placed)
+            {
+                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.anchoredPosition = local;
+            }
+            else
+            {
+                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+                rect.anchoredPosition = new Vector2(0f, -40f);
+            }
         }
 
         // ---- the readout -------------------------------------------------------------------------------------------
@@ -231,6 +304,17 @@ namespace TheExpanse
             sPromptText = Text("Label", sPrompt, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(36f, 0f), new Vector2(220f, 28f), 16f,
                                TextAlignmentOptions.Left, Amber);
             sPromptText.text = "SIT AT THE CONTROLS";
+            // setup mode: what is placed and the keys, one per line in the top left corner, under the HAB / SHIP / G
+            // readout; a dark copy behind it is the drop shadow
+            sSetupShadow = Text("SetupShadow", sCanvas.transform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(42f, -172f),
+                                new Vector2(500f, 220f), 16f, TextAlignmentOptions.TopLeft, new Color(0f, 0f, 0f, 0.85f));
+            sSetupShadow.fontStyle = FontStyles.Bold;
+            sSetupText = Text("Setup", sCanvas.transform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(40f, -170f),
+                              new Vector2(500f, 220f), 16f, TextAlignmentOptions.TopLeft, Amber);
+            sSetupText.fontStyle = FontStyles.Bold;
+            sClock = Text("Clock", sCanvas.transform, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -40f),
+                          new Vector2(300f, 40f), 24f, TextAlignmentOptions.Center, Amber);
+            sClock.gameObject.SetActive(false);
             sCanvas.SetActive(false);
         }
 

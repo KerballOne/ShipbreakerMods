@@ -26,6 +26,7 @@ namespace TheExpanse
         static void Prefix(ShipPreview shipPreview)
         {
             if (shipPreview?.ModuleGroup == null) return;
+            ShipSetup.Preview = shipPreview;
             try { PartSeparation.CustomShip = IsCustom(shipPreview); }
             catch (Exception ex) { PartSeparation.CustomShip = false; Plugin.Log.LogWarning("[Parts] could not tell whether this ship is a custom one: " + ex.Message); }
         }
@@ -33,6 +34,7 @@ namespace TheExpanse
         // A ship loaded from a save: make sure it is known as custom or not (a safety net beside SpawnShipAsync).
         internal static void FromSave(ShipPreview? shipPreview)
         {
+            if (shipPreview?.ModuleGroup != null) ShipSetup.Preview = shipPreview;
             if (shipPreview?.ModuleGroup == null || PartSeparation.CustomShip) return;
             try
             {

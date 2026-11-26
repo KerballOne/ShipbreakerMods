@@ -149,6 +149,9 @@ namespace TheExpanse
 
         // The HUD (gauges, prompts, the reticle) and the markers on objects, through the game's own events: the fade it
         // uses for its own scenes, and the marker switch.
+        // the suit HUD faded out (outside and nose views)
+        internal static bool HudHidden => sHudOff;
+
         static void Hud(bool on)
         {
             if (on != sHudOff) return;

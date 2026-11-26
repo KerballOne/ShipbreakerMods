@@ -79,6 +79,11 @@ namespace TheExpanse
         internal static bool Parked => sParked;
         // where the flight has the ship (not where it is parked)
         internal static Vector3 ShipPosition => sPivot;
+        // For the RCS jets: the side thrusters' push this step (world, 1 = full), the change of spin asked of them (world,
+        // 1 = full turning acceleration), and half the ship's length.
+        internal static Vector3 RcsCommand { get; private set; }
+        internal static Vector3 SpinCommand { get; private set; }
+        internal static float HalfLength => Mathf.Max(sLocalBox.extents.x, Mathf.Max(sLocalBox.extents.y, sLocalBox.extents.z));
 
         // where the ship's bodies are: the parked pose while parked, else the flight model's
         static Vector3 BodyPivot => sParked ? sParkPivot : sPivot;
@@ -1145,6 +1150,7 @@ namespace TheExpanse
 
             // speed: the drive pushes forward, the side thrusters any way; the brake fires them against the drift
             var rcs = (Right * sThrust.x + Up * sThrust.y + Forward * sThrust.z) * thrusters;
+            var spinStart = sSpin;
             if (sBrake || autoStop) rcs += Vector3.ClampMagnitude(-sVelocity / dt, thrusters);
             var accel = Forward * (drive * Throttle) + rcs;
             // how hard the side thrusters are working, 0..1, for the gauge (turning counts too)
@@ -1171,6 +1177,8 @@ namespace TheExpanse
             }
             spinLocal = Vector3.ClampMagnitude(spinLocal, maxRate);
             sSpin = Quaternion.Inverse(local) * spinLocal;
+            RcsCommand = thrusters > 0f ? rcs / thrusters : Vector3.zero;
+            SpinCommand = turnAccel > 0f ? (sSpin - spinStart) / (turnAccel * dt) : Vector3.zero;
 
             if (sParked)
             {

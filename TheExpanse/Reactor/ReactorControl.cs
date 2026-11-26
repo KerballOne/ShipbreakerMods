@@ -427,6 +427,13 @@ namespace TheExpanse
             Plugin.Log.LogInfo($"[Reactor] by shape: fitted the ring's slots at {best:0} + 45 n degrees; {present} injector(s) still there, " +
                                $"{Count - present} already taken off (by {(byBody ? "the thruster body" : "part count")}; {string.Join(" ", slots.Select(kv => $"{best + kv.Key * 45f:0}({kv.Value.Count})"))}).");
             if (present == 0) return null;
+            // The Expanse reactor's injectors are the long 1Ax1Ax6 thrusters. A ring of other thrusters (a stock small
+            // reactor's, as on The Wombat) is not one: no reactor game there (it showed a pulsing ball in the ship).
+            if (!byBody)
+            {
+                Plugin.Log.LogInfo("[Reactor] by shape: no injector thruster bodies (1Ax1Ax6) on the ring: not the Expanse reactor; no reactor game on this ship.");
+                return null;
+            }
             sSlotAngles = Enumerable.Range(0, Count).Select(k => best + k * 45f).ToArray();
             foreach (var key in slots.Keys.ToList()) if (!Has(slots[key])) slots[key].Clear();
             return slots;

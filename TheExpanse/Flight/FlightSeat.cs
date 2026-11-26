@@ -55,7 +55,7 @@ namespace TheExpanse
         // Every command chair found (the flight model carries the ones not on a body of the ship along with it).
         internal static IEnumerable<Transform> Chairs => sChairs;
 
-        static bool Allowed => Plugin.Enabled.Value && Plugin.FlightControl.Value && PartSeparation.CustomShip;
+        static bool Allowed => Plugin.Enabled.Value && Plugin.FlightControl.Value && (PartSeparation.CustomShip || ShipSetup.Seats.Count > 0);
 
         internal static void Reset()
         {
@@ -266,6 +266,17 @@ namespace TheExpanse
 
         static void FindChairs()
         {
+            // seats set up for this ship (ships.json) replace the command chairs found by name
+            if (ShipSetup.Seats.Count > 0)
+            {
+                if (sChairs.Count != ShipSetup.Seats.Count || sChairs.Exists(c => c == null || c.name != SetupSeatName))
+                {
+                    sChairs.Clear();
+                    sChairs.AddRange(ShipSetup.Seats);
+                }
+                return;
+            }
+            if (sChairs.Exists(c => c != null && c.name == SetupSeatName)) sChairs.Clear();
             if (Time.unscaledTime < sNextChairLook) return;
             sNextChairLook = Time.unscaledTime + 5f;
             sChairs.RemoveAll(c => c == null);
@@ -300,8 +311,12 @@ namespace TheExpanse
 
         // The seat point and the way the suit faces, from the chair: [Flight] SeatOffset in the chair's own axes and
         // SeatYaw turning it about the chair's up.
+        const string SetupSeatName = "TheExpanse_Seat";
+
         static void SeatPose(Transform chair, out Vector3 position, out Quaternion rotation)
         {
+            // a seat set up for the ship is the pose itself
+            if (chair.name == SetupSeatName) { position = chair.position; rotation = chair.rotation; return; }
             position = chair.TransformPoint(Plugin.FlightSeatOffset.Value);
             rotation = chair.rotation * Quaternion.Euler(0f, Plugin.FlightSeatYaw.Value, 0f);
         }

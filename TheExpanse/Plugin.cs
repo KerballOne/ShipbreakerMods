@@ -123,6 +123,8 @@ namespace TheExpanse
         internal static ConfigEntry<float> FlightAboardPull = null!;
         internal static ConfigEntry<float> FlightStandHeight = null!;
         internal static ConfigEntry<bool> FlightOutsideFog = null!;
+        internal static ConfigEntry<bool> FlightSetupMode = null!;
+        internal static ConfigEntry<KeyboardShortcut> SetupRcsKey = null!, SetupDriveKey = null!, SetupSeatKey = null!, SetupRemoveKey = null!;
         internal static ConfigEntry<float> FlightParkingSphere = null!;
         internal static ConfigEntry<float> FlightMasterJackMass = null!;
         internal static ConfigEntry<float> FlightLightJackMass = null!;
@@ -428,6 +430,18 @@ namespace TheExpanse
             FlightOutsideFog = Config.Bind("Flight", "OutsideViewFog", false,
                 "The outside and nose views draw the game's fog (its atmospheric haze, set for the view inside the bay). Off by " +
                 "default: through the bay it darkened the whole view.");
+            FlightSetupMode = Config.Bind("Flight", "SetupMode", false,
+                "Fit a ship for flight by hand (also in the options page): place demo charges (unlimited, they do not go off) and " +
+                "press SetupRcsKey to turn them into RCS thruster blocks, or SetupDriveKey on the drive's face for the plume; " +
+                "SetupSeatKey makes a flight seat where you stand. Saved per ship model in ships.json next to the mod.");
+            SetupRcsKey = Config.Bind("Flight", "SetupRcsKey", new KeyboardShortcut(UnityEngine.KeyCode.Alpha1, UnityEngine.KeyCode.LeftAlt),
+                "Setup mode: every placed demo charge becomes an RCS block.");
+            SetupDriveKey = Config.Bind("Flight", "SetupDriveKey", new KeyboardShortcut(UnityEngine.KeyCode.Alpha2, UnityEngine.KeyCode.LeftAlt),
+                "Setup mode: the placed demo charge marks the drive's face (where the plume leaves, and how wide).");
+            SetupSeatKey = Config.Bind("Flight", "SetupSeatKey", new KeyboardShortcut(UnityEngine.KeyCode.Alpha3, UnityEngine.KeyCode.LeftAlt),
+                "Setup mode: a flight seat where you stand, facing the way you face.");
+            SetupRemoveKey = Config.Bind("Flight", "SetupRemoveKey", new KeyboardShortcut(UnityEngine.KeyCode.Backspace, UnityEngine.KeyCode.LeftAlt),
+                "Setup mode: removes the RCS block or seat you aim at.");
             FlightFreeJacks = Config.Bind("Flight", "FreeJacks", true,
                 "When the ship first moves under its own power, let go of the bay's jacks: they get a weight and are shoved out of " +
                 "the way by the hull instead of being passed through. They stay where they drift until the next level load.");
@@ -502,12 +516,20 @@ namespace TheExpanse
                     catch (Exception ex) { Log.LogError("[Flight] " + ex); }
                 }
                 if (ev.State != ShipAllSpawnWrapperEvent.SpawnState.Complete) return;
+                try { ShipSetup.OnShipSpawned(ev.ShipPreview); }
+                catch (Exception ex) { Log.LogError("[Setup] " + ex); }
                 GrowthCleanup.OnShipSpawned();
                 TheExpanse.ReactorControl.OnShipSpawned();
             });
             // The moment a joint goes, for timing an injector's handle.
             Main.EventSystem.AddHandler<RemoveHierarchyJointsEvent>(ev => TheExpanse.ReactorControl.OnJointEvent(ev.RemoveJointsFor));
             Main.EventSystem.AddHandler<GrabEvent>(TheExpanse.ReactorControl.OnGrab);
+            Main.EventSystem.AddHandler<DemoChargeDeployedEvent>(ShipSetup.OnChargeDeployed);
+            Main.EventSystem.AddHandler<DemoChargeInstantiatedEvent>(ShipSetup.OnChargeMade);
+            Main.EventSystem.AddHandler<DemoChargeFreeFloatingEvent>(ShipSetup.OnChargeFreeFloating);
+            Main.EventSystem.AddHandler<DemoChargeDeployedEvent>(SetupLog.Deployed);
+            Main.EventSystem.AddHandler<DemoChargeInstantiatedEvent>(SetupLog.Instantiated);
+            Main.EventSystem.AddHandler<DemoChargeFreeFloatingEvent>(SetupLog.FreeFloating);
             Main.EventSystem.AddHandler<InteractionEvent>(TheExpanse.ReactorControl.OnInteraction);
             Main.EventSystem.AddHandler<BreakableJointEvent>(ev =>
             {
@@ -585,6 +607,8 @@ namespace TheExpanse
 
         private void Update()
         {
+            try { ShipSetup.Tick(); SetupLog.Tick(); }
+            catch (Exception ex) { Log.LogError("[Setup] " + ex); }
             try { PhysicsCostTest.Tick(); }
             catch (Exception ex) { Log.LogError("[Physics test] " + ex); }
             try { NodeTestTools.Tick(); TheExpanse.ReactorControl.TestKeys(); }
@@ -634,7 +658,7 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Reactor] " + ex); }
             try { TheExpanse.DrivePlume.Frame(); }
             catch (Exception ex) { Log.LogError("[Drive] " + ex); }
-            try { FlightHud.Frame(); SuitAccelReadout.Frame(); }
+            try { FlightHud.Frame(); SuitAccelReadout.Frame(); RcsBlocks.Frame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightJacks.Frame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
@@ -694,6 +718,7 @@ namespace TheExpanse
             TheExpanse.ReactorControl.Reset();
             TheExpanse.DrivePlume.Reset();
             FlightSeat.Reset();
+            ShipSetup.Reset();
             DeckBoots.Reset();
             MagBootsGuard.Resume();
             FlightJacks.Reset();
