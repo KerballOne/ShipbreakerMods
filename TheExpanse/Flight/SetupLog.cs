@@ -20,13 +20,17 @@ namespace TheExpanse
     //       file written (path, size, ships in it).
     internal static class SetupLog
     {
-        static void Log(string text) => Plugin.Log.LogInfo("[Setup] " + text);
+        // Off: setup mode works (confirmed in game). Set true to log all of the above again.
+        static readonly bool On = false;
+
+        static void Log(string text) { if (On) Plugin.Log.LogInfo("[Setup] " + text); }
 
         static string V(Vector3 v) => $"({v.x:0.00}, {v.y:0.00}, {v.z:0.00})";
 
         // ---- the ship ------------------------------------------------------------------------------------------------
         internal static void Identity(ShipPreview? preview, string model, string match)
         {
+            if (!On) return;
             var sb = new StringBuilder("ship identity: ");
             if (preview == null) sb.Append("no ship preview; ");
             else
@@ -77,7 +81,7 @@ namespace TheExpanse
             {
                 if (!ShipSetup.InSetup || LynxControls.Instance == null) return;
                 if (!LynxControls.Instance.GetInputWasPressed(GameplayActions.GameplayActionSet.DemoChargeFire)) return;
-                try { ShipSetup.NoteAim(sHit?.GetValue(__instance) is RaycastHit aim ? aim : default); Press(__instance); }
+                try { ShipSetup.NoteAim(sHit?.GetValue(__instance) is RaycastHit aim ? aim : default); if (On) Press(__instance); }
                 catch (System.Exception ex) { Log("place press: could not read the controller: " + ex.GetBaseException().Message); }
             }
         }
@@ -117,13 +121,13 @@ namespace TheExpanse
 
         internal static void Instantiated(DemoChargeInstantiatedEvent ev)
         {
-            if (!ShipSetup.InSetup || ev.DemoCharge == null) return;
+            if (!On || !ShipSetup.InSetup || ev.DemoCharge == null) return;
             Log($"charge made: '{ev.DemoCharge.name}' at {V(ev.DemoCharge.transform.position)}{Body(ev.DemoCharge)}.");
         }
 
         internal static void Deployed(DemoChargeDeployedEvent ev)
         {
-            if (!ShipSetup.InSetup || ev.DemoCharge == null) return;
+            if (!On || !ShipSetup.InSetup || ev.DemoCharge == null) return;
             Log($"charge deployed: '{ev.DemoCharge.name}' at {V(ev.DemoCharge.transform.position)}, " +
                 $"{(ev.WasFreefloating ? "FREE-FLOATING (not jointed to a part)" : "jointed to a part")}{Body(ev.DemoCharge)}.");
             sWatched.Add(new Watch { Go = ev.DemoCharge, At = ev.DemoCharge.transform.position, Since = Time.unscaledTime });
@@ -131,7 +135,7 @@ namespace TheExpanse
 
         internal static void FreeFloating(DemoChargeFreeFloatingEvent ev)
         {
-            if (!ShipSetup.InSetup || ev.DemoCharge == null) return;
+            if (!On || !ShipSetup.InSetup || ev.DemoCharge == null) return;
             Log($"charge went free-floating: '{ev.DemoCharge.name}' at {V(ev.DemoCharge.transform.position)}{Body(ev.DemoCharge)}.");
         }
 
@@ -163,6 +167,7 @@ namespace TheExpanse
         // ---- results ------------------------------------------------------------------------------------------------------------
         internal static void Used(string key, int index, bool fromAim, Vector3 point, Vector3 normal, Collider? collider)
         {
+            if (!On) return;
             var part = collider != null ? collider.GetComponentInParent<StructurePart>() : null;
             Log($"{key}: charge {index + 1}: surface from {(fromAim ? "the game's aim as it went down" : "a cast back from the charge")}: point {V(point)}, " +
                 $"normal {V(normal)}, collider '{(collider != null ? collider.name : "?")}', part '{(part != null ? part.name : "none")}'.");
@@ -170,6 +175,7 @@ namespace TheExpanse
 
         internal static void Saved(string path, int ships, string summary)
         {
+            if (!On) return;
             long size = -1;
             try { size = new System.IO.FileInfo(path).Length; } catch { }
             Log($"saved {path}: {size} bytes, {ships} ship(s); this ship: {summary}.");

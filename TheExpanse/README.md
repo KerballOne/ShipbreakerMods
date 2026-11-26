@@ -86,7 +86,16 @@ Sit in any command chair on the ship (near it, press Interact) and you are at th
 - **Far out** (past 30 km from the bay) the ship parks 30 km out, in the direction it has flown, where positions are still precise; nothing looks different and it catches up when you sit down.
 - If the MagBoots mod is installed, it is paused while the drive pulls aboard.
 
-**Space.** The work area's limits are lifted for the flight, the planet, Moon and Sun stay put in the sky however far you go, and the game's space dust is off (see **[Space]**). The bay's jacks are let go when the ship first moves, so the hull pushes them aside.
+**Setup mode: fly other ships.** Turn on **Setup Mode** (FLIGHT rows of the EXPANSE options tab), then place demo charges as markers (they don't go off, and stick anywhere on the ship):
+
+- **Alt+1**: an RCS thruster block at each charge (jets fire with the side thrusters and turning).
+- **Alt+2**: a drive plume at each charge, sized to the face it sits on (replaces the drives set before).
+- **Alt+3**: a seat where you stand, facing where you look. With no seat set, the command chairs are used.
+- **Alt+Backspace**: remove the block, drive or seat you aim at.
+
+The fittings are saved per ship class in `ships.json` next to the mod's DLL (hand-editable: `rcsSize`, `noBlocks` / `noBlock` for jets straight out of the hull) and come back on every ship of that class, resumed saves included. A ship with no drive set keeps its own (the MCRN Corvette's plume). Turn Setup Mode off to fly.
+
+**Space.** The work area's limits are lifted for the flight, the planet, Moon and Sun stay put in the sky however far you go, and the game's space dust is off (see **[Space]**). The bay's light jacks are let go when the ship first moves, so the hull pushes them aside; the Master Jack (the Hab) stays put and stops the ship like a wall.
 
 ## Settings file
 
@@ -152,7 +161,7 @@ Saving the file while the game is running applies the change within a second.
 - **StandHeight** (1.6): how high above the deck the deck boots hold you, in meters.
 - **ParkingSphere** (30): out of the seat, the ship parks no farther than this many km from the bay; 0 = always where it is.
 - **OutsideViewFog** (false): the game's fog in the outside and nose views; through the bay it darkens the whole view.
-- **FreeJacks** (true), **MasterJackMass** (200), **LightJackMass** (20): the bay's jacks are let go, with these weights in tonnes, when the ship first moves.
+- **FreeJacks** (true), **LightJackMass** (20): the bay's light jacks are let go, with this weight in tonnes, when the ship first moves. The Master Jack (the Hab) always stays put.
 
 **[Space]**
 - **ExtendedLimits** (true): room to fly: nothing is destroyed for straying from the work area while the ship is under way, the pilot has no speed cap, and (without the NewtonianPhysics mod) the player's work-area warning is lifted and the background is kept right far from the bay.

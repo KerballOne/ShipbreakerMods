@@ -4,8 +4,8 @@ using UnityEngine;
 
 namespace TheExpanse
 {
-    // Flight Control: the bay's jacks (the Master Jack and the five light jacks) are let go when the ship first moves
-    // under its own power, so the hull shoves them out of the way instead of passing through them.
+    // Flight Control: the bay's five light jacks are let go when the ship first moves under its own power, so the hull
+    // shoves them out of the way instead of passing through them. The Master Jack (the Hab) stays put.
     //
     // Each jack becomes a free body with a weight ([Flight] MasterJackMass, LightJackMass), without gravity. Their
     // meshes are statically batched: baked into one big mesh where they stood when the bay loaded, so they would not
@@ -89,7 +89,10 @@ namespace TheExpanse
             sReleased = true;
             var roots = new List<(Transform root, bool master)>();
             FindRoots(roots);
-            foreach (var (root, master) in roots) Take(root, master);
+            // The Master Jack stays where it is: it is the Hab (the Hab's door, the kiosk and the end-shift prompt are
+            // part of it). Let go, a tap of the suit pushed it away, and its mesh collider made convex filled the door,
+            // so the Hab could not be entered (and the game not saved) after a flight.
+            foreach (var (root, master) in roots) if (!master) Take(root, master);
         }
 
         static void Take(Transform root, bool master)
@@ -140,8 +143,12 @@ namespace TheExpanse
             body.isKinematic = false;
             body.useGravity = false;
             body.mass = tonnes * 1000f;
-            body.drag = 0f;
-            body.angularDrag = 0.05f;
+            // shoved, they leave at no more than the ship's speed (no bounce) and slow to a stop over a few seconds
+            body.drag = JackDrag;
+            body.angularDrag = JackDrag;
+            sNoBounce ??= new PhysicMaterial("TheExpanse_JackNoBounce")
+                { bounciness = 0f, bounceCombine = PhysicMaterialCombine.Minimum, dynamicFriction = 0.4f, staticFriction = 0.4f };
+            foreach (var collider in root.GetComponentsInChildren<Collider>(true)) if (!collider.isTrigger) collider.sharedMaterial = sNoBounce;
             body.interpolation = RigidbodyInterpolation.Interpolate;
             body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             body.detectCollisions = true;
@@ -155,6 +162,8 @@ namespace TheExpanse
         }
 
         static readonly Material[] sNoMaterials = new Material[0];
+        const float JackDrag = 0.6f;                // per second: a shoved jack's speed halves in about a second
+        static PhysicMaterial? sNoBounce;
 
         static void Blank(MeshRenderer renderer)
         {

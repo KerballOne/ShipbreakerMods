@@ -443,10 +443,11 @@ namespace TheExpanse
             SetupRemoveKey = Config.Bind("Flight", "SetupRemoveKey", new KeyboardShortcut(UnityEngine.KeyCode.Backspace, UnityEngine.KeyCode.LeftAlt),
                 "Setup mode: removes the RCS block or seat you aim at.");
             FlightFreeJacks = Config.Bind("Flight", "FreeJacks", true,
-                "When the ship first moves under its own power, let go of the bay's jacks: they get a weight and are shoved out of " +
-                "the way by the hull instead of being passed through. They stay where they drift until the next level load.");
+                "When the ship first moves under its own power, let go of the bay's light jacks: they get a weight and are shoved out of " +
+                "the way by the hull instead of being passed through. They stay where they drift until the next level load. " +
+                "The Master Jack (the Hab) always stays put.");
             FlightMasterJackMass = Config.Bind("Flight", "MasterJackMass", 200f,
-                "With FreeJacks on: the Master Jack's weight, in tonnes.");
+                "Not used: the Master Jack (the Hab) always stays put.");
             FlightLightJackMass = Config.Bind("Flight", "LightJackMass", 20f,
                 "With FreeJacks on: each light jack's weight, in tonnes.");
 
@@ -722,6 +723,7 @@ namespace TheExpanse
             DeckBoots.Reset();
             MagBootsGuard.Resume();
             FlightJacks.Reset();
+            ShipWalls.Reset();
             FlightHud.Reset();
             SuitAccelReadout.Reset();
             sHauntingDue = 0f;

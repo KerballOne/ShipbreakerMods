@@ -370,6 +370,57 @@ namespace TheExpanse
         // The ship's middle and length from its parts (the bay's barge left out); its forward from the drive (the
         // plume goes aft), else the chair's facing; up from the chair, else the world's. The nose camera sits on the
         // ship's axis a meter past the furthest forward point of any part's mesh.
+        // The parts that hang together around the chair: from the part nearest it, every part within LinkGap of one
+        // already taken. After a resumed save some parts the game counts in the ship's main structure lay far from it
+        // (40 m and more back, where it was in the bay): measured with them, the ship's middle (the outside camera's
+        // pivot, the flight's) was well off the real one.
+        const float LinkGap = 8f;
+
+        static List<StructurePart> Connected(List<StructurePart> parts, Vector3 from)
+        {
+            if (parts.Count < 2) return parts;
+            var cells = new Dictionary<Vector3Int, List<int>>();
+            Vector3Int Cell(Vector3 p) => new Vector3Int(Mathf.FloorToInt(p.x / LinkGap), Mathf.FloorToInt(p.y / LinkGap), Mathf.FloorToInt(p.z / LinkGap));
+            var positions = new Vector3[parts.Count];
+            int start = 0; float best = float.MaxValue;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                positions[i] = parts[i].transform.position;
+                var c = Cell(positions[i]);
+                if (!cells.TryGetValue(c, out var list)) cells[c] = list = new List<int>();
+                list.Add(i);
+                float d = (positions[i] - from).sqrMagnitude;
+                if (d < best) { best = d; start = i; }
+            }
+            var taken = new bool[parts.Count];
+            var queue = new Queue<int>();
+            taken[start] = true; queue.Enqueue(start);
+            while (queue.Count > 0)
+            {
+                int i = queue.Dequeue();
+                var c = Cell(positions[i]);
+                for (int x = -1; x <= 1; x++)
+                    for (int y = -1; y <= 1; y++)
+                        for (int z = -1; z <= 1; z++)
+                        {
+                            if (!cells.TryGetValue(new Vector3Int(c.x + x, c.y + y, c.z + z), out var list)) continue;
+                            foreach (int j in list)
+                                if (!taken[j] && (positions[j] - positions[i]).sqrMagnitude <= LinkGap * LinkGap) { taken[j] = true; queue.Enqueue(j); }
+                        }
+            }
+            var kept = new List<StructurePart>();
+            var leftOut = new Bounds(); int left = 0;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                if (taken[i]) { kept.Add(parts[i]); continue; }
+                if (left++ == 0) leftOut = new Bounds(positions[i], Vector3.zero); else leftOut.Encapsulate(positions[i]);
+            }
+            if (left > 0)
+                Plugin.Log.LogInfo($"[Flight] ship measure: {left} of {parts.Count} main-structure part(s) left out, apart from the rest " +
+                                   $"(around {leftOut.center}, {leftOut.size.magnitude:0} m across; the chair at {from}).");
+            return kept;
+        }
+
         static void MeasureShip(Transform chair)
         {
             bool any = false;
@@ -382,6 +433,7 @@ namespace TheExpanse
             if (parts.Count == 0)
                 foreach (var part in all)
                     if (FlightModel.IsShipPart(part)) parts.Add(part);
+            parts = Connected(parts, chair.position);
             foreach (var part in parts)
             {
                 var p = part.transform.position;

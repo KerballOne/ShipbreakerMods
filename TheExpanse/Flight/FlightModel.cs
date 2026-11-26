@@ -150,6 +150,7 @@ namespace TheExpanse
                 CollectRiders(chair);
                 sMoving = true;
                 FlightJacks.Release();
+                ShipWalls.Begin();
                 Throttle = 0f;
                 sHold = true;
                 sAuto = Auto.None;
@@ -1192,6 +1193,7 @@ namespace TheExpanse
             var spinBefore = sSpin;
             var pivotBefore = sPivot;
             Move(dt);
+            ShipWalls.Step(ShipBodies(), ref sPivot, ref sVelocity, ref sSpin);
             LooseFall(velocityBefore, spinBefore, pivotBefore, accel, dt);
             CarryAboard(player, aboard, playerShipVelocity, accel, dt);
         }
@@ -1283,6 +1285,12 @@ namespace TheExpanse
 
         // Diagnostic (the ship shaking at 250 m/s and up): how far the ship's bodies are drawn (the physics' smoothing)
         // from where the camera's frame has them this frame, as a share of one step's travel; once a second over 50 m/s.
+
+        // the ship's own bodies (not the loose things lying aboard)
+        static IEnumerable<Rigidbody> ShipBodies()
+        {
+            foreach (var c in sBodies) if (c.Body != null && !c.Loose) yield return c.Body;
+        }
 
         static void Integrate(float dt)
         {

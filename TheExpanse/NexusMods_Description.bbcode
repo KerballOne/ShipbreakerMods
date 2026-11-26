@@ -84,6 +84,16 @@ Get up and the ship stops where it is while you walk around; the flight goes on 
 [*][b]Your suit's HUD[/b] shows the bay's distance, the ship's speed and its acceleration.
 [/list]
 
+[size=4][b]Fly other ships: setup mode[/b][/size]
+Any ship can be fitted for flight. Turn on [b]Setup Mode[/b] (Options, EXPANSE tab), then place demo charges as markers (they don't go off):
+[list]
+[*][b]Alt+1:[/b] an RCS thruster block at each charge.
+[*][b]Alt+2:[/b] a drive plume at each charge, sized to the face it sits on.
+[*][b]Alt+3:[/b] a seat where you stand, facing where you look. With no seat set, the command chairs are used.
+[*][b]Alt+Backspace:[/b] remove the block, drive or seat you aim at.
+[/list]
+The fittings are saved per ship class in [b]ships.json[/b] in the mod's folder (hand-editable) and come back on every ship of that class, resumed saves included. Turn Setup Mode off to fly.
+
 
 [size=5][b]Heavy parts come free gently[/b][/size]
 The hull panels and large objects of these ships are built from a 3D model, as big curved and hollow pieces. The game treats every part as the solid shape around its mesh, so neighboring pieces overlap each other. While they are joined, that does not matter. The moment one is cut or pulled free, the game pushes the overlapping pieces apart at up to 10 meters per second, which throws a part of several tonnes faster than a tether can hold.
@@ -146,6 +156,7 @@ The main ones are also in the options menu, EXPANSE tab:
 [tr][td][b]Option[/b][/td][td][b]Default[/b][/td][td][b]What it does[/b][/td][/tr]
 [tr][td]The Expanse[/td][td]on[/td][td]The whole mod on or off.[/td][/tr]
 [tr][td]Flight Control[/td][td]on[/td][td]Sit in a command chair to fly the ship.[/td][/tr]
+[tr][td]Setup Mode[/td][td]off[/td][td]Fit any ship for flight with demo charges (above).[/td][/tr]
 [tr][td]Live Reactor[/td][td]on[/td][td]The live core and its shutdown. Off: a cold reactor.[/td][/tr]
 [tr][td]Escalate Seconds[/td][td]45[/td][td]A problem left alone goes up a level every N seconds. Far right: off.[/td][/tr]
 [tr][td]Core Meltdown[/td][td]on[/td][td]The game's meltdown follows the level 3 flare.[/td][/tr]
