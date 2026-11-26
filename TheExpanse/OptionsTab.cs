@@ -78,6 +78,8 @@ namespace TheExpanse
             new Setting("HAUNTING", "Ship Roll", Plugin.RollShip),
             new Setting("HAUNTING", "Haunted Lights", Plugin.LightFlicker)
                 { AlsoSwitches = new[] { Plugin.LightBlackout, Plugin.HelmetFlicker } },
+            new Setting("HAUNTING", "Node Radiation", Plugin.NodeRadiationDamage, true, 0f, 20f, 1f)
+                { ZeroLabel = "OFF", ActiveWhen = () => Plugin.NodeRadiation.Value },
         };
 
         // Our rows show what they depend on: after any change, every row is refreshed.
