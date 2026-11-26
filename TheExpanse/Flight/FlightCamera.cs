@@ -314,6 +314,7 @@ namespace TheExpanse
             sSavedFar = camera.farClipPlane;
             t.SetPositionAndRotation(sPosition, sRotation);
             camera.farClipPlane = Mathf.Max(sSavedFar, 20000f);
+            FogOff(camera, !Plugin.FlightOutsideFog.Value);
             sMoved = true;
             if (!sLoggedFirstDraw)
             {
@@ -331,6 +332,36 @@ namespace TheExpanse
             sMoved = false;
             camera.transform.SetPositionAndRotation(sSavedPosition, sSavedRotation);
             camera.farClipPlane = sSavedFar;
+            FogOff(camera, false);
+        }
+
+        // The bay's fog (the game's atmospheric scattering, set for the suit's view inside the bay) darkened everything
+        // seen through the bay from the outside camera, out to hundreds of meters. For the outside and nose views it is
+        // switched off in the camera's own frame settings ([Flight] OutsideViewFog), and put back after the frame.
+        static bool sFogOverridden, sHadCustom, sHadMask, sHadFog;
+
+        static void FogOff(Camera camera, bool off)
+        {
+            var data = camera.GetComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>();
+            if (data == null) return;
+            const uint field = (uint)UnityEngine.Rendering.HighDefinition.FrameSettingsField.AtmosphericScattering;
+            if (off && !sFogOverridden)
+            {
+                sHadCustom = data.customRenderingSettings;
+                sHadMask = data.renderingPathCustomFrameSettingsOverrideMask.mask[field];
+                sHadFog = data.renderingPathCustomFrameSettings.IsEnabled(UnityEngine.Rendering.HighDefinition.FrameSettingsField.AtmosphericScattering);
+                data.customRenderingSettings = true;
+                data.renderingPathCustomFrameSettingsOverrideMask.mask[field] = true;
+                data.renderingPathCustomFrameSettings.SetEnabled(UnityEngine.Rendering.HighDefinition.FrameSettingsField.AtmosphericScattering, false);
+                sFogOverridden = true;
+            }
+            else if (!off && sFogOverridden)
+            {
+                data.renderingPathCustomFrameSettings.SetEnabled(UnityEngine.Rendering.HighDefinition.FrameSettingsField.AtmosphericScattering, sHadFog);
+                data.renderingPathCustomFrameSettingsOverrideMask.mask[field] = sHadMask;
+                data.customRenderingSettings = sHadCustom;
+                sFogOverridden = false;
+            }
         }
 
         // The ship's middle and length from its parts (the bay's barge left out); its forward from the drive (the

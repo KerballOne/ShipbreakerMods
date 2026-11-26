@@ -546,7 +546,8 @@ namespace TheExpanse
                     float xc = u / Mathf.Max(0.005f, coreRadius);
                     float core = coreGain * Mathf.Exp(-xc * xc * 2f) * (coreFall + diamond * 1.2f);
                     float window = Mathf.Clamp01(1f - u * u); window *= window;
-                    float mouthFade = Mathf.Clamp01(v * TexAlong / 2f);  // the first row is black so the clamp doesn't smear
+                    // a soft start out of the bell (over its first few tenths of a mouth width), not a hard edge
+                    float mouthFade = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(meters / Mathf.Max(0.2f, mouth * 0.35f)));
                     var c = (tint * sheath + hot * core) * (tip * window * mouthFade);
                     c.a = 1f;
                     sPixels[j * TexAcross + i] = c;
@@ -563,11 +564,13 @@ namespace TheExpanse
 
         static void Show()
         {
-            // Length and FlowSpeed are full throttle; the plume keeps its cone angle, so a shorter one ends narrower
+            // Length and FlowSpeed are full throttle. The beam is always as wide as the full-throttle plume: its shape is
+            // painted along the full-throttle plume (PaintBeam), so a lower throttle shows the same flare out of the bell
+            // and fades sooner. (Narrowed with the throttle, a low-throttle plume was a straight-sided box.)
             float throttle = Throttle;
             float length = Mathf.Max(1f, Plugin.PlumeLength.Value * throttle);
             float mouth = Plugin.PlumeMouthDiameter.Value > 0f ? Plugin.PlumeMouthDiameter.Value : sMouthDiameter;
-            float spread = 1f + (Mathf.Max(1f, Plugin.PlumeSpread.Value) - 1f) * throttle;
+            float spread = Mathf.Max(1f, Plugin.PlumeSpread.Value);
             float brightness = Mathf.Max(0f, Plugin.PlumeBrightness.Value);
             float flicker = 1f + 0.06f * (Mathf.PerlinNoise(Time.time * 9f, 2.1f) - 0.5f);
 
@@ -582,7 +585,8 @@ namespace TheExpanse
                 PaintMs += (float)sPaintWatch.Elapsed.TotalMilliseconds;
                 PaintCount++;
             }
-            SetBrightness(sBeamMaterial, brightness * flicker);
+            sBeamBrightness = brightness * flicker;
+            SetBrightness(sBeamMaterial, sBeamBrightness);
             SetBrightness(sGlowMaterial, brightness * 0.5f * Mathf.Max(0.1f, Plugin.PlumeCore.Value / 4f) * flicker);
             SetBrightness(sStreakMaterial, brightness * 0.35f * Mathf.Max(0f, Plugin.PlumeStreak.Value) * flicker);
             if (sStreak != null) sStreak.SetActive(Plugin.PlumeStreak.Value > 0f);
@@ -604,6 +608,8 @@ namespace TheExpanse
         }
 
         // Before each camera draws: the beam turns about the drive axis to face it, the glow and streak face it.
+        static float sBeamBrightness;
+
         static void FaceCamera(ScriptableRenderContext context, Camera camera)
         {
             if (sRoot == null || !sRoot.activeInHierarchy || camera == null) return;
@@ -612,6 +618,10 @@ namespace TheExpanse
             var toCamera = camera.transform.position - mouth;
             if (sBeam != null)
             {
+                // the beam is a flat strip turned toward the camera about the drive's axis: seen nearly along the axis
+                // its straight edges showed as sharp lines; it fades out there and the glow carries the plume end-on
+                float endOn = toCamera.sqrMagnitude > 1e-6f ? Mathf.Abs(Vector3.Dot(toCamera.normalized, axis)) : 1f;
+                SetBrightness(sBeamMaterial, sBeamBrightness * (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.55f, 0.9f, endOn))));
                 var facing = Vector3.ProjectOnPlane(toCamera, axis);
                 if (facing.sqrMagnitude < 1e-6f) facing = Vector3.ProjectOnPlane(camera.transform.up, axis);
                 if (facing.sqrMagnitude > 1e-8f) sBeam.transform.rotation = Quaternion.LookRotation(axis, facing);

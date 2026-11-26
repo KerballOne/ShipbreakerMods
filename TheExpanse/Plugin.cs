@@ -50,6 +50,7 @@ namespace TheExpanse
         internal static ConfigEntry<bool> NodeRadiation = null!;
         internal static ConfigEntry<bool> TestTools = null!;
         internal static ConfigEntry<KeyboardShortcut> KillHalfNodesKey = null!;
+        internal static ConfigEntry<KeyboardShortcut> PhysicsCostTestKey = null!;
         internal static ConfigEntry<float> NodeRadiationDamage = null!;
         internal static ConfigEntry<float> NodeRadiationRadius = null!;
         internal static ConfigEntry<float> NodeRadiationFalloff = null!;
@@ -121,6 +122,7 @@ namespace TheExpanse
         internal static ConfigEntry<bool> FlightFreeJacks = null!;
         internal static ConfigEntry<float> FlightAboardPull = null!;
         internal static ConfigEntry<float> FlightStandHeight = null!;
+        internal static ConfigEntry<bool> FlightOutsideFog = null!;
         internal static ConfigEntry<float> FlightParkingSphere = null!;
         internal static ConfigEntry<float> FlightMasterJackMass = null!;
         internal static ConfigEntry<float> FlightLightJackMass = null!;
@@ -422,6 +424,9 @@ namespace TheExpanse
                 "world (by the bay): beyond about 32 km positions are only kept to 4 mm and things near your eye (the grapple " +
                 "gun) shake. Farther out it parks on this sphere in the direction it has flown, where nothing looks different. " +
                 "0 = always where it is.");
+            FlightOutsideFog = Config.Bind("Flight", "OutsideViewFog", false,
+                "The outside and nose views draw the game's fog (its atmospheric haze, set for the view inside the bay). Off by " +
+                "default: through the bay it darkened the whole view.");
             FlightFreeJacks = Config.Bind("Flight", "FreeJacks", true,
                 "When the ship first moves under its own power, let go of the bay's jacks: they get a weight and are shoved out of " +
                 "the way by the hull instead of being passed through. They stay where they drift until the next level load.");
@@ -459,6 +464,8 @@ namespace TheExpanse
                 "For testing the ghost ship additions and reactor control: show how many nodes are left and the reactor's state on " +
                 "screen, destroy half of the nodes with KillHalfNodesKey, and pretend to disconnect injectors with ReactorRightKey " +
                 "and ReactorWrongKey.");
+            PhysicsCostTestKey = Config.Bind("Debug", "PhysicsCostTestKey", new KeyboardShortcut(UnityEngine.KeyCode.F10, UnityEngine.KeyCode.LeftControl),
+                "Samples 5 s of where the physics time goes (anywhere: in the bay, flying, parked) and logs it.");
             KillHalfNodesKey = Config.Bind("Debug", "KillHalfNodesKey", new KeyboardShortcut(UnityEngine.KeyCode.F8),
                 "With TestTools on: destroys half of the nodes left (rounded up, so the last one goes too).");
             ReactorRightKey = Config.Bind("Debug", "ReactorRightKey", new KeyboardShortcut(UnityEngine.KeyCode.F11),
@@ -576,6 +583,8 @@ namespace TheExpanse
 
         private void Update()
         {
+            try { PhysicsCostTest.Tick(); }
+            catch (Exception ex) { Log.LogError("[Physics test] " + ex); }
             try { NodeTestTools.Tick(); TheExpanse.ReactorControl.TestKeys(); }
             catch (Exception ex) { Log.LogError("[Test] " + ex); }
             try { TheExpanse.SpaceLimits.Tick(); }
@@ -660,11 +669,14 @@ namespace TheExpanse
 
         private void FixedUpdate()
         {
+            PhysicsCostTest.StepStart();
             FlightModel.MarkStep();
             try { ShipRoll.FixedStep(); }
             catch (Exception ex) { Log.LogError("[Haunting] " + ex); }
+            PhysicsCostTest.FlightStart();
             try { FlightSeat.FixedTick(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
+            PhysicsCostTest.FlightEnd();
         }
 
         // Start is posted before the scenes load.
