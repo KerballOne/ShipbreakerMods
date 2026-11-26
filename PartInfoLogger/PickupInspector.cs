@@ -42,6 +42,17 @@ namespace PartInfoLogger
                 $"colliderType={hit.collider.GetType().Name} isTrigger={hit.collider.isTrigger} " +
                 $"layer={LayerMask.LayerToName(hit.collider.gameObject.layer)}({hit.collider.gameObject.layer})");
 
+            // Live cutting rules of the part hit (the shallow dump does not expand CuttingTargetable).
+            var sp = hit.collider.GetComponentInParent<StructurePart>();
+            if (sp != null)
+            {
+                var ct = sp.CuttingTargetable;
+                Plugin.Log.LogInfo($"[PickupInspector] F9 part '{sp.name}': SP='{sp.StructurePartAsset?.name}' " +
+                    (ct == null ? "CuttingTargetable=null" :
+                     $"cutAsset='{ct.TargetableAsset?.name}' PowerRating={ct.PowerRating} (scanner boxes={ct.PowerRating + 1}) " +
+                     $"IsCuttable={ct.IsCuttable} CuttableBy={ct.IsCuttableBy}"));
+            }
+
             DumpFullChain(hit.collider.gameObject);
         }
 
