@@ -470,6 +470,8 @@ namespace TheExpanse
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
             Main.EventSystem.AddHandler<ShipAllSpawnWrapperEvent>(ev =>
             {
+                // A ship loaded from a save (a FreePlayPlus resume, a continued shift): make sure it is known as custom or not.
+                if (ev.Type == ShipAllSpawnWrapperEvent.SpawnType.SpawnFromSave) CustomShips.FromSave(ev.ShipPreview);
                 if (ev.State == ShipAllSpawnWrapperEvent.SpawnState.Start)
                 {
                     try { FlightJacks.RecordBaked(); }

@@ -30,6 +30,18 @@ namespace TheExpanse
             catch (Exception ex) { PartSeparation.CustomShip = false; Plugin.Log.LogWarning("[Parts] could not tell whether this ship is a custom one: " + ex.Message); }
         }
 
+        // A ship loaded from a save: make sure it is known as custom or not (a safety net beside SpawnShipAsync).
+        internal static void FromSave(ShipPreview? shipPreview)
+        {
+            if (shipPreview?.ModuleGroup == null || PartSeparation.CustomShip) return;
+            try
+            {
+                PartSeparation.CustomShip = IsCustom(shipPreview);
+                Plugin.Log.LogInfo($"[Parts] ship loaded from a save: {(PartSeparation.CustomShip ? "a custom ship" : "a stock ship")}.");
+            }
+            catch (Exception ex) { Plugin.Log.LogWarning("[Parts] could not tell whether the saved ship is a custom one: " + ex.Message); }
+        }
+
         static bool IsCustom(ShipPreview shipPreview)
         {
             string plugins = BepInEx.Paths.PluginPath.Replace('/', '\\').TrimEnd('\\');

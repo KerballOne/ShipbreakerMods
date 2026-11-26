@@ -67,6 +67,7 @@ namespace TheExpanse
         static readonly Injector[] sInjectors = new Injector[Count];
         static readonly bool[] sSimulated = new bool[Count];       // test tools: treated as disconnected
         static Phase sPhase = Phase.Waiting;
+        static float sNextSetupTry;
         static float sSpawnedAt = -1f, sLogicDue, sPhaseStarted, sBadSince = -1f, sNextCountdownLog;
         static StructurePart? sCore;
         static Entity sCoreEntity;
@@ -123,7 +124,8 @@ namespace TheExpanse
         {
             if (sPhase == Phase.Waiting)
             {
-                if (sSpawnedAt < 0f || !Allowed || Time.time - sSpawnedAt < SetupDelay) return;
+                if (sSpawnedAt < 0f || !Allowed || Time.time - sSpawnedAt < SetupDelay || Time.time < sNextSetupTry) return;
+                sNextSetupTry = Time.time + 1f;          // a failed setup is retried once a second, not every frame
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 bool ready = TrySetUp();
                 Plugin.Log.LogInfo($"[Reactor] setup {(ready ? "done" : "tried")} in {watch.Elapsed.TotalMilliseconds:0} ms (one frame).");
@@ -186,6 +188,7 @@ namespace TheExpanse
                 list.Add(part);
             }
             string how = "by name";
+            sSlotAngles = null;
             if (groups.Count != Count)
             {
                 // The game reparents parts, so names above the part may be gone: find them by where they sit instead.
@@ -196,10 +199,10 @@ namespace TheExpanse
                 how = "by shape (thruster parts on the ring)";
             }
 
-            // Ring middle, and "down": along the core's axis, toward the side the ring sits on.
-            Vector3 ring = Vector3.zero;
-            foreach (var list in groups.Values) ring += Middle(list);
-            ring /= Count;
+            // Ring middle (on the core's axis, level with the injectors), and "down": along the axis, toward the ring's side.
+            var present = groups.Values.Where(l => l.Count > 0).ToList();
+            float level = present.Average(l => Vector3.Dot(Middle(l) - corePosition, axis));
+            Vector3 ring = corePosition + axis * level;
             Vector3 down = Vector3.Dot(ring - corePosition, axis) <= 0f ? -axis : axis;
 
             // The ball sits where the game's own reactor fire effect was placed, if it is there to be found, else
@@ -214,14 +217,28 @@ namespace TheExpanse
                 where = $"level with the ship's reactor fire marker, {along:0.#} m below the ring";
             }
 
-            // Number the injectors by angle around the axis.
-            Vector3 reference = Vector3.ProjectOnPlane(Middle(groups.Values.First()) - ring, down).normalized;
-            var ordered = groups.Values.Select(list => (list, angle: Vector3.SignedAngle(reference, Vector3.ProjectOnPlane(Middle(list) - ring, down), down)))
+            // Number the injectors by angle around the axis (an empty slot by its slot angle).
+            // Numbered from the slot nearest the core's own forward (going round the axis), whatever is left on the
+            // ring, so a reload with some already taken off numbers them the same as the fresh ship (and its order
+            // means the same injectors). Every slot's direction is the first present one's, turned about the axis.
+            Vector3 firstDir = Vector3.ProjectOnPlane(Middle(present.First()) - ring, down).normalized;
+            float firstAngle = AroundCore(core, axis, Middle(present.First())).angle;
+            float startAngle = sSlotAngles != null ? sSlotAngles[0] : present.Min(l => AroundCore(core, axis, Middle(l)).angle);
+            Vector3 SlotDir(float angle) => Quaternion.AngleAxis(angle - firstAngle, axis) * firstDir;
+            Vector3 reference = SlotDir(startAngle);
+            float SlotAngle(KeyValuePair<int, List<StructurePart>> kv)
+            {
+                if (kv.Value.Count > 0) return Vector3.SignedAngle(reference, Vector3.ProjectOnPlane(Middle(kv.Value) - ring, down), down);
+                return Vector3.SignedAngle(reference, SlotDir(sSlotAngles![kv.Key]), down);     // an empty slot: its fitted angle
+            }
+            var ordered = groups.Select(kv => (list: kv.Value, angle: SlotAngle(kv)))
                                       .Select(x => (x.list, angle: x.angle < 0f ? x.angle + 360f : x.angle))
                                       .OrderBy(x => x.angle).ToList();
             var angles = new List<string>();
+            var template = -1;
             for (int i = 0; i < Count; i++)
             {
+                if (ordered[i].list.Count == 0) continue;           // empty slots after, from a present one
                 var injector = new Injector { Index = i };
                 injector.Parts.AddRange(ordered[i].list);
                 injector.LocalSlot = core.transform.InverseTransformPoint(Middle(ordered[i].list));
@@ -231,8 +248,25 @@ namespace TheExpanse
                 var across = Vector3.ProjectOnPlane(nozzle - center, down);
                 injector.LocalDirection = core.transform.InverseTransformDirection(across.sqrMagnitude > 1e-6f ? across.normalized : Vector3.zero);
                 sInjectors[i] = injector;
-                angles.Add($"{i}:{ordered[i].angle:0}");
+                if (template < 0) template = i;
             }
+            // Empty slots (injectors already taken off): the present one's place, nozzle and push, turned about the axis
+            // to the slot. No parts: it counts as disconnected.
+            for (int i = 0; i < Count; i++)
+            {
+                if (sInjectors[i] != null && ordered[i].list.Count > 0) continue;
+                var t = sInjectors[template];
+                var turn = Quaternion.AngleAxis(Vector3.SignedAngle(Vector3.ProjectOnPlane(core.transform.TransformPoint(t.LocalSlot) - ring, down),
+                                                                    Quaternion.AngleAxis(ordered[i].angle - ordered[template].angle, down) * Vector3.ProjectOnPlane(core.transform.TransformPoint(t.LocalSlot) - ring, down), down), down);
+                Vector3 Turned(Vector3 local) => core.transform.InverseTransformPoint(center + turn * (core.transform.TransformPoint(local) - center));
+                sInjectors[i] = new Injector
+                {
+                    Index = i, Connected = false,
+                    LocalSlot = Turned(t.LocalSlot), LocalNozzle = Turned(t.LocalNozzle),
+                    LocalDirection = core.transform.InverseTransformDirection(turn * core.transform.TransformDirection(t.LocalDirection)),
+                };
+            }
+            for (int i = 0; i < Count; i++) angles.Add($"{i}:{ordered[i].angle:0}{(ordered[i].list.Count == 0 ? " (taken off)" : "")}");
 
             sCore = core;
             sLocalCenter = core.transform.InverseTransformPoint(center);
@@ -324,10 +358,21 @@ namespace TheExpanse
         // angle (gaps of at least 15 degrees between clusters). Null if that is not what is there.
         static Dictionary<int, List<StructurePart>>? InjectorsByShape(StructurePart core, Vector3 corePosition, Vector3 axis)
         {
+            // Only parts jointed to the ship (in the reactor's structure graph): an injector taken off, or anything
+            // loose, does not count wherever it drifts.
+            var world = World.DefaultGameObjectInjectionWorld;
+            var em = world.EntityManager;
+            bool keyed = TryGraphKey(em, EntityOf(core), out int shipKey);
+            int loose = 0;
             var found = new List<(StructurePart part, float angle, float height)>();
             foreach (var part in Parts)
             {
                 if (part == null || part == core || !IsThrusterPart(part)) continue;
+                if (keyed && (!TryGraphKey(em, EntityOf(part), out int key) || key != shipKey))
+                {
+                    if ((part.transform.position - corePosition).sqrMagnitude <= 12f * 12f) loose++;
+                    continue;
+                }
                 if ((part.transform.position - corePosition).sqrMagnitude > 12f * 12f) continue;
                 var (radius, height, angle) = AroundCore(core, axis, part.transform.position);
                 if (radius < 1.5f || radius > 8f) continue;
@@ -351,13 +396,45 @@ namespace TheExpanse
                 clusters[0].AddRange(clusters[clusters.Count - 1]);
                 clusters.RemoveAt(clusters.Count - 1);
             }
-            Plugin.Log.LogInfo($"[Reactor] by shape: {found.Count} thruster part(s) on the ring in {clusters.Count} cluster(s) at " +
+            Plugin.Log.LogInfo($"[Reactor] by shape: {found.Count} thruster part(s) jointed to the ship on the ring" + (loose > 0 ? $" ({loose} loose near it left out)" : "") + $", in {clusters.Count} cluster(s) at " +
                                string.Join(" ", clusters.Select(c => $"{c.Average(x => x.angle):0}({c.Count})")));
-            if (clusters.Count != Count) return null;
-            var groups = new Dictionary<int, List<StructurePart>>();
-            for (int i = 0; i < clusters.Count; i++) groups[i] = clusters[i].Select(x => x.part).ToList();
-            return groups;
+            // The slots, always (even with eight clusters, a slot may hold only leftovers): the injectors sit
+            // every 45 degrees, so fit that lattice to the parts, and put each part within 12 degrees of a slot into it.
+            // A slot with too few parts is empty: its injector is taken off (filled in later, from a present one).
+            float best = 0f, bestScore = -1f;
+            for (float phase = 0f; phase < 45f; phase += 0.5f)
+            {
+                float score = 0f;
+                foreach (var f in found) { float d = Mathf.Abs(Mathf.DeltaAngle(f.angle, phase + Mathf.Round((f.angle - phase) / 45f) * 45f)); score += Mathf.Max(0f, 12f - d); }
+                if (score > bestScore) { bestScore = score; best = phase; }
+            }
+            var slots = new Dictionary<int, List<StructurePart>>();
+            for (int k = 0; k < Count; k++) slots[k] = new List<StructurePart>();
+            foreach (var f in found)
+            {
+                int k = ((int)Mathf.Round((f.angle - best) / 45f) % Count + Count) % Count;
+                if (Mathf.Abs(Mathf.DeltaAngle(f.angle, best + k * 45f)) <= 12f) slots[k].Add(f.part);
+            }
+            // A slot has its injector if its thruster body (the part the handle ejects: _Mid or _Rear) is jointed to the
+            // ship (all parts here are); the leftovers that stay jointed (nozzle stub, crossbeam, front) do not count. Ships whose parts are named
+            // otherwise: at least 60% of the fullest slot's parts.
+            bool Body(StructurePart p) => p.name.IndexOf("1Ax1Ax6_Mid", System.StringComparison.OrdinalIgnoreCase) >= 0
+                                       || p.name.IndexOf("1Ax1Ax6_Rear", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            bool byBody = slots.Values.Any(l => l.Any(Body));
+            int enough = Mathf.Max(3, Mathf.CeilToInt(slots.Values.Max(l => l.Count) * 0.6f));
+            bool Has(List<StructurePart> l) => byBody ? l.Any(Body) : l.Count >= enough;
+            int present = slots.Values.Count(Has);
+            Plugin.Log.LogInfo($"[Reactor] by shape: fitted the ring's slots at {best:0} + 45 n degrees; {present} injector(s) still there, " +
+                               $"{Count - present} already taken off (by {(byBody ? "the thruster body" : "part count")}; {string.Join(" ", slots.Select(kv => $"{best + kv.Key * 45f:0}({kv.Value.Count})"))}).");
+            if (present == 0) return null;
+            sSlotAngles = Enumerable.Range(0, Count).Select(k => best + k * 45f).ToArray();
+            foreach (var key in slots.Keys.ToList()) if (!Has(slots[key])) slots[key].Clear();
+            return slots;
         }
+
+        // The slot angles of a fitted ring (AroundCore's angles), for filling in injectors already taken off; null when
+        // all eight were found.
+        static float[]? sSlotAngles;
 
         static string Describe(StructurePart core, Vector3 corePosition, Vector3 axis)
         {
