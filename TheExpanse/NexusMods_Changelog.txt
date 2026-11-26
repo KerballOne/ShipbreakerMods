@@ -11,6 +11,8 @@ The Master Jack (the Hab) stays put and stops the ship like a wall; the Hab can 
 Light jacks no longer bounce off the hull and slow to a stop.
 The outside camera's pivot is right on resumed saves.
 The reactor game runs only on the Expanse reactor (no pulsing core in other ships' small reactors).
+The shutdown mode and order are picked anew for every ship spawned (they were the same every time) and kept when a save is reloaded, also after flying the ship.
+Reloading a save with injectors already taken off carries on where you left off: they count as taken off, and with all of them off the reactor is cold.
 Node Radiation slider in the options tab.
 New option: Setup Mode in the EXPANSE tab.
 

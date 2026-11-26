@@ -43,15 +43,46 @@ namespace TheExpanse
             for (int k = sOrder.Count - 1; k > 0; k--) { int r = random.Next(k + 1); (sOrder[k], sOrder[r]) = (sOrder[r], sOrder[k]); }
             sOrder.RemoveAll(i => !Connected(i));       // already out (a reloaded save)
             sPenalty = 0; MistakeInjector = -1; MistakeAt = -100f;
+            Plugin.Log.LogInfo($"[Reactor] shutdown seed {Seed}, from {SeedSource()}.");
             Plugin.Log.LogInfo($"[Reactor] shutdown mode: {CurrentMode}" + (CurrentMode == Mode.Balance || CurrentMode == Mode.Free ? "." : $"; order {string.Join(" ", sOrder)}.") +
                                (Plugin.ReactorModeMemorize.Value && !TerminalScreens.Available ? " (Memorize left out: no terminal screen found.)" : ""));
         }
 
-        // The ship's own random seed: the same ship (a reload) picks the same.
+        // The ship's own random seed: the game's seed for this ship (picked at random for every ship it generates and
+        // kept in the ship's save) with its generated name mixed in. A new spawn picks anew; the same ship (a reload,
+        // also after flying it somewhere else) picks the same. (From the core's name and place, every fresh spawn of a
+        // ship picked the same mode and order, and a ship flown and saved elsewhere picked anew.)
         internal static int SeedFor(StructurePart core)
         {
+            ShipPreview? preview = null;
+            try { preview = ModuleService.Instance?.CurrentShipPreview; } catch { }
+            preview ??= ShipSetup.Preview;
+            if (preview != null)
+            {
+                int name = StableHash(preview.ShipName ?? "");
+                return (preview.Seed * 31 ^ name) & 0x7fffffff;
+            }
             var p = core.transform.position;
-            return (core.name.GetHashCode() * 31 + Mathf.RoundToInt(p.x) * 73856093 ^ Mathf.RoundToInt(p.y) * 19349663 ^ Mathf.RoundToInt(p.z) * 83492791) & 0x7fffffff;
+            return (StableHash(core.name) * 31 + Mathf.RoundToInt(p.x) * 73856093 ^ Mathf.RoundToInt(p.y) * 19349663 ^ Mathf.RoundToInt(p.z) * 83492791) & 0x7fffffff;
+        }
+
+        // The same for the same text in every run (string.GetHashCode need not be)
+        static int StableHash(string text)
+        {
+            unchecked
+            {
+                uint h = 2166136261;
+                foreach (char c in text) { h ^= c; h *= 16777619; }
+                return (int)h;
+            }
+        }
+
+        static string SeedSource()
+        {
+            ShipPreview? preview = null;
+            try { preview = ModuleService.Instance?.CurrentShipPreview; } catch { }
+            preview ??= ShipSetup.Preview;
+            return preview != null ? $"the ship's seed {preview.Seed} and name '{preview.ShipName}'" : "the core's name and place (no ship preview)";
         }
 
         static int Wrap(int i) => ((i % Count) + Count) % Count;
