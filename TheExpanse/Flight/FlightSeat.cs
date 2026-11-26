@@ -193,6 +193,9 @@ namespace TheExpanse
         static void Stand(string why)
         {
             var chair = sSeat;
+            // the flight model first: leaving the controls parks the ship, which may move it (onto the parking sphere),
+            // and the player is stood up where the ship is after that (it was left 15 km behind the parked ship)
+            FlightModel.End();
             // where the seat is now: on the ship's frame if it has been flown (the chair itself may not have moved)
             // back where the player stood before sitting down (on the ship, wherever it has gone since)
             var outPosition = Vector3.zero; var outRotation = Quaternion.identity;
@@ -208,7 +211,6 @@ namespace TheExpanse
                 outPosition += outRotation * Vector3.forward * 0.6f;
             }
             sSeat = null;
-            FlightModel.End();
             FlightCamera.End();
             // the suit's actions and tool come back once the Interact button that stood the player up is let go: it is
             // also the grapple's push, and the held press fired it on the way out

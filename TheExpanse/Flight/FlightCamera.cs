@@ -92,6 +92,9 @@ namespace TheExpanse
 
         internal static string ViewName => !sActive ? "none" : sView == View.Outside ? "outside" : sView == View.Nose ? "nose" : "seat";
         internal static Vector3 CameraPosition => sPosition;
+        internal static Quaternion CameraRotation => sRotation;
+        // the outside or nose view (the camera moved off the pilot)
+        internal static bool OffSeat => sActive && sView != View.Seat && sFrame != null;
         static bool OutsideActive => sActive && sView != View.Seat && sFrame != null;
 
         // Diagnostic: the game's markers, what each tracks and whether it can be seen (its canvas groups' alpha).

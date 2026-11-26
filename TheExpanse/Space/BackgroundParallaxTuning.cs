@@ -128,6 +128,15 @@ namespace TheExpanse
             SunPin.ClearCache();
         }
 
+        // The view jumped (the parked ship placed on the parking sphere, or catching up): not a move toward or away from
+        // anything, so the pinned cards jump with it.
+        public static void Teleported(Vector3 delta)
+        {
+            OctanePin.Teleported(delta);
+            MoonPin.Teleported(delta);
+            SunPin.Teleported(delta);
+        }
+
         public static void Tick()
         {
             if (!SpaceLimits.PinningOn || Plugin.SpaceFlatEarthMode.Value)
@@ -197,6 +206,15 @@ namespace TheExpanse
             private float _originalPlanetDepth;
             private float _previousPlayerDepth;
             private bool _isPinned;
+
+            public void Teleported(Vector3 delta)
+            {
+                if (!_isPinned) return;
+                float d = Vector3.Dot(delta, _depthAxis);
+                _previousPlayerDepth += d;
+                _planetDepth += d;
+                _originalPlanetDepth += d;
+            }
 
             // Only used for debug logging - lets Reset() report how much the derived depth axis
             // drifted since the last rescan. If this is ever non-zero for SunCard (unlike
@@ -426,7 +444,13 @@ namespace TheExpanse
                 // player's depth passes the planet's.
                 float previousGap = Mathf.Abs(_planetDepth - _previousPlayerDepth);
                 float candidateGap = Mathf.Abs(_planetDepth - playerDepth);
-                bool isReceding = candidateGap > previousGap;
+                // Toward or away from the object by the SIGNED move along the axis (toward = the move points at the
+                // object's side as it was before this frame), not by whether the gap grew: a catch-up of several km in one
+                // frame jumped past the planet's depth, the gap then "grew", and the planet was left 12 km above instead of
+                // pushed on ahead below.
+                bool isReceding = playerDepthDelta * (_planetDepth - _previousPlayerDepth) < 0f || (candidateGap > previousGap && playerDepthDelta == 0f);
+                // [Space] FixedPlanets: kept at their distance both ways, like bodies far away
+                if (Plugin.SpaceFixedPlanets.Value) isReceding = false;
                 if (!isReceding)
                 {
                     _planetDepth += playerDepthDelta;

@@ -121,11 +121,13 @@ namespace TheExpanse
         internal static ConfigEntry<bool> FlightFreeJacks = null!;
         internal static ConfigEntry<float> FlightAboardPull = null!;
         internal static ConfigEntry<float> FlightStandHeight = null!;
+        internal static ConfigEntry<float> FlightParkingSphere = null!;
         internal static ConfigEntry<float> FlightMasterJackMass = null!;
         internal static ConfigEntry<float> FlightLightJackMass = null!;
         internal static ConfigEntry<bool> SpaceLimits = null!;
         internal static ConfigEntry<float> SpaceWorkAreaMultiplier = null!;
         internal static ConfigEntry<bool> SpaceFlatEarthMode = null!;
+        internal static ConfigEntry<bool> SpaceFixedPlanets = null!;
         internal static ConfigEntry<bool> SpaceAnglePinning = null!;
         internal static ConfigEntry<float> SpaceTriggerDistance = null!;
         internal static ConfigEntry<bool> SpaceDebugPrint = null!;
@@ -415,6 +417,11 @@ namespace TheExpanse
             FlightStandHeight = Config.Bind("Flight", "StandHeight", 1.6f,
                 "Out of the seat while the drive pulls you toward the stern: how high above the deck you are held, in meters, like " +
                 "standing in magnetic boots (your helmet's height).");
+            FlightParkingSphere = Config.Bind("Flight", "ParkingSphere", 30f,
+                "Out of the seat the ship parks where it is, but no farther than this many km from the middle of the game's " +
+                "world (by the bay): beyond about 32 km positions are only kept to 4 mm and things near your eye (the grapple " +
+                "gun) shake. Farther out it parks on this sphere in the direction it has flown, where nothing looks different. " +
+                "0 = always where it is.");
             FlightFreeJacks = Config.Bind("Flight", "FreeJacks", true,
                 "When the ship first moves under its own power, let go of the bay's jacks: they get a weight and are shoved out of " +
                 "the way by the hull instead of being passed through. They stay where they drift until the next level load.");
@@ -431,6 +438,10 @@ namespace TheExpanse
             SpaceWorkAreaMultiplier = Config.Bind("Space", "WorkAreaRadiusMultiplier", 0f,
                 "How far from the game's work areas things may go before the game warns, hurts or destroys: 1 is stock, 2 twice " +
                 "as far, 0 no limit at all.");
+            SpaceFixedPlanets = Config.Bind("Space", "FixedPlanets", true,
+                "Past TriggerDistance from the bay the planet, Moon and Sun keep their distance and direction from you whichever " +
+                "way you go, like bodies far away (they are cards a km or so off: flying away from them they shrank fast). Off: " +
+                "they keep their distance only while you head toward them and fall behind as you go away.");
             SpaceFlatEarthMode = Config.Bind("Space", "FlatEarthMode", false,
                 "Without NewtonianPhysics: the celestial bodies stay at a fixed offset from you once you are TriggerDistance from " +
                 "the bay, instead of drifting past as stock. On restores the stock behavior.");

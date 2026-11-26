@@ -30,6 +30,9 @@ namespace TheExpanse
         static RectTransform? sReadout, sDriveFill, sRcsFill, sPrompt;
         static TextMeshProUGUI? sDriveText, sDrivePercent, sRcsText, sRcsPercent, sSpeedText, sTurnText, sAccelText, sAutoText, sPromptText, sPromptKey;
         static RectTransform? sBubble, sPrograde, sRetrograde;
+        static RectTransform? sHome, sHomeArrow;
+        static TextMeshProUGUI? sHomeText;
+        static readonly Color HomeColor = new Color(1f, 0.8f, 0.35f, 0.55f);
         static readonly Dictionary<string, Texture2D> sMarkers = new Dictionary<string, Texture2D>();
         const float BubbleSize = 46f, MarkerSize = 18f;
         static Image? sPromptIcon;
@@ -46,6 +49,8 @@ namespace TheExpanse
             sReadout = sDriveFill = sRcsFill = sPrompt = null;
             sDriveText = sDrivePercent = sRcsText = sRcsPercent = sSpeedText = sTurnText = sAccelText = sAutoText = sPromptText = sPromptKey = null;
             sBubble = sPrograde = sRetrograde = null;
+            sHome = sHomeArrow = null;
+            sHomeText = null;
             sPromptIcon = null;
         }
 
@@ -83,6 +88,7 @@ namespace TheExpanse
             sSpeedText!.text = $"{FlightModel.Speed:0.0} m/s";
             sAccelText!.text = $"{FlightModel.FeltAcceleration:0.00} m/s²  {FlightModel.FeltG:0.00} g";
             ShowBubble();
+            ShowHome();
             string auto = FlightModel.AutoStatus;
             sAutoText!.gameObject.SetActive(auto.Length > 0);
             if (auto.Length > 0)
@@ -187,6 +193,17 @@ namespace TheExpanse
                               new Vector2(420f, 34f), 26f, TextAlignmentOptions.Top, Amber);
             foreach (var top in new[] { sSpeedText, sTurnText, sAccelText }) top.fontStyle = FontStyles.Bold;
             sBubble = Bubble(sReadout, new Vector2(140f, -Edge - 3f));
+            // the Hab marker (outside and nose views): a home icon with the distance, over the Hab or on the screen's edge
+            var home = new GameObject("Home", typeof(RectTransform));
+            home.transform.SetParent(sReadout, false);
+            sHome = (RectTransform)home.transform;
+            sHome.anchorMin = sHome.anchorMax = sHome.pivot = new Vector2(0.5f, 0.5f);
+            sHome.sizeDelta = new Vector2(34f, 34f);
+            Marker(sHome, "home", 34f, HomeColor, Vector2.zero);
+            sHomeArrow = Marker(sHome, "arrow", 16f, HomeColor, Vector2.zero);
+            sHomeText = Text("HomeDistance", sHome, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -2f),
+                             new Vector2(160f, 22f), 16f, TextAlignmentOptions.Top, HomeColor);
+            sHomeText.fontStyle = FontStyles.Bold;
             // bottom middle: flip and burn
             sAutoText = Text("Auto", sReadout, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, Edge),
                              new Vector2(900f, 30f), 18f, TextAlignmentOptions.Bottom, Amber);
@@ -233,6 +250,50 @@ namespace TheExpanse
             var across = new Vector2(dir.x, dir.y);
             var place = across.sqrMagnitude > 1e-8f ? across.normalized * (off / 90f) * (BubbleSize * 0.5f - 2f) : Vector2.zero;
             (ahead ? sPrograde : sRetrograde)!.anchoredPosition = place;
+        }
+
+        // The Hab, seen from the outside (or nose) camera: a semi-transparent home icon with the distance from the ship,
+        // over the Hab when it is in view; otherwise on the screen's edge in its direction, with an arrow pointing out.
+        const float HomeMargin = 70f;
+
+        static void ShowHome()
+        {
+            var hab = FlightCamera.OffSeat ? SuitAccelReadout.FindHab() : null;
+            var camera = Camera.main;
+            sHome!.gameObject.SetActive(hab != null && camera != null);
+            if (hab == null || camera == null) return;
+            var size = ((RectTransform)sCanvas!.transform).rect.size;
+            float half = size.y * 0.5f;
+            var local = Quaternion.Inverse(FlightCamera.CameraRotation) * (hab.position - FlightCamera.CameraPosition);
+            float tanV = Mathf.Tan(camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            float hw = size.x * 0.5f - HomeMargin, hh = half - HomeMargin;
+            Vector2 place;
+            bool onScreen = false;
+            Vector2 direction;
+            if (local.z > 0.01f)
+            {
+                place = new Vector2(local.x / local.z, local.y / local.z) / tanV * half;
+                onScreen = Mathf.Abs(place.x) <= hw && Mathf.Abs(place.y) <= hh;
+                direction = place;
+            }
+            else
+            {
+                place = Vector2.zero;
+                direction = new Vector2(local.x, local.y);
+                if (direction.sqrMagnitude < 1e-6f) direction = Vector2.down;
+            }
+            if (!onScreen)
+            {
+                var d = direction.normalized;
+                float t = Mathf.Min(Mathf.Abs(d.x) > 1e-4f ? hw / Mathf.Abs(d.x) : float.MaxValue, Mathf.Abs(d.y) > 1e-4f ? hh / Mathf.Abs(d.y) : float.MaxValue);
+                place = d * t;
+                sHomeArrow!.anchoredPosition = d * 30f;
+                sHomeArrow.localRotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg - 90f);
+            }
+            sHomeArrow!.gameObject.SetActive(!onScreen);
+            sHome.anchoredPosition = place;
+            float distance = Vector3.Distance(FlightModel.ShipPosition, hab.position);
+            sHomeText!.text = distance < 1000f ? $"{distance:0} m" : $"{distance / 1000f:0.0} km";
         }
 
         static RectTransform Bubble(RectTransform parent, Vector2 position)
@@ -295,6 +356,16 @@ namespace TheExpanse
                             a = Line(r - 0.5f, 0.1f);
                             if (Abs(u) < 0.08f && v > 0.5f) a = Mathf.Max(a, Line(u, 0.08f));          // tick up
                             if (Abs(v) < 0.08f && Abs(u) > 0.5f) a = Mathf.Max(a, Line(v, 0.08f));     // ticks left and right
+                            break;
+                        case "home":        // a house: a roof over a square body, a door cut out
+                        {
+                            bool body = Abs(u) < 0.55f && v > -0.8f && v < 0.15f && !(Abs(u) < 0.15f && v < -0.35f);
+                            bool roof = v >= 0.05f && v < 0.85f && Abs(u) < (0.85f - v) * 1.15f;
+                            a = body || roof ? 1f : 0f;
+                            break;
+                        }
+                        case "arrow":       // a triangle pointing up
+                            a = v > -0.6f && v < 0.8f && Abs(u) < (0.8f - v) * 0.55f ? 1f : 0f;
                             break;
                         case "retrograde":
                             a = Line(r - 0.5f, 0.1f);

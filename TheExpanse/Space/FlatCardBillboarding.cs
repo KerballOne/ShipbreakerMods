@@ -84,6 +84,17 @@ namespace TheExpanse
         private static RotationPin[]? _salvageStationPins;
         private static DistancePin[]? _salvageStationDistancePins;
 
+        // The view jumped (see BackgroundParallaxTuning.Teleported): the distance-pinned cards jump with it.
+        public static void Teleported(Vector3 delta)
+        {
+            GateCardDistancePin.Teleported(delta);
+            QuadDistancePin.Teleported(delta);
+            Quad1DistancePin.Teleported(delta);
+            Quad2DistancePin.Teleported(delta);
+            if (_salvageStationDistancePins != null) foreach (var pin in _salvageStationDistancePins) pin.Teleported(delta);
+            if (_waystationDistancePins != null) foreach (var pin in _waystationDistancePins) pin.Teleported(delta);
+        }
+
         // Same bulk-scan/independent-pin treatment as VillageSalvageStation - see the class-level
         // comment above for why VillageWaystation needs this despite not always LOOKING flat in
         // its world-space bounds.
@@ -409,6 +420,15 @@ namespace TheExpanse
             private bool _isPinned;
             private float _nextThrottledLogTime;
 
+            public void Teleported(Vector3 delta)
+            {
+                if (!_isPinned) return;
+                float d = Vector3.Dot(delta, _depthAxis);
+                _previousPlayerDepth += d;
+                _objectDepth += d;
+                _originalObjectDepth += d;
+            }
+
             public void ClearCache()
             {
                 if (_cardObjectName != null)
@@ -507,7 +527,11 @@ namespace TheExpanse
 
                 float previousGap = Mathf.Abs(_objectDepth - _previousPlayerDepth);
                 float candidateGap = Mathf.Abs(_objectDepth - playerDepth);
-                bool isReceding = candidateGap > previousGap;
+                // Toward or away from the object by the SIGNED move along the axis (toward = the move points at the
+                // object's side as it was before this frame), not by whether the gap grew: a catch-up of several km in one
+                // frame jumped past the planet's depth, the gap then "grew", and the planet was left 12 km above instead of
+                // pushed on ahead below.
+                bool isReceding = playerDepthDelta * (_objectDepth - _previousPlayerDepth) < 0f || (candidateGap > previousGap && playerDepthDelta == 0f);
                 if (!isReceding)
                 {
                     _objectDepth += playerDepthDelta;

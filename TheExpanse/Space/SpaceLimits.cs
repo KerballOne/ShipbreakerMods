@@ -95,13 +95,28 @@ namespace TheExpanse
             if (camera != null && camera.farClipPlane != FarClipPlaneMeters) camera.farClipPlane = FarClipPlaneMeters;
         }
 
-        // Every frame, after the camera has moved (LateUpdate).
+        // The background is placed just before each frame is drawn: by then the game's camera (Cinemachine, late in the
+        // frame) has been put where it is drawn from. Placed earlier in the frame it was a frame behind the camera, and on
+        // foot the planets and sky cards shook slowly against the ship.
+        static bool sHooked;
+
         internal static void LateTick()
         {
-            if (!PinningOn) return;
-            BackgroundParallaxTuning.Tick();
-            PlanetGlowFadeTuning.Tick();
-            FlatCardBillboarding.Tick();
+            if (sHooked) return;
+            sHooked = true;
+            Application.onBeforeRender += PlaceBackground;
+        }
+
+        static void PlaceBackground()
+        {
+            try
+            {
+                if (!PinningOn) return;
+                BackgroundParallaxTuning.Tick();
+                PlanetGlowFadeTuning.Tick();
+                FlatCardBillboarding.Tick();
+            }
+            catch (System.Exception ex) { Plugin.Log.LogError("[Space] " + ex); }
         }
 
         // The space dust: the game's drifting specks and speed streaks around the player (StreamFXControllerLynx, driving

@@ -235,12 +235,30 @@ namespace TheExpanse
             return true;
         }
 
+        // The view jumped (parking on the sphere, catching up): not a move toward or away from anything, so the cards that
+        // follow the view jump with it.
+        static void BackgroundJumped(Vector3 delta)
+        {
+            if (!SpaceLimits.PinningOn) return;
+            BackgroundParallaxTuning.Teleported(delta);
+            FlatCardBillboarding.Teleported(delta);
+        }
+
         static void Park()
         {
             if (!sMoving || sParked) return;
-            bool here = InsidePhysics(sPivot, ShipRotation) || MoveBoundsTo(sPivot, ShipRotation);
-            sParkPivot = here ? sPivot : sStartPivot;
-            sParkRotation = here ? ShipRotation : sStartRotation;
+            // The parking sphere: parked where it is, but no farther than [Flight] ParkingSphere km from the world's origin
+            // (positions are kept to 2 mm inside 32.8 km, 4 mm beyond, and the gun near the eye shook from about 32 km).
+            // Beyond it, on the sphere in the direction the ship has gone: the bay is too small to see from there either
+            // way, and the background moves with the jump. The true position stays with the flight model.
+            var target = sPivot;
+            float radius = Plugin.FlightParkingSphere.Value * 1000f;
+            if (radius > 0f && sPivot.magnitude > radius) target = sPivot.normalized * radius;
+            bool inside = InsidePhysics(target, ShipRotation) || MoveBoundsTo(target, ShipRotation);
+            sParkPivot = inside ? target : sStartPivot;
+            sParkRotation = inside ? ShipRotation : sStartRotation;
+            bool here = sParkPivot == sPivot && sParkRotation == ShipRotation;
+            if (!here) BackgroundJumped(sParkPivot - sPivot);
             var turn = sParkRotation * Quaternion.Inverse(ShipRotation);
             int freed = 0;
             // free things aboard lose the ship's motion; the loose things are let go to the game's own physics; all of it
@@ -283,6 +301,7 @@ namespace TheExpanse
             if (player != null && Aboard(player.position)) player.velocity -= MovingPointVelocity(player.position);
             sParked = true;
             sGentleUntil = Time.time + GentleSeconds;
+            FrameProbe.Arm();
             GuardDamage();
             Solid(null, false);
             NoDragAboard.RestoreAll();
@@ -291,7 +310,7 @@ namespace TheExpanse
             foreach (var rider in sRiders)
                 if (rider.Body == null && rider.Transform != null)
                     rider.Transform.SetPositionAndRotation(sParkPivot + sParkRotation * rider.Position, sParkRotation * rider.Rotation);
-            Plugin.Log.LogInfo($"[Flight] parked {(here ? "where it is" : $"back where the flight started ({(sPivot - sParkPivot).magnitude:0} m away; out here nothing would collide)")} " +
+            Plugin.Log.LogInfo($"[Flight] parked {(here ? "where it is" : inside ? $"on the parking sphere, {sParkPivot.magnitude / 1000f:0.0} km out ({(sPivot - sParkPivot).magnitude / 1000f:0.0} km in from where the flight has it)" : $"back where the flight started ({(sPivot - sParkPivot).magnitude:0} m away)")} " +
                                $"while you are out of the seat ({freed} loose thing(s) let go); the flight goes on at {Speed:0.0} m/s and it catches up when you sit down.");
         }
 
@@ -299,6 +318,7 @@ namespace TheExpanse
         {
             if (!sParked) return;
             sParked = false;
+            if (sParkPivot != sPivot) BackgroundJumped(sPivot - sParkPivot);
             GuardDamage();
             EndGentle();
             BoundsBack();
@@ -1098,6 +1118,7 @@ namespace TheExpanse
                 foreach (var body in sInterpolated) if (body != null) body.interpolation = RigidbodyInterpolation.Interpolate;
             }
             sStepsThisFrame++;
+            FrameProbe.Steps++;
             ScanLooseAboard();
             if (!sFlying && !sParked && Throttle <= 0f && Speed < 0.01f && sSpin.magnitude < 1e-4f) { Release(); Plugin.Log.LogInfo("[Flight] the ship has come to rest."); return; }
             float dt = Time.fixedDeltaTime;
@@ -1307,6 +1328,9 @@ namespace TheExpanse
         static void ParkedFall(Vector3 accel, float dt)
         {
             if (sGentle.Count > 0 && Time.time >= sGentleUntil) EndGentle();
+            // no pull while they are let go gently: they may then only ease out of a deck at 0.3 m/s, and at full thrust
+            // the pull pressed them into it faster than that, through it
+            if (sGentle.Count > 0) return;
             var pull = AboardPullFrom(accel);
             if (pull.sqrMagnitude < 1e-6f) return;
             var down = pull.normalized;

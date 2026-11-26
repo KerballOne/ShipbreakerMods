@@ -65,7 +65,7 @@ namespace TheExpanse
         }
 
         // The Hab's entry (what the game's own Hab marker tracks), looked up by name now and then until found.
-        static Transform? FindHab()
+        internal static Transform? FindHab()
         {
             if (sHab != null) return sHab;
             if (Time.unscaledTime < sNextHabLook) return null;
@@ -94,18 +94,18 @@ namespace TheExpanse
             var canvas = sSpeed.canvas != null ? sSpeed.canvas.rootCanvas : null;
             if (canvas == null) return false;
             if (sPanel != null) Object.Destroy(sPanel.gameObject);
-            // their own small block at the right edge of the suit HUD, halfway up: next to the speed readout they got
-            // clipped by its panel and crossed its gauge lines
+            // their own small block in the top left corner of the suit HUD (next to the speed readout they got clipped by
+            // its panel and crossed its gauge lines)
             var go = new GameObject("TheExpanse_SuitShipPanel", typeof(RectTransform));
             go.transform.SetParent(canvas.transform, false);
             sPanel = (RectTransform)go.transform;
-            sPanel.anchorMin = sPanel.anchorMax = sPanel.pivot = new Vector2(1f, 0.5f);
-            sPanel.anchoredPosition = new Vector2(-40f, 80f);
+            sPanel.anchorMin = sPanel.anchorMax = sPanel.pivot = new Vector2(0f, 1f);
+            sPanel.anchoredPosition = new Vector2(40f, -40f);
             sPanel.sizeDelta = new Vector2(400f, 100f);
             sHabText = Copy("TheExpanse_SuitHab", from, 0f, 0.7f);
             sShipText = Copy("TheExpanse_SuitShipSpeed", from, -24f, 1f);
             sText = Copy("TheExpanse_SuitAccel", from, -54f, 0.7f);
-            Plugin.Log.LogInfo($"[Flight] ship speed, acceleration and Hab distance placed at the right edge of the suit HUD ('{canvas.name}', font from '{sSpeed.name}' {sSpeed.fontSize:0} pt).");
+            Plugin.Log.LogInfo($"[Flight] ship speed, acceleration and Hab distance placed in the top left corner of the suit HUD ('{canvas.name}', font from '{sSpeed.name}' {sSpeed.fontSize:0} pt).");
             return true;
         }
 
@@ -121,11 +121,11 @@ namespace TheExpanse
                     Object.Destroy(component);
             copy.AddComponent<LayoutElement>().ignoreLayout = true;
             var rect = (RectTransform)copy.transform;
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
             rect.sizeDelta = new Vector2(400f, 30f);
             rect.anchoredPosition = new Vector2(0f, y);
             var text = copy.GetComponent<TextMeshProUGUI>();
-            text.alignment = TextAlignmentOptions.TopRight;
+            text.alignment = TextAlignmentOptions.TopLeft;
             text.fontSize = sSpeed!.fontSize * scale;
             text.enableAutoSizing = false;
             text.enableWordWrapping = false;
