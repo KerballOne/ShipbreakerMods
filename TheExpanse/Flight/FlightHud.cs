@@ -193,13 +193,14 @@ namespace TheExpanse
                               new Vector2(420f, 34f), 26f, TextAlignmentOptions.Top, Amber);
             foreach (var top in new[] { sSpeedText, sTurnText, sAccelText }) top.fontStyle = FontStyles.Bold;
             sBubble = Bubble(sReadout, new Vector2(140f, -Edge - 3f));
-            // the Hab marker (outside and nose views): a home icon with the distance, over the Hab or on the screen's edge
+            // the bay marker (outside and nose views): a thin hexagon outline with the distance, over the bay or on the
+            // screen's edge
             var home = new GameObject("Home", typeof(RectTransform));
             home.transform.SetParent(sReadout, false);
             sHome = (RectTransform)home.transform;
             sHome.anchorMin = sHome.anchorMax = sHome.pivot = new Vector2(0.5f, 0.5f);
             sHome.sizeDelta = new Vector2(34f, 34f);
-            Marker(sHome, "home", 34f, HomeColor, Vector2.zero);
+            Marker(sHome, "hex", 34f, HomeColor, Vector2.zero);
             sHomeArrow = Marker(sHome, "arrow", 16f, HomeColor, Vector2.zero);
             sHomeText = Text("HomeDistance", sHome, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -2f),
                              new Vector2(160f, 22f), 16f, TextAlignmentOptions.Top, HomeColor);
@@ -252,13 +253,25 @@ namespace TheExpanse
             (ahead ? sPrograde : sRetrograde)!.anchoredPosition = place;
         }
 
-        // The Hab, seen from the outside (or nose) camera: a semi-transparent home icon with the distance from the ship,
-        // over the Hab when it is in view; otherwise on the screen's edge in its direction, with an arrow pointing out.
+        // The work bay, seen from the outside (or nose) camera: a thin, semi-transparent hexagon outline with the distance
+        // from the ship, over the bay when it is in view; otherwise on the screen's edge in its direction, with an arrow
+        // pointing out. (The Hab can be pushed far from the bay; the bay stays put.)
+        static Transform? sBay;
+        static float sNextBayLook;
+
+        static Transform? FindBay()
+        {
+            if (sBay != null) return sBay;
+            if (Time.unscaledTime < sNextBayLook) return null;
+            sNextBayLook = Time.unscaledTime + 5f;
+            sBay = SceneLookup.Root(BackgroundConstants.BayRootObjectName);
+            return sBay;
+        }
         const float HomeMargin = 70f;
 
         static void ShowHome()
         {
-            var hab = FlightCamera.OffSeat ? SuitAccelReadout.FindHab() : null;
+            var hab = FlightCamera.OffSeat ? FindBay() : null;
             var camera = Camera.main;
             sHome!.gameObject.SetActive(hab != null && camera != null);
             if (hab == null || camera == null) return;
@@ -357,6 +370,13 @@ namespace TheExpanse
                             if (Abs(u) < 0.08f && v > 0.5f) a = Mathf.Max(a, Line(u, 0.08f));          // tick up
                             if (Abs(v) < 0.08f && Abs(u) > 0.5f) a = Mathf.Max(a, Line(v, 0.08f));     // ticks left and right
                             break;
+                        case "hex":         // a thin hollow hexagon (flat top)
+                        {
+                            float qx = Abs(u), qy = Abs(v);
+                            float d = Mathf.Max(qx * 0.866f + qy * 0.5f, qy) - 0.8f;
+                            a = Line(d, 0.06f);
+                            break;
+                        }
                         case "home":        // a house: a roof over a square body, a door cut out
                         {
                             bool body = Abs(u) < 0.55f && v > -0.8f && v < 0.15f && !(Abs(u) < 0.15f && v < -0.35f);

@@ -52,6 +52,9 @@ namespace TheExpanse
         internal static bool Seated => sSeat != null;
         internal static Transform? Seat => sSeat;
 
+        // Every command chair found (the flight model carries the ones not on a body of the ship along with it).
+        internal static IEnumerable<Transform> Chairs => sChairs;
+
         static bool Allowed => Plugin.Enabled.Value && Plugin.FlightControl.Value && PartSeparation.CustomShip;
 
         internal static void Reset()
@@ -117,6 +120,7 @@ namespace TheExpanse
 
             FindChairs();
             sNearest = NearestChair(sBody!.position, Mathf.Max(0.5f, Plugin.FlightSitDistance.Value));
+            LogNearChairs(sBody.position);
             if (sNearest != null && controls.GetInputWasPressed(GameplayActions.GameplayActionSet.Interact)) Sit(sNearest);
         }
 
@@ -278,6 +282,29 @@ namespace TheExpanse
                 sChairsLogged = true;
                 Plugin.Log.LogInfo($"[Flight] {sChairs.Count} command chair(s): " + string.Join("; ", sChairs.ConvertAll(c => $"{Path(c)} at {c.position}")));
             }
+        }
+
+        // Diagnostic (no sit prompt at the Command Deck chairs): every 2 s, the chairs within 6 m of the suit: the distance to
+        // each one's seat point and to the chair itself, and whether it is close enough to sit.
+        static float sNextChairLog;
+
+        static void LogNearChairs(Vector3 from)
+        {
+            if (Time.unscaledTime < sNextChairLog) return;
+            sNextChairLog = Time.unscaledTime + 2f;
+            var lines = new List<string>();
+            foreach (var chair in sChairs)
+            {
+                if (chair == null) continue;
+                float toChair = Vector3.Distance(from, chair.position);
+                if (toChair > 6f) continue;
+                SeatPose(chair, out var seat, out _);
+                float toSeat = Vector3.Distance(from, seat);
+                lines.Add($"'{Path(chair)}' seat {toSeat:0.00} m, chair {toChair:0.00} m{(chair.gameObject.activeInHierarchy ? "" : " INACTIVE")}" +
+                          $"{(toSeat <= Plugin.FlightSitDistance.Value ? " (in reach)" : "")}, scale {chair.lossyScale.x:0.##}");
+            }
+            if (lines.Count > 0)
+                Plugin.Log.LogInfo($"[Flight] chairs near the suit (allowed {Allowed}, prompt {(sNearest != null ? Path(sNearest) : "none")}): " + string.Join("; ", lines));
         }
 
         static Transform? NearestChair(Vector3 from, float within)

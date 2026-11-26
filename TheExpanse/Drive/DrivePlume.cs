@@ -497,6 +497,7 @@ namespace TheExpanse
             float r0 = 1f / spread;                          // mouth radius, as a share of the half-width
             float halfWidth = mouth * spread * 0.5f;         // m
             float billow = Mathf.Max(0.3f, mouth * 0.6f);    // size of a billow, m
+            float fullLength = Mathf.Max(1f, Plugin.PlumeLength.Value);
             float coreDiameter = Mathf.Clamp(Plugin.PlumeCoreDiameter.Value, 0.1f, mouth);
             float diamondGap = Mathf.Max(0.01f, 2.2f * coreDiameter / length);
             float sheathGain = Mathf.Max(0f, Plugin.PlumeSheath.Value);
@@ -507,18 +508,26 @@ namespace TheExpanse
             {
                 float v = j / (float)(TexAlong - 1);
                 float meters = v * length;
-                float radius = r0 + (1f - r0) * Mathf.Sqrt(v);           // the sheath widens quickly, then less
+                // The sheath's shape is set along the FULL-throttle plume (`full`, 0 at the bell, 1 at the full plume's tip):
+                // it fans out of the bell, rounds over smoothly and tapers to a sharp point. A lower throttle draws only
+                // the start of that shape and fades out at its own end (`tip` below), so it fans out and is gone before
+                // any taper shows.
+                float full = meters / fullLength;
+                float fan = 1f - Mathf.Exp(-full * 7f);                                   // out of the bell, easing off
+                float taper = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.15f, 1f, full));
+                float radius = r0 + (1f - r0) * fan * 0.95f;
+                radius = Mathf.Lerp(0.02f, radius, Mathf.Pow(taper, 0.85f));
                 // core: its own width in meters (as a share of the half-width), thinning a little downstream
-                float coreRadius = coreDiameter * 0.5f / halfWidth * (1f - 0.4f * v);
+                float coreRadius = coreDiameter * 0.5f / halfWidth * (1f - 0.8f * Mathf.Min(1f, v * 2.5f));
                 float sheathFall = Mathf.Exp(-v * 2.2f);
-                float coreFall = Mathf.Exp(-v * 2.5f);
+                float coreFall = Mathf.Exp(-v * 6f);            // the white-hot core: short
                 float tip = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.6f, 1f, v));
                 float diamond = 0f;
                 for (int k = 0; k < diamonds; k++)
                 {
                     float at = diamondGap * (k + 0.6f);
                     float d = (v - at) / (diamondGap * 0.18f);
-                    diamond += Mathf.Exp(-d * d) * Mathf.Exp(-k * 0.35f);
+                    diamond += Mathf.Exp(-d * d) * Mathf.Exp(-k * 0.35f) * Mathf.Exp(-at * 5f);
                 }
                 // billows stretched along the flow (they streak at speed); the pattern also churns slowly as it goes
                 float ny = (meters - t * flow) / (billow * BillowStretch);

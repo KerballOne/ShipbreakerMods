@@ -304,7 +304,9 @@ namespace TheExpanse
             {
                 var f = feeds[i];
                 var flame = sFlares[i];
-                bool show = !f.Connected && connected > 0 && fade > 0.05f && sFirePrefab != null;
+                // not while the ship is under way: the game's fire leaves its flames behind in the world (stray flames)
+                bool moving = FlightModel.UnderWay && !FlightModel.Parked && FlightModel.Speed > 1f;
+                bool show = !f.Connected && connected > 0 && fade > 0.05f && sFirePrefab != null && !moving;
                 if (!show) { if (flame != null && flame.activeSelf) flame.SetActive(false); continue; }
                 var toward = f.LocalSlot - localCenter;
                 float reach = 0.5f * toward.magnitude * size;

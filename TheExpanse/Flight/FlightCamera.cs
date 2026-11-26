@@ -356,6 +356,10 @@ namespace TheExpanse
             var center = any ? bounds.center : chair.position;
             var forward = DrivePlume.TryDriveAxis(out var exhaust) ? -exhaust : chair.forward;
             var up = Vector3.ProjectOnPlane(chair.up, forward);
+            // the chair's up runs along the ship here, so up came from the world's up: right only while the ship is as it
+            // was in the bay. Once it has flown (and maybe rolled), the ship's own frame says where its dorsal side is.
+            var shipFrame = FlightModel.Frame;
+            if (shipFrame != null) up = Vector3.ProjectOnPlane(shipFrame.up, forward);
             if (up.sqrMagnitude < 1e-4f) up = Vector3.ProjectOnPlane(Vector3.up, forward);
             sShipLength = any ? Mathf.Max(10f, Mathf.Abs(Vector3.Dot(bounds.size, new Vector3(Mathf.Abs(forward.x), Mathf.Abs(forward.y), Mathf.Abs(forward.z))))) : 60f;
 

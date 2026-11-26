@@ -1478,16 +1478,27 @@ namespace TheExpanse
 
         // The top object the chair sits under, if no carried body is above the chair: everything under it that is
         // not a body of its own goes with the ship by its transform.
+        // The chair sat in and every other command chair: each one's top object rides along. Only the first chair's deck
+        // used to: the other decks' chair points stayed in the bay, and out there their sit prompt never came up.
         static void CollectRiders(Transform chair)
         {
             sRiders.Clear();
             var carried = new HashSet<Rigidbody>();
             foreach (var c in sBodies) if (c.Body != null) carried.Add(c.Body);
+            var roots = new HashSet<Transform>();
+            CollectRider(chair, carried, roots);
+            foreach (var other in FlightSeat.Chairs)
+                if (other != null && other != chair) CollectRider(other, carried, roots);
+        }
+
+        static void CollectRider(Transform chair, HashSet<Rigidbody> carried, HashSet<Transform> roots)
+        {
+            if (roots.Contains(chair.root)) return;
             var above = chair.GetComponentInParent<Rigidbody>();
             var root = chair.root;
             if (above != null && carried.Contains(above))
             {
-                Plugin.Log.LogInfo($"[Flight] the chair rides on '{above.name}', a carried body.");
+                Plugin.Log.LogInfo($"[Flight] chair '{chair.parent?.name}/{chair.name}' rides on '{above.name}', a carried body.");
                 return;
             }
             if (root.GetComponent<Rigidbody>() != null)
@@ -1502,6 +1513,7 @@ namespace TheExpanse
                                           "not moved by transform (the chairs and fittings stay behind).");
                     return;
                 }
+            if (!roots.Add(root)) return;
             var inverse = Quaternion.Inverse(ShipRotation);
             sRiders.Add(new Carried { Transform = root, Position = inverse * (root.position - sPivot), Rotation = inverse * root.rotation });
             int bodies = root.GetComponentsInChildren<Rigidbody>(true).Length;
