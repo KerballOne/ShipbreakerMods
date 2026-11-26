@@ -301,7 +301,6 @@ namespace TheExpanse
             if (player != null && Aboard(player.position)) player.velocity -= MovingPointVelocity(player.position);
             sParked = true;
             sGentleUntil = Time.time + GentleSeconds;
-            FrameProbe.Arm();
             GuardDamage();
             Solid(null, false);
             NoDragAboard.RestoreAll();
@@ -389,6 +388,7 @@ namespace TheExpanse
             NoDragAboard.RestoreAll();
             sMoving = false;
             sParked = false;
+            sLooseColliders.Clear();
             EndGentle();
             BoundsBack();
             sCarriedSet = null;
@@ -546,6 +546,7 @@ namespace TheExpanse
         }
 
         static readonly RaycastHit[] sLandingHits = new RaycastHit[16];
+        static readonly Dictionary<Rigidbody, Collider[]> sLooseColliders = new Dictionary<Rigidbody, Collider[]>();
 
         // The game caps the speed of some things (a RigidbodyController: 20 m/s) against the bay: aboard a ship under way
         // that held them back and the ship left them behind, falling through the decks. The cap is applied against the
@@ -576,7 +577,9 @@ namespace TheExpanse
             result = default;
             var bounds = new Bounds(body.worldCenterOfMass, Vector3.zero);
             bool any = false;
-            foreach (var collider in body.GetComponentsInChildren<Collider>())
+            if (!sLooseColliders.TryGetValue(body, out var colliders))
+                sLooseColliders[body] = colliders = body.GetComponentsInChildren<Collider>();
+            foreach (var collider in colliders)
             {
                 if (collider == null || !collider.enabled || collider.isTrigger || collider.attachedRigidbody != body) continue;
                 if (!any) { bounds = collider.bounds; any = true; } else bounds.Encapsulate(collider.bounds);
@@ -720,12 +723,14 @@ namespace TheExpanse
         // Loose things aboard fall toward the stern while the drive burns and reach the deck fast; checked once a step
         // they can pass right through a thin plate. While the ship is under way they are checked continuously (the
         // speculative kind, the cheapest), and put back as they were when it stops.
-        const float CollisionScanSeconds = 2f;
+        const float CollisionScanSeconds = 10f;     // pieces split off are taken on at once (TakeOn)
         static readonly Dictionary<Rigidbody, CollisionDetectionMode> sModes = new Dictionary<Rigidbody, CollisionDetectionMode>();
         static float sNextCollisionScan;
 
         static void ScanLooseAboard()
         {
+            // parked, the ship is still: nothing to switch, the effects aboard drawn again
+            if (sParked) { ShowGraphs(); return; }
             if (Time.time < sNextCollisionScan) return;
             sNextCollisionScan = Time.time + CollisionScanSeconds;
             int added = 0;
@@ -961,7 +966,12 @@ namespace TheExpanse
 
         internal static void SampleFrame()
         {
-            if (sStepSeenThisFrame) { sPhysicsWatch.Stop(); sPhysicsMs += sPhysicsWatch.Elapsed.TotalMilliseconds; sStepSeenThisFrame = false; }
+            if (sStepSeenThisFrame)
+            {
+                sPhysicsWatch.Stop();
+                sPhysicsMs += sPhysicsWatch.Elapsed.TotalMilliseconds;
+                sStepSeenThisFrame = false;
+            }
             sPhysicsFrames++;
             if (!sMoving) { sFrames.Clear(); sNextPerfLog = 0f; return; }
             float now = Time.unscaledTime;
@@ -1118,7 +1128,6 @@ namespace TheExpanse
                 foreach (var body in sInterpolated) if (body != null) body.interpolation = RigidbodyInterpolation.Interpolate;
             }
             sStepsThisFrame++;
-            FrameProbe.Steps++;
             ScanLooseAboard();
             if (!sFlying && !sParked && Throttle <= 0f && Speed < 0.01f && sSpin.magnitude < 1e-4f) { Release(); Plugin.Log.LogInfo("[Flight] the ship has come to rest."); return; }
             float dt = Time.fixedDeltaTime;
