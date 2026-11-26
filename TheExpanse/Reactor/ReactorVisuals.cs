@@ -248,7 +248,7 @@ namespace TheExpanse
             // The ball: the game's fire and glow at BallSize times the pulse; the stand-in until it loads.
             // The game's effects leave their particles in world space: with the ship under way they stream out behind it,
             // through the hull. While it moves, the plain glowing stand-in is shown instead.
-            bool underWay = FlightModel.UnderWay && FlightModel.Speed > MovingSpeed;
+            bool underWay = FlightModel.UnderWay && !FlightModel.Parked && FlightModel.Speed > MovingSpeed;
             bool ballReady = sBallFx.Shown != null && !underWay;
             Place(sBallFx, fade > 0.001f && !underWay, Vector3.one * ballScale);
             Place(sCoreFx, fade > 0.001f && !underWay, Vector3.one * ballScale);

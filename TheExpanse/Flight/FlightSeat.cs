@@ -27,6 +27,7 @@ namespace TheExpanse
         static float sSatAt;
         static Rigidbody? sBody;
         internal static Rigidbody? PlayerBody => FindBody() ? sBody : null;
+        internal static Collider? PlayerCollider => sBodyCollider;
         static Collider? sBodyCollider;
         static bool sColliderWasEnabled;
         static readonly Dictionary<PlayerAction, bool> sDisabled = new Dictionary<PlayerAction, bool>();
@@ -147,6 +148,11 @@ namespace TheExpanse
             KeepActionsOff();
             // put the tool away the way the game does for its own scenes; it comes back on standing up
             Main.EventSystem.Post(ForceEquipEvent.GetEvent(ForceEquipEvent.EquipState.Unequip));
+            // where the player stood, in the ship's frame as it is now: sitting may move the ship (a parked ship catches up
+            // to where the flight has it), and the player stood up 1.2 km from it after that
+            var frameBefore = FlightModel.Frame;
+            var stoodLocal = frameBefore != null ? frameBefore.InverseTransformPoint(stoodAt) : Vector3.zero;
+            var stoodLocalRotation = frameBefore != null ? Quaternion.Inverse(frameBefore.rotation) * stoodFacing : Quaternion.identity;
             FlightCamera.Begin(chair);
             FlightModel.Begin(chair);
             FlightCamera.UseFrame(FlightModel.Frame);
@@ -159,8 +165,16 @@ namespace TheExpanse
             }
             // kept in the ship's frame (it goes where the ship goes), or the chair's if the ship is not carried
             var keep = frame != null ? frame : chair;
-            sStandLocalPosition = keep.InverseTransformPoint(stoodAt);
-            sStandLocalRotation = Quaternion.Inverse(keep.rotation) * stoodFacing;
+            if (frameBefore != null && frame == frameBefore)
+            {
+                sStandLocalPosition = stoodLocal;
+                sStandLocalRotation = stoodLocalRotation;
+            }
+            else
+            {
+                sStandLocalPosition = keep.InverseTransformPoint(stoodAt);
+                sStandLocalRotation = Quaternion.Inverse(keep.rotation) * stoodFacing;
+            }
             sStandOnFrame = frame != null;
             Plugin.Log.LogInfo($"[Flight] seated in '{Path(chair)}' at {chair.position}; chair axes fwd {chair.forward} up {chair.up}; " +
                                $"{sDisabled.Count} suit action(s) switched off.");

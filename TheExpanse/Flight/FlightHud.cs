@@ -12,9 +12,9 @@ namespace TheExpanse
     // over a bright hull or planet.
     //   left edge:     the main drive's gauge (amber), its name above and the throttle below;
     //   right edge:    the thrusters' gauge (cyan, bold), name above, use below, attitude hold beside;
-    //   top middle:    all bold: the speed (largest), right of it a heading marker (an arrow in a ring showing the way
-    //                  the ship is going) and the turn rate; under the speed the acceleration (drive and thrusters both
-    //                  give it);
+    //   top middle:    all bold: the speed (largest), right of it the prograde / retrograde bubble (where the ship is
+    //                  going, seen out of the nose) and the turn rate; under the speed the acceleration (drive and
+    //                  thrusters both give it);
     //   bottom middle: the flip and burn's progress, while it runs and briefly after.
     //   sit prompt:    near a command chair, the Interact button's own picture for the input last used (keyboard,
     //                  Xbox or PlayStation), as in the game's own prompts, and SIT AT THE CONTROLS.
@@ -29,8 +29,9 @@ namespace TheExpanse
         static GameObject? sCanvas;
         static RectTransform? sReadout, sDriveFill, sRcsFill, sPrompt;
         static TextMeshProUGUI? sDriveText, sDrivePercent, sRcsText, sRcsPercent, sSpeedText, sTurnText, sAccelText, sAutoText, sPromptText, sPromptKey;
-        static RectTransform? sHeading, sHeadingArrow;
-        static Texture2D? sArrowTexture, sRingTexture;
+        static RectTransform? sBubble, sPrograde, sRetrograde;
+        static readonly Dictionary<string, Texture2D> sMarkers = new Dictionary<string, Texture2D>();
+        const float BubbleSize = 46f, MarkerSize = 18f;
         static Image? sPromptIcon;
         static TMP_FontAsset? sFont;
         static Material? sShadowed;
@@ -44,7 +45,7 @@ namespace TheExpanse
             sShadowed = null;
             sReadout = sDriveFill = sRcsFill = sPrompt = null;
             sDriveText = sDrivePercent = sRcsText = sRcsPercent = sSpeedText = sTurnText = sAccelText = sAutoText = sPromptText = sPromptKey = null;
-            sHeading = sHeadingArrow = null;
+            sBubble = sPrograde = sRetrograde = null;
             sPromptIcon = null;
         }
 
@@ -81,13 +82,7 @@ namespace TheExpanse
             sTurnText!.text = $"{FlightModel.TurnRate:0.0}°/s";
             sSpeedText!.text = $"{FlightModel.Speed:0.0} m/s";
             sAccelText!.text = $"{FlightModel.FeltAcceleration:0.00} m/s²  {FlightModel.FeltG:0.00} g";
-            // the heading marker under the speed: which way the ship is going, seen from above the ship, up = ahead,
-            // right = to starboard; hidden when it is nearly still
-            var local = FlightModel.LocalVelocity;
-            var flat = new Vector2(local.x, local.z);
-            bool moving = FlightModel.Speed > 0.05f && flat.magnitude > 0.02f;
-            sHeadingArrow!.gameObject.SetActive(moving);
-            if (moving) sHeadingArrow.localRotation = Quaternion.Euler(0f, 0f, -Mathf.Atan2(flat.x, flat.y) * Mathf.Rad2Deg);
+            ShowBubble();
             string auto = FlightModel.AutoStatus;
             sAutoText!.gameObject.SetActive(auto.Length > 0);
             if (auto.Length > 0)
@@ -191,8 +186,7 @@ namespace TheExpanse
             sAccelText = Text("Accel", sReadout, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -Edge - 46f),
                               new Vector2(420f, 34f), 26f, TextAlignmentOptions.Top, Amber);
             foreach (var top in new[] { sSpeedText, sTurnText, sAccelText }) top.fontStyle = FontStyles.Bold;
-            sHeading = Marker(sReadout, new Vector2(140f, -Edge - 3f));
-            sHeadingArrow = (RectTransform)sHeading.Find("Arrow");
+            sBubble = Bubble(sReadout, new Vector2(140f, -Edge - 3f));
             // bottom middle: flip and burn
             sAutoText = Text("Auto", sReadout, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, Edge),
                              new Vector2(900f, 30f), 18f, TextAlignmentOptions.Bottom, Amber);
@@ -222,67 +216,100 @@ namespace TheExpanse
             sCanvas.SetActive(false);
         }
 
-        // The heading marker: a faint ring with an arrow that turns to show the way the ship is going, like a map's
-        // position marker.
-        static RectTransform Marker(RectTransform parent, Vector2 position)
+        // The prograde / retrograde bubble, as seen looking out of the nose: the middle is dead ahead, the ring is 90
+        // degrees off, up is the ship's up and right its starboard. The prograde marker (a circle with three ticks)
+        // sits where the ship is going while that is ahead of it; past 90 degrees the retrograde marker (a circle with
+        // an X) shows instead, where the ship is coming from. Neither shows while the ship is nearly still.
+        static void ShowBubble()
         {
-            sRingTexture ??= MarkerTexture(ring: true);
-            sArrowTexture ??= MarkerTexture(ring: false);
-            var ring = new GameObject("Heading", typeof(RectTransform));
-            ring.transform.SetParent(parent, false);
-            var rect = (RectTransform)ring.transform;
+            var local = FlightModel.LocalVelocity;
+            bool moving = FlightModel.Speed > 0.05f;
+            bool ahead = local.z >= 0f;
+            sPrograde!.gameObject.SetActive(moving && ahead);
+            sRetrograde!.gameObject.SetActive(moving && !ahead);
+            if (!moving) return;
+            var dir = ahead ? local.normalized : -local.normalized;      // the marker's direction, in front of the nose
+            float off = Mathf.Acos(Mathf.Clamp(dir.z, -1f, 1f)) * Mathf.Rad2Deg;   // 0..90 degrees from the nose
+            var across = new Vector2(dir.x, dir.y);
+            var place = across.sqrMagnitude > 1e-8f ? across.normalized * (off / 90f) * (BubbleSize * 0.5f - 2f) : Vector2.zero;
+            (ahead ? sPrograde : sRetrograde)!.anchoredPosition = place;
+        }
+
+        static RectTransform Bubble(RectTransform parent, Vector2 position)
+        {
+            var go = new GameObject("Bubble", typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var rect = (RectTransform)go.transform;
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
             rect.pivot = new Vector2(0.5f, 1f);
             rect.anchoredPosition = position;
-            rect.sizeDelta = new Vector2(34f, 34f);
-            var ringImage = ring.AddComponent<RawImage>();
-            ringImage.texture = sRingTexture;
-            ringImage.color = new Color(Amber.r, Amber.g, Amber.b, 0.55f);
-            ringImage.raycastTarget = false;
-            var arrow = new GameObject("Arrow", typeof(RectTransform));
-            arrow.transform.SetParent(ring.transform, false);
-            var arrowRect = (RectTransform)arrow.transform;
-            arrowRect.anchorMin = arrowRect.anchorMax = arrowRect.pivot = new Vector2(0.5f, 0.5f);
-            arrowRect.anchoredPosition = Vector2.zero;
-            arrowRect.sizeDelta = new Vector2(34f, 34f);
-            var arrowImage = arrow.AddComponent<RawImage>();
-            arrowImage.texture = sArrowTexture;
-            arrowImage.color = Amber;
-            arrowImage.raycastTarget = false;
-            arrow.AddComponent<Shadow>().effectDistance = new Vector2(1.5f, -1.5f);
+            rect.sizeDelta = new Vector2(BubbleSize, BubbleSize);
+            Marker(rect, "ring", BubbleSize, new Color(0f, 0f, 0f, 0.35f), Vector2.zero, "ringfill");
+            Marker(rect, "ring", BubbleSize, new Color(Amber.r, Amber.g, Amber.b, 0.6f), Vector2.zero);
+            Marker(rect, "nose", 12f, new Color(Amber.r, Amber.g, Amber.b, 0.7f), Vector2.zero);
+            sPrograde = Marker(rect, "prograde", MarkerSize, Amber, Vector2.zero);
+            sRetrograde = Marker(rect, "retrograde", MarkerSize, DriveColor, Vector2.zero);
             return rect;
         }
 
-        // 64 x 64, white with soft edges: a thin ring, or an arrowhead pointing up (a map marker's chevron).
-        static Texture2D MarkerTexture(bool ring)
+        static RectTransform Marker(RectTransform parent, string shape, float size, Color color, Vector2 position, string? textureKey = null)
         {
+            var go = new GameObject(shape, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var rect = (RectTransform)go.transform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = position;
+            rect.sizeDelta = new Vector2(size, size);
+            var image = go.AddComponent<RawImage>();
+            image.texture = MarkerTexture(textureKey ?? shape);
+            image.color = color;
+            image.raycastTarget = false;
+            var shadow = go.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0f, 0f, 0f, 0.8f);
+            shadow.effectDistance = new Vector2(1.5f, -1.5f);
+            shadow.useGraphicAlpha = false;
+            return rect;
+        }
+
+        // 64 x 64 white shapes with soft edges, drawn once: the bubble's ring (and its dark fill), the nose cross, and the
+        // prograde (circle with three ticks: up, left, right) and retrograde (circle with an X) markers.
+        static Texture2D MarkerTexture(string shape)
+        {
+            if (sMarkers.TryGetValue(shape, out var have) && have != null) return have;
             const int N = 64;
-            var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, name = ring ? "TheExpanse_HeadingRing" : "TheExpanse_HeadingArrow" };
+            var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, name = "TheExpanse_Marker_" + shape };
             var px = new Color[N * N];
+            float Line(float d, float width) => Mathf.Clamp01(1f - Mathf.Abs(d) / width);
             for (int y = 0; y < N; y++)
                 for (int x = 0; x < N; x++)
                 {
                     float u = (x + 0.5f) / N * 2f - 1f, v = (y + 0.5f) / N * 2f - 1f;
-                    float a;
-                    if (ring)
+                    float r = Mathf.Sqrt(u * u + v * v), a = 0f;
+                    switch (shape)
                     {
-                        float r = Mathf.Sqrt(u * u + v * v);
-                        a = Mathf.Clamp01(1f - Mathf.Abs(r - 0.9f) / 0.07f);
-                    }
-                    else
-                    {
-                        // chevron: inside the triangle (tip at the top, base at the bottom) and outside a notch at the base
-                        float half = (0.7f - v) * 0.55f;          // half-width at height v, tip at v = 0.7
-                        float inside = Mathf.Min(half - Mathf.Abs(u), v + 0.55f);
-                        float notch = (v + 0.55f) - (0.35f - Mathf.Abs(u) * 0.9f);
-                        a = Mathf.Clamp01(Mathf.Min(inside, notch) / 0.04f);
+                        case "ring": a = Line(r - 0.93f, 0.06f); break;
+                        case "ringfill": a = r < 0.93f ? 1f : 0f; break;
+                        case "nose":        // a small plus
+                            a = Mathf.Max(Abs(u) < 0.9f ? Line(v, 0.12f) : 0f, Abs(v) < 0.9f ? Line(u, 0.12f) : 0f); break;
+                        case "prograde":
+                            a = Line(r - 0.5f, 0.1f);
+                            if (Abs(u) < 0.08f && v > 0.5f) a = Mathf.Max(a, Line(u, 0.08f));          // tick up
+                            if (Abs(v) < 0.08f && Abs(u) > 0.5f) a = Mathf.Max(a, Line(v, 0.08f));     // ticks left and right
+                            break;
+                        case "retrograde":
+                            a = Line(r - 0.5f, 0.1f);
+                            if (r < 0.95f) a = Mathf.Max(a, Mathf.Max(Line((u - v) * 0.7071f, 0.07f), Line((u + v) * 0.7071f, 0.07f)));
+                            break;
                     }
                     px[y * N + x] = new Color(1f, 1f, 1f, a);
                 }
             t.SetPixels(px);
             t.Apply(false, true);
+            sMarkers[shape] = t;
             return t;
         }
+
+        static float Abs(float f) => Mathf.Abs(f);
 
         // A thin vertical gauge centered on its edge: a faint frame, quarter ticks, the fill growing from the bottom.
         static RectTransform Gauge(string name, RectTransform parent, Vector2 anchor, Vector2 position, Color color)

@@ -50,6 +50,7 @@ namespace TheExpanse
         internal static ConfigEntry<bool> NodeRadiation = null!;
         internal static ConfigEntry<bool> TestTools = null!;
         internal static ConfigEntry<KeyboardShortcut> KillHalfNodesKey = null!;
+        internal static ConfigEntry<KeyboardShortcut> WorldShiftTestKey = null!;
         internal static ConfigEntry<float> NodeRadiationDamage = null!;
         internal static ConfigEntry<float> NodeRadiationRadius = null!;
         internal static ConfigEntry<float> NodeRadiationFalloff = null!;
@@ -120,6 +121,7 @@ namespace TheExpanse
         internal static ConfigEntry<float> FlightMouseSensitivity = null!;
         internal static ConfigEntry<bool> FlightFreeJacks = null!;
         internal static ConfigEntry<float> FlightAboardPull = null!;
+        internal static ConfigEntry<float> FlightStandHeight = null!;
         internal static ConfigEntry<float> FlightMasterJackMass = null!;
         internal static ConfigEntry<float> FlightLightJackMass = null!;
         internal static ConfigEntry<bool> SpaceLimits = null!;
@@ -408,9 +410,12 @@ namespace TheExpanse
                 "The fastest the ship turns, in degrees per second.");
             FlightMouseSensitivity = Config.Bind("Flight", "MouseSensitivity", 1f,
                 "How much turning the mouse gives: degrees per second of turn added per unit of mouse movement.");
-            FlightAboardPull = Config.Bind("Flight", "AboardPull", 0f,
+            FlightAboardPull = Config.Bind("Flight", "AboardPull", 1f,
                 "Out of the seat, aboard a ship under way: how strongly the drive's push pulls you toward the stern, as a share of " +
-                "the ship's acceleration. 1 is the full push, 0 (the default for now) floats you with the ship as if it were coasting.");
+                "the ship's acceleration: artificial gravity toward the stern. 1 is the full push, 0 floats you with the ship as if it were coasting.");
+            FlightStandHeight = Config.Bind("Flight", "StandHeight", 1.6f,
+                "Out of the seat while the drive pulls you toward the stern: how high above the deck you are held, in meters, like " +
+                "standing in magnetic boots (your helmet's height).");
             FlightFreeJacks = Config.Bind("Flight", "FreeJacks", true,
                 "When the ship first moves under its own power, let go of the bay's jacks: they get a weight and are shoved out of " +
                 "the way by the hull instead of being passed through. They stay where they drift until the next level load.");
@@ -444,6 +449,9 @@ namespace TheExpanse
                 "For testing the ghost ship additions and reactor control: show how many nodes are left and the reactor's state on " +
                 "screen, destroy half of the nodes with KillHalfNodesKey, and pretend to disconnect injectors with ReactorRightKey " +
                 "and ReactorWrongKey.");
+            WorldShiftTestKey = Config.Bind("Debug", "WorldShiftTestKey", new KeyboardShortcut(UnityEngine.KeyCode.F10, UnityEngine.KeyCode.LeftControl),
+                "Cost test for a stationary ship (park the ship in the bay first): moves everything but the ship and you past it for " +
+                "25 s in three timed phases and logs the frame times, then puts everything back. Press again to stop early.");
             KillHalfNodesKey = Config.Bind("Debug", "KillHalfNodesKey", new KeyboardShortcut(UnityEngine.KeyCode.F8),
                 "With TestTools on: destroys half of the nodes left (rounded up, so the last one goes too).");
             ReactorRightKey = Config.Bind("Debug", "ReactorRightKey", new KeyboardShortcut(UnityEngine.KeyCode.F11),
@@ -554,6 +562,7 @@ namespace TheExpanse
             {
                 TheExpanse.SpaceLimits.Install(new Harmony(PluginInfo.PLUGIN_GUID + ".space"));
                 Main.EventSystem.AddHandler<GameStateChangedEvent>(TheExpanse.SpaceLimits.OnGameStateChanged);
+                Main.EventSystem.AddHandler<GameStateChangedEvent>(TheExpanse.NoDragAboard.OnGameStateChanged);
             }
             catch (Exception ex) { Log.LogError("[Space] " + ex); }
         }
@@ -564,8 +573,16 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Test] " + ex); }
             try { TheExpanse.SpaceLimits.Tick(); }
             catch (Exception ex) { Log.LogError("[Space] " + ex); }
+            try { FlightModel.AimCamera(); }
+            catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightModel.SampleFrame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
+            try { WorldShiftTest.Tick(); }
+            catch (Exception ex) { Log.LogError("[Shift test] " + ex); }
+            try { MagBootsGuard.Tick(); }
+            catch (Exception ex) { Log.LogError($"MagBootsGuard.Tick failed: {ex}"); }
+            try { DeckBoots.Tick(); }
+            catch (Exception ex) { Log.LogError($"DeckBoots.Tick failed: {ex}"); }
             try { FlightSeat.Tick(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             // Wait for the editor to finish writing before reading the file.
@@ -603,7 +620,7 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Drive] " + ex); }
             try { TheExpanse.SpaceLimits.LateTick(); }
             catch (Exception ex) { Log.LogError("[Space] " + ex); }
-            try { FlightHud.Frame(); }
+            try { FlightHud.Frame(); SuitAccelReadout.Frame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightJacks.Frame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
@@ -638,6 +655,8 @@ namespace TheExpanse
         private void FixedUpdate()
         {
             FlightModel.MarkStep();
+            try { WorldShiftTest.Step(); }
+            catch (Exception ex) { Log.LogError("[Shift test] " + ex); }
             try { ShipRoll.FixedStep(); }
             catch (Exception ex) { Log.LogError("[Haunting] " + ex); }
             try { FlightSeat.FixedTick(); }
@@ -657,8 +676,12 @@ namespace TheExpanse
             TheExpanse.ReactorControl.Reset();
             TheExpanse.DrivePlume.Reset();
             FlightSeat.Reset();
+            WorldShiftTest.Reset();
+            DeckBoots.Reset();
+            MagBootsGuard.Resume();
             FlightJacks.Reset();
             FlightHud.Reset();
+            SuitAccelReadout.Reset();
             sHauntingDue = 0f;
             // Pick up edits made to the settings file while the game was running, before the next ship loads.
             if (!EditSession.IsOpen) try { Instance.Config.Reload(); }

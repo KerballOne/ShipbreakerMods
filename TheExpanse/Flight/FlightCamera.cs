@@ -92,6 +92,49 @@ namespace TheExpanse
 
         internal static string ViewName => !sActive ? "none" : sView == View.Outside ? "outside" : sView == View.Nose ? "nose" : "seat";
         internal static Vector3 CameraPosition => sPosition;
+        static bool OutsideActive => sActive && sView != View.Seat && sFrame != null;
+
+        // Diagnostic: the game's markers, what each tracks and whether it can be seen (its canvas groups' alpha).
+        static readonly System.Reflection.FieldInfo? sMarkerTrack = HarmonyLib.AccessTools.Field(typeof(HUDMarker), "m_TransformToTrack");
+        static readonly System.Reflection.FieldInfo? sMarkerDistance = HarmonyLib.AccessTools.Field(typeof(HUDMarker), "m_ShowDistanceText");
+
+        static void ListMarkers()
+        {
+            var lines = new System.Collections.Generic.List<string>();
+            foreach (var marker in Object.FindObjectsOfType<HUDMarker>())
+            {
+                var track = sMarkerTrack?.GetValue(marker) as Transform;
+                float alpha = 1f;
+                foreach (var group in marker.GetComponentsInParent<CanvasGroup>()) alpha *= group.alpha;
+                lines.Add($"'{marker.name}' tracks '{(track != null ? track.name : "nothing")}'{(sMarkerDistance?.GetValue(marker) is bool d && d ? " with distance" : "")}, " +
+                          $"alpha {alpha:0.##}, {(marker.gameObject.activeInHierarchy ? "active" : "inactive")}");
+            }
+            Plugin.Log.LogInfo($"[Flight] markers ({lines.Count}): " + (lines.Count > 0 ? string.Join("; ", lines) : "none"));
+        }
+
+        // The game's markers on things (the Hab with its distance, objectives) are placed each frame from the main
+        // camera. In the outside and nose views the camera is only moved just before drawing, so while each marker is
+        // placed the camera is put where the view has it, and back after; their distances are from there.
+        [HarmonyLib.HarmonyPatch(typeof(HUDMarker), "Update")]
+        static class MarkersFromOutside
+        {
+            static void Prefix(out (bool moved, Vector3 position, Quaternion rotation) __state)
+            {
+                __state = default;
+                if (!OutsideActive) return;
+                var camera = LynxCameraController.MainCameraTransform;
+                if (camera == null) return;
+                __state = (true, camera.position, camera.rotation);
+                camera.SetPositionAndRotation(sPosition, sRotation);
+            }
+
+            static void Postfix((bool moved, Vector3 position, Quaternion rotation) __state)
+            {
+                if (!__state.moved) return;
+                var camera = LynxCameraController.MainCameraTransform;
+                if (camera != null) camera.SetPositionAndRotation(__state.position, __state.rotation);
+            }
+        }
 
         internal static void CycleView()
         {
@@ -105,6 +148,7 @@ namespace TheExpanse
             Helmet(view == View.Seat);
             Hud(view == View.Seat);
             if (view == View.Nose) sLookYaw = sLookPitch = 0f;
+            if (view != View.Seat) ListMarkers();
             Plugin.Log.LogInfo(view == View.Outside ? "[Flight] view: outside the ship."
                              : view == View.Nose ? "[Flight] view: the nose." : "[Flight] view: the seat.");
         }
@@ -123,7 +167,8 @@ namespace TheExpanse
         {
             if (on != sHudOff) return;
             Main.EventSystem.Post(SetHUDAlphaEvent.GetEvent(on ? 1f : 0f, 0.25f, SetHUDAlphaEvent.FadeType.All));
-            Main.EventSystem.Post(SetHudMarkerVisibilityEvent.GetEvent(on));
+            // the markers stay: they are placed from the outside camera (MarkersFromOutside)
+            Main.EventSystem.Post(SetHudMarkerVisibilityEvent.GetEvent(true));
             sHudOff = !on;
         }
 

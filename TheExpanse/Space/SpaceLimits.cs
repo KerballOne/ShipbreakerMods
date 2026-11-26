@@ -39,6 +39,7 @@ namespace TheExpanse
         {
             Patch(harmony, typeof(SeatedSpeed));
             Patch(harmony, typeof(NoCrushAboard));
+            Patch(harmony, typeof(NoAutoBrakeUnderPull));
             Patch(harmony, typeof(SeatedStill));
             Patch(harmony, typeof(ShipFrame));
             Patch(harmony, typeof(ShipFrameThrustUpdate));
@@ -154,6 +155,14 @@ namespace TheExpanse
             static bool Prefix() => !FlightSeat.Seated;
         }
 
+        // The suit's auto-brake (it slows a drifting suit to a stop) would cancel the drive's pull aboard, so the
+        // suit would never fall: it is skipped while the pull is on.
+        [HarmonyPatch(typeof(PlayerMotion), "HandleAutoBrake")]
+        static class NoAutoBrakeUnderPull
+        {
+            static bool Prefix() => !FlightModel.PullActive && !DeckBoots.Attached;
+        }
+
         // The game's crushing check calls the player crushed when two moving bodies close in on them; with the ship
         // under way every piece of it is moving, so the pilot (and anyone aboard) was warned and hurt while nothing was
         // closing in. Seated, or aboard a ship under way, the check is skipped and the state kept safe.
@@ -207,11 +216,16 @@ namespace TheExpanse
 
         static float sNextChangeLog;
 
+        // Locked on with the deck boots the suit's thrusters are off (as in MagBoots): the move keys walk instead.
         [HarmonyPatch(typeof(ThrustController), "Update")]
         static class ShipFrameThrustUpdate
         {
             [HarmonyPriority(Priority.First)]
-            static void Prefix(ThrustController __instance, out Taken __state) => __state = Take(sThrustBody?.GetValue(__instance) as Rigidbody);
+            static bool Prefix(ThrustController __instance, out Taken __state)
+            {
+                __state = Take(sThrustBody?.GetValue(__instance) as Rigidbody);
+                return !DeckBoots.HoldsThrusters;
+            }
             [HarmonyPriority(Priority.Last)]
             static void Postfix(ThrustController __instance, Taken __state) => Give(sThrustBody?.GetValue(__instance) as Rigidbody, __state, "the thrusters (Update)");
         }
@@ -220,7 +234,11 @@ namespace TheExpanse
         static class ShipFrameThrustStep
         {
             [HarmonyPriority(Priority.First)]
-            static void Prefix(ThrustController __instance, out Taken __state) => __state = Take(sThrustBody?.GetValue(__instance) as Rigidbody);
+            static bool Prefix(ThrustController __instance, out Taken __state)
+            {
+                __state = Take(sThrustBody?.GetValue(__instance) as Rigidbody);
+                return !DeckBoots.HoldsThrusters;
+            }
             [HarmonyPriority(Priority.Last)]
             static void Postfix(ThrustController __instance, Taken __state) => Give(sThrustBody?.GetValue(__instance) as Rigidbody, __state, "the thrusters (step)");
         }
