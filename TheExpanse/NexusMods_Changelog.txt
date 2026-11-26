@@ -2,6 +2,18 @@ Changelog for the TheExpanse page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+0.7.4
+Setup mode: fit any ship for flight. Demo charges mark the spots; Alt+1 RCS thruster blocks, Alt+2 drive plumes, Alt+3 a seat, Alt+Backspace removes.
+Fittings are saved per ship class in ships.json (hand-editable) and come back on resumed saves.
+RCS blocks fire their jets with the side thrusters and turning; ships can have several drive plumes.
+The flight HUD shows the shift clock in the outside and nose views.
+The Master Jack (the Hab) stays put and stops the ship like a wall; the Hab can be entered and the game saved after a flight.
+Light jacks no longer bounce off the hull and slow to a stop.
+The outside camera's pivot is right on resumed saves.
+The reactor game runs only on the Expanse reactor (no pulsing core in other ships' small reactors).
+Node Radiation slider in the options tab.
+New option: Setup Mode in the EXPANSE tab.
+
 0.7.3
 Flight control: sit in any command chair on the MCRN Corvette and fly it out of the bay.
 Side thrusters, turning, roll, main drive throttle, brake, hold attitude and flip and burn, on keyboard and mouse or controller.
