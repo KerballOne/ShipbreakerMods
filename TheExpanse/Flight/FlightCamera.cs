@@ -95,22 +95,6 @@ namespace TheExpanse
         static bool OutsideActive => sActive && sView != View.Seat && sFrame != null;
 
         // Diagnostic: the game's markers, what each tracks and whether it can be seen (its canvas groups' alpha).
-        static readonly System.Reflection.FieldInfo? sMarkerTrack = HarmonyLib.AccessTools.Field(typeof(HUDMarker), "m_TransformToTrack");
-        static readonly System.Reflection.FieldInfo? sMarkerDistance = HarmonyLib.AccessTools.Field(typeof(HUDMarker), "m_ShowDistanceText");
-
-        static void ListMarkers()
-        {
-            var lines = new System.Collections.Generic.List<string>();
-            foreach (var marker in Object.FindObjectsOfType<HUDMarker>())
-            {
-                var track = sMarkerTrack?.GetValue(marker) as Transform;
-                float alpha = 1f;
-                foreach (var group in marker.GetComponentsInParent<CanvasGroup>()) alpha *= group.alpha;
-                lines.Add($"'{marker.name}' tracks '{(track != null ? track.name : "nothing")}'{(sMarkerDistance?.GetValue(marker) is bool d && d ? " with distance" : "")}, " +
-                          $"alpha {alpha:0.##}, {(marker.gameObject.activeInHierarchy ? "active" : "inactive")}");
-            }
-            Plugin.Log.LogInfo($"[Flight] markers ({lines.Count}): " + (lines.Count > 0 ? string.Join("; ", lines) : "none"));
-        }
 
         // The game's markers on things (the Hab with its distance, objectives) are placed each frame from the main
         // camera. In the outside and nose views the camera is only moved just before drawing, so while each marker is
@@ -148,7 +132,6 @@ namespace TheExpanse
             Helmet(view == View.Seat);
             Hud(view == View.Seat);
             if (view == View.Nose) sLookYaw = sLookPitch = 0f;
-            if (view != View.Seat) ListMarkers();
             Plugin.Log.LogInfo(view == View.Outside ? "[Flight] view: outside the ship."
                              : view == View.Nose ? "[Flight] view: the nose." : "[Flight] view: the seat.");
         }

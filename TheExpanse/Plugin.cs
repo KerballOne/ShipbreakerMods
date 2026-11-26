@@ -50,7 +50,6 @@ namespace TheExpanse
         internal static ConfigEntry<bool> NodeRadiation = null!;
         internal static ConfigEntry<bool> TestTools = null!;
         internal static ConfigEntry<KeyboardShortcut> KillHalfNodesKey = null!;
-        internal static ConfigEntry<KeyboardShortcut> WorldShiftTestKey = null!;
         internal static ConfigEntry<float> NodeRadiationDamage = null!;
         internal static ConfigEntry<float> NodeRadiationRadius = null!;
         internal static ConfigEntry<float> NodeRadiationFalloff = null!;
@@ -449,9 +448,6 @@ namespace TheExpanse
                 "For testing the ghost ship additions and reactor control: show how many nodes are left and the reactor's state on " +
                 "screen, destroy half of the nodes with KillHalfNodesKey, and pretend to disconnect injectors with ReactorRightKey " +
                 "and ReactorWrongKey.");
-            WorldShiftTestKey = Config.Bind("Debug", "WorldShiftTestKey", new KeyboardShortcut(UnityEngine.KeyCode.F10, UnityEngine.KeyCode.LeftControl),
-                "Cost test for a stationary ship (park the ship in the bay first): moves everything but the ship and you past it for " +
-                "25 s in three timed phases and logs the frame times, then puts everything back. Press again to stop early.");
             KillHalfNodesKey = Config.Bind("Debug", "KillHalfNodesKey", new KeyboardShortcut(UnityEngine.KeyCode.F8),
                 "With TestTools on: destroys half of the nodes left (rounded up, so the last one goes too).");
             ReactorRightKey = Config.Bind("Debug", "ReactorRightKey", new KeyboardShortcut(UnityEngine.KeyCode.F11),
@@ -577,8 +573,6 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightModel.SampleFrame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
-            try { WorldShiftTest.Tick(); }
-            catch (Exception ex) { Log.LogError("[Shift test] " + ex); }
             try { MagBootsGuard.Tick(); }
             catch (Exception ex) { Log.LogError($"MagBootsGuard.Tick failed: {ex}"); }
             try { DeckBoots.Tick(); }
@@ -618,14 +612,15 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Reactor] " + ex); }
             try { TheExpanse.DrivePlume.Frame(); }
             catch (Exception ex) { Log.LogError("[Drive] " + ex); }
-            try { TheExpanse.SpaceLimits.LateTick(); }
-            catch (Exception ex) { Log.LogError("[Space] " + ex); }
             try { FlightHud.Frame(); SuitAccelReadout.Frame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightJacks.Frame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightModel.LateFrame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
+            // after the ship's frame is smoothed for this frame: the background is placed from it
+            try { TheExpanse.SpaceLimits.LateTick(); }
+            catch (Exception ex) { Log.LogError("[Space] " + ex); }
             try { FlightCamera.Frame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
         }
@@ -655,8 +650,6 @@ namespace TheExpanse
         private void FixedUpdate()
         {
             FlightModel.MarkStep();
-            try { WorldShiftTest.Step(); }
-            catch (Exception ex) { Log.LogError("[Shift test] " + ex); }
             try { ShipRoll.FixedStep(); }
             catch (Exception ex) { Log.LogError("[Haunting] " + ex); }
             try { FlightSeat.FixedTick(); }
@@ -676,7 +669,6 @@ namespace TheExpanse
             TheExpanse.ReactorControl.Reset();
             TheExpanse.DrivePlume.Reset();
             FlightSeat.Reset();
-            WorldShiftTest.Reset();
             DeckBoots.Reset();
             MagBootsGuard.Resume();
             FlightJacks.Reset();

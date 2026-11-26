@@ -166,7 +166,7 @@ namespace TheExpanse
                 SunPin.Reset(_planetsRoot, _bayRoot);
             }
 
-            Transform? player = LynxCameraController.MainCameraTransform;
+            Transform? player = SpaceLimits.ViewPoint;
             if (player == null)
                 return;
 

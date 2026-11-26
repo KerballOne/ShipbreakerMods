@@ -28,6 +28,16 @@ namespace TheExpanse
         static Rigidbody? sBody;
         internal static Rigidbody? PlayerBody => FindBody() ? sBody : null;
         internal static Collider? PlayerCollider => sBodyCollider;
+
+        // The seat on the ship's smoothed frame, while seated in a ship under way (not parked).
+        internal static bool TrySeatPoint(out Vector3 point)
+        {
+            point = Vector3.zero;
+            var frame = FlightModel.Frame;
+            if (!Seated || frame == null || FlightModel.Parked) return false;
+            point = frame.TransformPoint(sSeatLocalPosition);
+            return true;
+        }
         static Collider? sBodyCollider;
         static bool sColliderWasEnabled;
         static readonly Dictionary<PlayerAction, bool> sDisabled = new Dictionary<PlayerAction, bool>();

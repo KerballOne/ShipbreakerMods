@@ -35,6 +35,24 @@ namespace TheExpanse
         static bool On => Plugin.Enabled.Value && Plugin.SpaceLimits.Value;
         internal static bool PinningOn => On && !NewtonianInstalled;
 
+        // Where the background (planets, Sun, sky cards) is placed from. In the pilot's seat of a ship under way: the seat,
+        // on the ship's own smoothed frame. The game's camera there lags the ship by up to a frame, and at 250 m/s and
+        // more (5 m a physics step) the background placed from it shook against the ship. Otherwise the game's camera.
+        static Transform? sViewPoint;
+        internal static Transform? ViewPoint
+        {
+            get
+            {
+                if (FlightSeat.TrySeatPoint(out var seat))
+                {
+                    if (sViewPoint == null) sViewPoint = new GameObject("TheExpanse_ViewPoint").transform;
+                    sViewPoint.position = seat;
+                    return sViewPoint;
+                }
+                return LynxCameraController.MainCameraTransform;
+            }
+        }
+
         internal static void Install(Harmony harmony)
         {
             Patch(harmony, typeof(SeatedSpeed));
@@ -189,8 +207,7 @@ namespace TheExpanse
         // Aboard a ship under way both work against the ship's motion, the same way as the suit's own step below.
         static readonly System.Reflection.FieldInfo? sThrustBody = AccessTools.Field(typeof(ThrustController), "m_Rigidbody");
 
-        // What the suit's speed was taken down by (the ship's speed there) and what it was then, for putting it back and
-        // for noting any sudden change the game's own code made in between (diagnostic).
+        // What the suit's speed was taken down by (the ship's speed there), for putting it back.
         internal struct Taken { internal Vector3 Ship; internal Vector3 Relative; }
 
         static Taken Take(Rigidbody? body)
@@ -204,17 +221,9 @@ namespace TheExpanse
         static void Give(Rigidbody? body, Taken taken, string where)
         {
             if (taken.Ship == Vector3.zero || body == null) return;
-            var change = body.velocity - taken.Relative;
-            if (change.sqrMagnitude > 0.3f * 0.3f && Time.time >= sNextChangeLog)
-            {
-                sNextChangeLog = Time.time + 0.25f;
-                Plugin.Log.LogInfo($"[Flight] aboard: {where} changed the suit's speed against the ship by {change.magnitude:0.00} m/s " +
-                                   $"({taken.Relative.magnitude:0.00} -> {body.velocity.magnitude:0.00}); ship there {taken.Ship.magnitude:0.00} m/s.");
-            }
             body.velocity += taken.Ship;
         }
 
-        static float sNextChangeLog;
 
         // Locked on with the deck boots the suit's thrusters are off (as in MagBoots): the move keys walk instead.
         [HarmonyPatch(typeof(ThrustController), "Update")]

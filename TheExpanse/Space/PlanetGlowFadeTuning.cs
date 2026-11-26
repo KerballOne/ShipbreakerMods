@@ -83,7 +83,7 @@ namespace TheExpanse
                     return;
             }
 
-            Transform? player = LynxCameraController.MainCameraTransform;
+            Transform? player = SpaceLimits.ViewPoint;
             if (player == null)
                 return;
 

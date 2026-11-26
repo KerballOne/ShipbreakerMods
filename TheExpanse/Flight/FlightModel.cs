@@ -33,7 +33,6 @@ namespace TheExpanse
             internal bool Loose, Falling;
             internal float Still;                   // s at rest against the ship while falling
             internal Vector3 SettledPull;           // the pull's direction (ship frame) it came to rest under; zero = none
-            internal Vector3 LastSet;               // the speed this mod gave it at the last step (diagnostic)
             internal bool UntilFreed;               // a piece taken on while fixed: let go only when the game frees it
         }
         static readonly List<Carried> sBodies = new List<Carried>();
@@ -78,6 +77,8 @@ namespace TheExpanse
         static Vector3 sParkPivot;
         static Quaternion sParkRotation = Quaternion.identity;
         internal static bool Parked => sParked;
+        // where the flight has the ship (not where it is parked)
+        internal static Vector3 ShipPosition => sPivot;
 
         // where the ship's bodies are: the parked pose while parked, else the flight model's
         static Vector3 BodyPivot => sParked ? sParkPivot : sPivot;
@@ -264,10 +265,16 @@ namespace TheExpanse
                 }
                 if (c.Loose && body.isKinematic)
                 {
+                    // let go gently: pinned, some were touching or a little into the ship (nothing collided out there),
+                    // and the physics pushed them apart at up to 10 m/s: hard enough for the game to count damage
+                    // (sparks and fires all over the ship). For a few seconds they may only ease apart, and they are
+                    // left asleep until something touches them or the drive pulls them.
                     body.isKinematic = false;
                     body.velocity = Vector3.zero;
                     body.angularVelocity = Vector3.zero;
-                    body.WakeUp();
+                    if (!sGentle.ContainsKey(body)) sGentle[body] = body.maxDepenetrationVelocity;
+                    body.maxDepenetrationVelocity = GentleDepenetration;
+                    body.Sleep();
                     freed++;
                 }
                 if (c.Loose) { c.Falling = true; sBodies[i] = c; }
@@ -275,6 +282,8 @@ namespace TheExpanse
             var player = FlightSeat.PlayerBody;
             if (player != null && Aboard(player.position)) player.velocity -= MovingPointVelocity(player.position);
             sParked = true;
+            sGentleUntil = Time.time + GentleSeconds;
+            GuardDamage();
             Solid(null, false);
             NoDragAboard.RestoreAll();
             foreach (var body in sInterpolated) if (body != null) body.interpolation = RigidbodyInterpolation.Interpolate;
@@ -290,7 +299,12 @@ namespace TheExpanse
         {
             if (!sParked) return;
             sParked = false;
+            GuardDamage();
+            EndGentle();
             BoundsBack();
+            // the physics' smoothing would draw each body sliding from where it was parked for a step: off for this step
+            foreach (var body in sInterpolated) if (body != null) body.interpolation = RigidbodyInterpolation.None;
+            sSmoothAgain = true;
             var turn = ShipRotation * Quaternion.Inverse(sParkRotation);
             var inverse = Quaternion.Inverse(ShipRotation);
             float distance = (sPivot - sParkPivot).magnitude;
@@ -329,7 +343,6 @@ namespace TheExpanse
                     rider.Transform.SetPositionAndRotation(sPivot + ShipRotation * rider.Position, ShipRotation * rider.Rotation);
             sPrevPivot = sPivot;
             sPrevRotation = ShipRotation;
-            sCheckPlacesUntil = Time.time + 4f;
             Plugin.Log.LogInfo($"[Flight] unparked: the ship caught up {distance:0} m to where the flight has it, {moved} body(ies) moved; " +
                                $"under way again at {Speed:0.0} m/s.");
         }
@@ -356,6 +369,7 @@ namespace TheExpanse
             NoDragAboard.RestoreAll();
             sMoving = false;
             sParked = false;
+            EndGentle();
             BoundsBack();
             sCarriedSet = null;
             DeckBoots.Reset("the ship stopped");
@@ -451,48 +465,9 @@ namespace TheExpanse
         // at it (a pinned thing would not budge); woken that way it is left free a second before it may settle again.
         const float LooseSettleSeconds = 0.5f, LooseStillSpeed = 0.05f, LooseWakeAngle = 20f;
         const float LooseWakeReach = 2f, LooseAimRange = 40f, LooseWokenGrace = 1f;
-        static float sNextLooseLog;
-        static int sTouched;
 
         // Diagnostic: what happens to a grappled thing aboard a ship under way, four times a second while grappled and for
         // four seconds after (grappled things were falling out of the ship).
-        static GrapplingHook? sHook;
-        static float sNextHookLook, sWatchUntil, sNextWatchLog;
-        static Rigidbody? sWatched;
-
-        static void WatchGrapple()
-        {
-            if (sHook == null)
-            {
-                if (Time.time < sNextHookLook) return;
-                sNextHookLook = Time.time + 2f;
-                sHook = Object.FindObjectOfType<GrapplingHook>();
-                if (sHook == null) return;
-            }
-            var grappled = sHook.GrappledRigidbody;
-            if (grappled != null)
-            {
-                if (grappled != sWatched) Plugin.Log.LogInfo($"[Flight] grapple: hooked '{grappled.name}'.");
-                sWatched = grappled;
-                sWatchUntil = Time.time + 4f;
-            }
-            if (sWatched == null || Time.time > sWatchUntil || Time.time < sNextWatchLog) return;
-            sNextWatchLog = Time.time + 0.25f;
-            var body = sWatched;
-            string carried = "not carried";
-            for (int i = 0; i < sBodies.Count; i++)
-                if (sBodies[i].Body == body)
-                {
-                    var c = sBodies[i];
-                    carried = c.Loose ? (c.Falling ? "loose, free" : "loose, pinned") : "carried as part of the ship";
-                    break;
-                }
-            var ship = PointVelocity(body.position);
-            var local = Quaternion.Inverse(ShipRotation) * (body.velocity - ship);
-            Plugin.Log.LogInfo($"[Flight] grapple watch '{body.name}': {(grappled == body ? "hooked" : "let go")}, {carried}, {(body.isKinematic ? "kinematic" : "free")}, " +
-                               $"{(Aboard(body.position) ? "aboard" : "NOT aboard")}, speed {body.velocity.magnitude:0.0} m/s, ship there {ship.magnitude:0.0}, " +
-                               $"against the ship {local.magnitude:0.0} (starboard {local.x:0.0}, up {local.y:0.0}, ahead {local.z:0.0}), parent '{(body.transform.parent != null ? body.transform.parent.name : "none")}'.");
-        }
 
         // ---- pieces coming loose during the flight --------------------------------------------------------------------
         // Pulling or cutting a piece off the ship makes the game give it a body of its own. Split from a carried (fixed)
@@ -551,7 +526,6 @@ namespace TheExpanse
         }
 
         static readonly RaycastHit[] sLandingHits = new RaycastHit[16];
-        static float sNextOverrideLog;
 
         // The game caps the speed of some things (a RigidbodyController: 20 m/s) against the bay: aboard a ship under way
         // that held them back and the ship left them behind, falling through the decks. The cap is applied against the
@@ -667,14 +641,6 @@ namespace TheExpanse
                     c.Still = touch ? -LooseWokenGrace : 0f;
                     woke++;
                 }
-                if (c.LastSet != Vector3.zero && (body.velocity - c.LastSet).sqrMagnitude > 5f * 5f && Time.time >= sNextOverrideLog)
-                {
-                    sNextOverrideLog = Time.time + 1f;
-                    var parts = new List<string>();
-                    foreach (var component in body.GetComponents<Component>()) if (component != null) parts.Add(component.GetType().Name);
-                    Plugin.Log.LogInfo($"[Flight] loose '{body.name}': something changed its speed between steps from {c.LastSet.magnitude:0.0} to " +
-                                       $"{body.velocity.magnitude:0.0} m/s (ship {PointVelocity(body.position).magnitude:0.0}); it has: {string.Join(", ", parts)}.");
-                }
                 var before = velocityBefore + Vector3.Cross(spinBefore, body.position - pivotBefore);
                 var after = PointVelocity(body.position + body.velocity * dt);
                 var velocity = body.velocity + (after - before) + pull * dt;
@@ -709,7 +675,6 @@ namespace TheExpanse
                     if (into < 0f) { relative -= hit.normal * into; velocity = after + relative; }
                 }
                 body.velocity = velocity;
-                c.LastSet = velocity;
                 // at rest against the ship: pinned again where it lies, in the ship's frame (as it was at the last step)
                 bool still = relative.magnitude < LooseStillSpeed && (body.angularVelocity - sSpin).magnitude < 0.1f;
                 c.Still = still ? c.Still + dt : Mathf.Min(c.Still, 0f);
@@ -728,11 +693,6 @@ namespace TheExpanse
                 }
                 else falling++;
                 sBodies[i] = c;
-            }
-            if ((woke > 0 || settled > 0) && Time.time >= sNextLooseLog)
-            {
-                sNextLooseLog = Time.time + 1f;
-                Plugin.Log.LogInfo($"[Flight] loose things aboard: {woke} let go ({touched} by the suit's reach or aim), {settled} come to rest and pinned, {falling} falling.");
             }
         }
 
@@ -780,23 +740,11 @@ namespace TheExpanse
 
         static void CarryAboard(Rigidbody? player, bool aboard, Vector3 shipVelocityBefore, Vector3 accel, float dt)
         {
-            // diagnostic: a sudden change since the end of the last step, made by something outside the patched code
-            if (player != null && aboard && sLastPlayerVelocity.HasValue)
-            {
-                var jump = player.velocity - sLastPlayerVelocity.Value;
-                if (jump.sqrMagnitude > 0.5f * 0.5f && Time.time >= sNextJumpLog)
-                {
-                    sNextJumpLog = Time.time + 0.25f;
-                    Plugin.Log.LogInfo($"[Flight] aboard: between physics steps something changed the suit's speed by {jump.magnitude:0.00} m/s " +
-                                       $"({sLastPlayerVelocity.Value.magnitude:0.00} -> {player.velocity.magnitude:0.00}); ship there {shipVelocityBefore.magnitude:0.00} m/s.");
-                }
-            }
             if (player == null || !aboard)
             {
                 Solid(null, false);
                 DeckBoots.Reset(player == null ? "seated" : "not aboard");
                 PullActive = false;
-                sLastPlayerVelocity = null;
                 if (player != null && sPlayerMode.HasValue) { player.collisionDetectionMode = sPlayerMode.Value; sPlayerMode = null; }
                 return;
             }
@@ -827,8 +775,6 @@ namespace TheExpanse
                 }
             }
             player.velocity = velocity;
-            sLastPlayerVelocity = velocity;
-            if (PullActive) LogFloor(player, pull);
 
             // diagnostic, twice a second: the suit's speed against the ship's where it is
             if (Plugin.SpaceDebugPrint.Value && Time.time >= sNextAboardLog)
@@ -889,32 +835,7 @@ namespace TheExpanse
 
         // Diagnostic, once a second under the pull: what is below the suit (toward the stern), and whether the suit can
         // collide with it at all (its collider on, the two layers set to collide), to find why it falls through decks.
-        static float sNextFloorLog;
         static readonly RaycastHit[] sFloorHits = new RaycastHit[16];
-
-        static void LogFloor(Rigidbody player, Vector3 pull)
-        {
-            if (Time.time < sNextFloorLog) return;
-            sNextFloorLog = Time.time + 1f;
-            var collider = FlightSeat.PlayerCollider;
-            var down = pull.normalized;
-            int count = Physics.RaycastNonAlloc(player.position, down, sFloorHits, 6f, ~0, QueryTriggerInteraction.Ignore);
-            var lines = new List<string>();
-            for (int i = 0; i < count; i++)
-            {
-                var hit = sFloorHits[i];
-                if (hit.collider == null || hit.collider.attachedRigidbody == player) continue;
-                var body = hit.collider.attachedRigidbody;
-                int layer = hit.collider.gameObject.layer;
-                bool collides = collider == null || !Physics.GetIgnoreLayerCollision(collider.gameObject.layer, layer);
-                bool carried = false;
-                foreach (var c in sBodies) if (c.Body == body) { carried = true; break; }
-                lines.Add($"{hit.distance:0.00} m '{hit.collider.name}' ({hit.collider.GetType().Name}, layer {LayerMask.LayerToName(layer)}{(collides ? "" : " IGNORED by the suit's layer")}, " +
-                          $"{(body == null ? "no body (moved by transform?)" : $"body '{body.name}' {(body.isKinematic ? "kinematic" : "free")}{(carried ? " carried" : " NOT carried")}")}, root '{hit.collider.transform.root.name}')");
-            }
-            Plugin.Log.LogInfo($"[Flight] floor check: suit collider {(collider == null ? "none" : $"'{collider.name}' {(collider.enabled ? "on" : "OFF")} layer {LayerMask.LayerToName(collider.gameObject.layer)} {collider.GetType().Name}")}, " +
-                               $"collision mode {player.collisionDetectionMode}; below toward the stern: " + (lines.Count > 0 ? string.Join("; ", lines) : "nothing within 6 m"));
-        }
 
         // Out of the seat aboard a ship under way, the ship and the suit are drawn where the physics has them, not
         // smoothed between physics steps: the game aims the grapple, cutter and grab with rays from the camera against the
@@ -970,7 +891,6 @@ namespace TheExpanse
         static bool sAimPoseKept;
         static Vector3 sAimPivot;
         static Quaternion sAimRotation = Quaternion.identity;
-        static float sNextAimLog;
 
         internal static void AimCamera()
         {
@@ -978,13 +898,7 @@ namespace TheExpanse
             var camera = LynxCameraController.MainCameraTransform;
             if (camera == null || !sAimPoseKept) return;
             var turn = ShipRotation * Quaternion.Inverse(sAimRotation);
-            var before = camera.position;
-            camera.SetPositionAndRotation(sPivot + turn * (before - sAimPivot), turn * camera.rotation);
-            if (Time.unscaledTime >= sNextAimLog)
-            {
-                sNextAimLog = Time.unscaledTime + 1f;
-                Plugin.Log.LogInfo($"[Flight] aim: camera moved {(camera.position - before).magnitude:0.00} m with the ship since it was placed.");
-            }
+            camera.SetPositionAndRotation(sPivot + turn * (camera.position - sAimPivot), turn * camera.rotation);
         }
 
         // after the camera has been placed for the frame (LateUpdate): the ship's pose then
@@ -995,7 +909,7 @@ namespace TheExpanse
             sAimPoseKept = true;
         }
 
-        static float sNextAboardLog, sNextJumpLog;
+        static float sNextAboardLog;
         // The ship's pose where the last physics step left it, and where this step takes it; its nose direction.
         internal static Vector3 PrevPivot => sParked ? sParkPivot : sPrevPivot;
         internal static Quaternion PrevRotation => sParked ? sParkRotation : sPrevRotation;
@@ -1003,7 +917,6 @@ namespace TheExpanse
         internal static Vector3 ForwardDirection => sParked ? sParkRotation * Vector3.forward : Forward;
         // The suit aboard is being pulled toward the stern (the drive burning, AboardPull above 0).
         internal static bool PullActive { get; private set; }
-        static Vector3? sLastPlayerVelocity;
 
         // ---- frame time around a burn --------------------------------------------------------------------------------
         // Frame and physics-step times for 3 s before and 3 s after the drive lights, to tell whether a slowdown comes
@@ -1174,9 +1087,16 @@ namespace TheExpanse
 
         // ---- physics (every step) ------------------------------------------------------------------------------------
 
+        static bool sSmoothAgain;
+
         internal static void FixedStep()
         {
             if (!sMoving) return;
+            if (sSmoothAgain)
+            {
+                sSmoothAgain = false;
+                foreach (var body in sInterpolated) if (body != null) body.interpolation = RigidbodyInterpolation.Interpolate;
+            }
             sStepsThisFrame++;
             ScanLooseAboard();
             if (!sFlying && !sParked && Throttle <= 0f && Speed < 0.01f && sSpin.magnitude < 1e-4f) { Release(); Plugin.Log.LogInfo("[Flight] the ship has come to rest."); return; }
@@ -1235,7 +1155,6 @@ namespace TheExpanse
             var pivotBefore = sPivot;
             Move(dt);
             LooseFall(velocityBefore, spinBefore, pivotBefore, accel, dt);
-            WatchGrapple();
             CarryAboard(player, aboard, playerShipVelocity, accel, dt);
         }
 
@@ -1324,6 +1243,9 @@ namespace TheExpanse
                     rider.Transform.SetPositionAndRotation(pivot + rotation * rider.Position, rotation * rider.Rotation);
         }
 
+        // Diagnostic (the ship shaking at 250 m/s and up): how far the ship's bodies are drawn (the physics' smoothing)
+        // from where the camera's frame has them this frame, as a share of one step's travel; once a second over 50 m/s.
+
         static void Integrate(float dt)
         {
             sPrevPivot = sPivot;
@@ -1336,43 +1258,75 @@ namespace TheExpanse
 
         // Parked: the loose things aboard (all free now) feel the drive's pull, like gravity; the game's physics does the
         // rest (falling, landing, resting).
+        const float GentleDepenetration = 0.3f, GentleSeconds = 3f;
+
+        // No collision damage around a change of state: for a few seconds after parking, catching up, or the collision box
+        // moving, the game's collision-triggered damage (parts shattering, fuel fires, electrical sparks) is not set off
+        // by anything. Things aboard settle against each other then (released loose things, contacts that start all at
+        // once when collisions come back on), and the game counted those as impacts all over the ship.
+        const float NoDamageSeconds = 4f;
+        static float sNoDamageUntil;
+
+        static void GuardDamage() => sNoDamageUntil = Time.time + NoDamageSeconds;
+
+        // The game's damage from bodies knocking together (impact damage, the knocks that break a fitting's joints, the
+        // sparks and leaks): the same hold, and while parked no knock faster than 20 m/s counts (on a still ship nothing
+        // can move that fast; such a knock is an artifact of the ship having just stopped).
+
+        [HarmonyLib.HarmonyPatch(typeof(HierarchyCollisionListener), "HandleCollision")]
+        static class NoKnockDamageAtChange
+        {
+            static bool Prefix(Collision collision)
+            {
+                if (!sMoving) return true;
+                bool hold = Time.time < sNoDamageUntil || (sParked && collision != null && collision.relativeVelocity.sqrMagnitude > 20f * 20f);
+                return !hold;
+            }
+        }
+
+        [HarmonyLib.HarmonyPatch(typeof(TriggerableCollisionComponent), nameof(TriggerableCollisionComponent.MeetsCollisionConditions))]
+        static class NoDamageAtChange
+        {
+            static bool Prefix(ref bool __result)
+            {
+                if (!sMoving || Time.time >= sNoDamageUntil) return true;
+                __result = false;
+                return false;
+            }
+        }
+        const float LooseFallCap = 1.5f;            // m/s toward the stern, for loose things aboard the parked ship
+        static readonly Dictionary<Rigidbody, float> sGentle = new Dictionary<Rigidbody, float>();
+        static float sGentleUntil;
+
+        static void EndGentle()
+        {
+            foreach (var pair in sGentle) if (pair.Key != null) pair.Key.maxDepenetrationVelocity = pair.Value;
+            sGentle.Clear();
+        }
+
         static void ParkedFall(Vector3 accel, float dt)
         {
+            if (sGentle.Count > 0 && Time.time >= sGentleUntil) EndGentle();
             var pull = AboardPullFrom(accel);
             if (pull.sqrMagnitude < 1e-6f) return;
+            var down = pull.normalized;
             foreach (var c in sBodies)
             {
                 var body = c.Body;
                 if (body == null || !c.Loose || body.isKinematic) continue;
                 body.velocity += pull * dt;
+                // landing softly: the game counts a hard enough knock as damage (with the drive burning, things falling
+                // a few meters set off sparks and fuel fires all over the ship)
+                float falling = Vector3.Dot(body.velocity, down);
+                if (falling > LooseFallCap) body.velocity -= down * (falling - LooseFallCap);
             }
         }
 
         // Diagnostic, for a few seconds after catching up: how far the ship's bodies are from where they are sent (a
         // shaking ship after catching up).
-        static float sCheckPlacesUntil, sNextPlacesLog;
-
-        static void CheckPlaces()
-        {
-            if (Time.time > sCheckPlacesUntil || Time.time < sNextPlacesLog) return;
-            sNextPlacesLog = Time.time + 0.5f;
-            float worst = 0f; string worstName = "";
-            int off = 0, free = 0;
-            foreach (var c in sBodies)
-            {
-                if (c.Body == null || c.Falling) continue;
-                if (!c.Body.isKinematic) free++;
-                float d = (c.Body.position - (sPivot + ShipRotation * c.Position)).magnitude;
-                if (d > 0.05f) off++;
-                if (d > worst) { worst = d; worstName = c.Body.name; }
-            }
-            Plugin.Log.LogInfo($"[Flight] after catching up: {off} body(ies) more than 5 cm from their place, worst {worst:0.00} m ('{worstName}'); " +
-                               $"{free} carried body(ies) not kinematic; frame interpolation alpha {(Time.time - Time.fixedTime) / Time.fixedDeltaTime:0.00}.");
-        }
 
         static void Move(float dt)
         {
-            CheckPlaces();
             Integrate(dt);
             var frame = ShipRotation;
             if (sFrame != null) sFrame.SetPositionAndRotation(sPivot, frame);
@@ -1420,6 +1374,17 @@ namespace TheExpanse
             int skippedCount = 0;
             // the fixed bodies first, so joints to them can be recognized
             var all = Object.FindObjectsOfType<Rigidbody>();
+            // bodies held by a joint, from either end (a terminal on a wall is jointed from the wall's side): fittings,
+            // not loose things, whatever their speed
+            var jointed = new HashSet<Rigidbody>();
+            foreach (var joint in Object.FindObjectsOfType<Joint>())
+            {
+                if (joint == null) continue;
+                var own = joint.GetComponent<Rigidbody>();
+                if (own != null) jointed.Add(own);
+                if (joint.connectedBody != null) jointed.Add(joint.connectedBody);
+            }
+            int fittings = 0;
             foreach (var body in all) if (body != null && body.isKinematic && IsShip(body, world != null, em)) carriedSoFar.Add(body);
             // the hull's extent (world box), for telling a fitting lying still aboard from a cut piece lying in the bay
             bool anyHull = false;
@@ -1463,7 +1428,8 @@ namespace TheExpanse
                     Plugin.Log.LogInfo($"[Flight] held fixed by the game: '{body.name}', {body.mass / 1000f:0.#} t, " +
                                        $"{body.GetComponentsInChildren<StructurePart>().Length} part(s), at {body.position}.");
                 }
-                bool loose = free && reason == "lying still aboard";
+                bool loose = free && reason == "lying still aboard" && !jointed.Contains(body);
+                if (free && reason == "lying still aboard" && !loose) fittings++;
                 sBodies.Add(new Carried { Body = body, Position = inverse * (body.position - sPivot), Rotation = inverse * body.rotation, WasFree = free, Loose = loose });
                 carriedSoFar.Add(body);
             }
@@ -1481,6 +1447,7 @@ namespace TheExpanse
                     }
             box.Expand(2f * AboardMargin);
             sLocalBox = box;
+            Plugin.Log.LogInfo($"[Flight] {fittings} jointed fitting(s) lying still aboard kept with the ship (never let loose).");
             Plugin.Log.LogInfo($"[Flight] {freed} free body(ies) held fixed while carried; the ship spans {box.size.x:0} x {box.size.y:0} x {box.size.z:0} m (with margin).");
             return held;
         }

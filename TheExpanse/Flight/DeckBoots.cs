@@ -357,13 +357,6 @@ namespace TheExpanse
             relative = Vector3.ClampMagnitude(relative, MaxHoldSpeed);
             result = shipVelocity + relative;
 
-            if (Time.time >= sNextLog)
-            {
-                sNextLog = Time.time + 1f;
-                Plugin.Log.LogInfo($"[Flight] deck boots: height {Vector3.Dot(player.position - sPoint, smoothed):0.00} m (want {height * sStandoff:0.00}), " +
-                                   $"off by {error.magnitude:0.00} m, moving {relative.magnitude:0.00} m/s against the ship{(sRun ? " (running)" : "")}, " +
-                                   $"deck {Vector3.Angle(smoothed, FlightModel.ForwardDirection):0} degrees off the bow{(sPendingDown ? ", stepping down" : sPendingUp ? ", stepping up" : "")}.");
-            }
             return true;
         }
 
