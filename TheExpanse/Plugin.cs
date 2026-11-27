@@ -501,7 +501,7 @@ namespace TheExpanse
                 "Rail gun: which of the blast's own axes (x, y or z; -x etc. to flip) is turned onto the nose, so its ring stands square to the shot.");
             WeaponsRailGunBlastSize = Config.Bind("Weapons", "RailGunBlastSize", 0.005f,
                 "Rail gun: the size of the blast at the muzzle (the rail gate's own flash, which goes off first), as a share of the gate's.");
-            WeaponsTorpedoShowHinges = Config.Bind("Weapons", "TorpedoShowHinges", true,
+            WeaponsTorpedoShowHinges = Config.Bind("Weapons", "TorpedoShowHinges", false,
                 "Torpedoes, for setting up: in torpedo mode, draw each tube door's hinge (green, along the pin) and an arm from it to the door's middle (yellow).");
             WeaponsTorpedoHatchPin = Config.Bind("Weapons", "TorpedoHatchPin", "x",
                 "Torpedoes: which of a tube door's own axes its hinge pins run along (x, y or z; x in the Corvette's model). Applies from the next level load.");

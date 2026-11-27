@@ -2,6 +2,15 @@ Changelog for the TheExpanse page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+0.8.0
+Weapon control from the pilot's seat: hold R / Y for the weapon wheel (the suit's tool wheel) or press 1-4: HELM, PDC, TORP, RAIL.
+PDC: six turrets track the reticle when they can see it and fire tracers that spark and heat what they hit.
+Torpedoes: the tube doors open in torpedo mode; each launch locks on the target, eases out, turns, burns and explodes on arrival; the trays empty as you fire.
+Rail gun: charge and fire along the nose with the rail gate's flash and beam; the slug pierces several parts and the ship kicks back.
+Flip and burn moved to G / D-pad left.
+The flight HUD uses the suit's font with drop shadows, and its top rows are centered.
+A ship touching a barge no longer stays highlighted red after the piece has left.
+
 0.7.5
 Pulling an injector's handle now always takes it off: its beam goes out and the screen updates. On the Rocinante the nozzle flaps kept it counted as connected.
 

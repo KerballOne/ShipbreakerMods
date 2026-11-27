@@ -71,8 +71,17 @@ Sit in any command chair on the ship (near it, press Interact) and you are at th
 - **Main drive:** mouse wheel / right and left triggers. **Z** full throttle, **X** (D-pad down) cut.
 - **Brake** (thrusters against the drift): Left Ctrl, or Q and E together / both stick clicks.
 - **Hold attitude** (thrusters stop any spin you did not ask for): T / D-pad up, on by default.
-- **Flip and burn:** R / Y. The ship turns tail-first, burns down to a crawl and stops on its thrusters. Press again, or touch the throttle, to cancel.
+- **Flip and burn:** G / D-pad left (`[Flight] FlipKey`). The ship turns tail-first, burns down to a crawl and stops on its thrusters. Press again, or touch the throttle, to cancel.
+- **Weapon wheel:** hold R / Y, point at a slice, let go (as the suit's tool wheel), or press 1-4: HELM, PDC, TORP, RAIL.
 - **Views:** V / D-pad right: outside, nose, seat. Outside, hold the right mouse button / View button to orbit and zoom.
+
+**Weapons** (pick them on the weapon wheel; they fire with the left mouse button / RT; holding the right mouse button / View to look around never fires):
+
+- **PDC** (point defense cannons): the mouse / right stick moves a red reticle and the ship holds its attitude. Each of the six turrets turns its truss, body and barrel onto the point under the reticle, but only while it can see it; a segment per turret under the reticle shows which are on target. Hold to fire tracers: rounds carry the ship's speed, spark where they hit, and heat what they hit.
+- **TORP** (torpedoes): both tube doors open when selected. A purple box cursor, with two rows of segments for the torpedoes left in the top and bottom tubes. Each press launches one, locked on the point under the cursor, from the tube on the target's side: it eases out on its thrusters, burns clear, turns, lights its blue drive and flies there (round the ship when the target is behind it), then explodes the way the game's own explosives do. The torpedo last in that tube's tray disappears; when the tray is empty, the one in the tube goes.
+- **RAIL** (rail gun): the flight controls stay; a blue sight marks where the nose points. Hold to charge, and it fires: the rail gate's flash at the muzzle, then its beam along the nose. The slug goes through up to four parts and stops at the station; each shot pushes the ship back a little. It reloads in five seconds.
+
+All of it is tunable in **[Weapons]** of the settings file (rates, ranges, damage, sizes and speeds of the effects).
 
 **The HUD** shows the drive and thruster gauges, the speed, a prograde / retrograde bubble, the turn rate, the acceleration in m/s² and g, and the flip and burn's progress. In the outside views a thin hexagon marks the work bay, with its distance; off screen it sits on the edge with an arrow.
 
