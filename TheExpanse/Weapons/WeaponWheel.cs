@@ -173,6 +173,7 @@ namespace TheExpanse
             sGroups.Clear();
             if (sHighlights != null)
                 for (int i = 0; i < sHighlights.Count && i < sWasDisabled.Length; i++) sHighlights[i].Disabled = sWasDisabled[i];
+            Weapons.StickLatched = true;
             if (!cancel && chosen >= 0 && chosen < 4) Weapons.SetMode((WeaponMode)chosen, "wheel");
         }
 

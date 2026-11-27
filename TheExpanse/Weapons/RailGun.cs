@@ -13,15 +13,15 @@ namespace TheExpanse
     //   fire:    hold RT (left mouse button) in rail gun mode: it charges for RailGunCharge seconds and fires when full;
     //            let go early and the charge drains. Then it reloads for RailGunCooldown seconds. In this mode the
     //            triggers don't move the throttle (it stays as set).
-    //   beam:    the village rail gate's own firing sequence, copied and played at the muzzle (Railgun_Muzzle), turned
-    //            along the ship's nose and moving with it (RailGateCopy), at RailGunBeamSize of the gate's size; plus a
-    //            bright slug trail from the muzzle;
+    //   beam:    the village rail gate's own beam copied at the muzzle along the nose (RailGateCopy); its beam keeps
+    //            its size, RailGunGlowSize scales only its glow (at full size the glow covers the whole view); plus a
+    //            short slug trail;
+    //   shot:    first the blast at the muzzle (the gate's flash, RailGunBlastSize), then RailGunBeamDelay later the
+    //            beam and the slug; both move with the ship;
     //   hit:     the slug goes through up to RailGunPierce parts not of the own ship within RailGunRange: each takes
-    //            RailGunHeat of heat damage and a shove; an explosion effect (the reactor core's, small) at the first.
+    //            RailGunHeat of heat damage and a shove.
     internal static class RailGun
     {
-        const string ExplosionGuid = "c620190dd56b9b64badf8501cd8939ef";    // FX_Explosion_ReactorCore
-        const float TrailSeconds = 0.6f;
 
         static Transform? sMuzzle;
         static float sCharge, sReadyAt;
@@ -30,8 +30,8 @@ namespace TheExpanse
         static float sTrailLength;
         static float sTrailUntil;
         static Material? sTrailMaterial;
-        static GameObject? sExplosionPrefab;
-        static bool sExplosionLoading;
+        const float TrailSeconds = 0.6f;
+        static float sShotDue = -1f;                 // the beam and slug follow the muzzle blast
         static readonly RaycastHit[] sHits = new RaycastHit[64];
         static readonly List<RaycastHit> sSorted = new List<RaycastHit>();
 
@@ -44,6 +44,7 @@ namespace TheExpanse
             sMuzzle = null;
             sCharge = 0f; sReadyAt = 0f;
             sHeld = false;
+            sShotDue = -1f;
             sLoggedMuzzle = false;
             RailGateCopy.Reset();
             if (sTrail != null) Object.Destroy(sTrail.gameObject);
@@ -70,7 +71,7 @@ namespace TheExpanse
         internal static void ReadInput()
         {
             var pad = InputManager.ActiveDevice;
-            sHeld = Weapons.Allowed && Weapons.Mode == WeaponMode.RailGun
+            sHeld = Weapons.Allowed && Weapons.Mode == WeaponMode.RailGun && !Weapons.Looking
                     && (Input.GetMouseButton(0) || (pad != null && pad.RightTrigger.Value > 0.5f));
         }
 
@@ -84,6 +85,7 @@ namespace TheExpanse
             if (sHeld && Ready) sCharge = Mathf.Min(1f, sCharge + dt / chargeTime);
             else sCharge = Mathf.Max(0f, sCharge - dt / (chargeTime * 0.5f));
             if (sCharge >= 1f && sHeld && Ready && dt > 0f) Fire();
+            if (sShotDue >= 0f && Time.time >= sShotDue) { sShotDue = -1f; Shoot(); }
             RailGateCopy.Tick();
             if (sTrail != null && sTrail.enabled)
             {
@@ -105,7 +107,18 @@ namespace TheExpanse
         {
             sCharge = 0f;
             sReadyAt = Time.time + Mathf.Max(0.2f, Plugin.WeaponsRailGunCooldown.Value);
+            Aim(out var muzzle, out var nose);
+            float delay = Mathf.Max(0f, Plugin.WeaponsRailGunBeamDelay.Value);
+            RailGateCopy.Fire(sMuzzle != null ? sMuzzle : FlightModel.Frame, muzzle, nose, Mathf.Max(0.001f, Plugin.WeaponsRailGunGlowSize.Value),
+                              Plugin.WeaponsRailGunBlastSize.Value, delay);
+            sShotDue = Time.time + delay;
+        }
+
+        static void Shoot()
+        {
             Aim(out var from, out var dir);
+            // recoil: the ship is pushed back along the nose
+            FlightModel.Kick(-dir * Mathf.Max(0f, Plugin.WeaponsRailGunRecoil.Value));
             float range = Mathf.Max(100f, Plugin.WeaponsRailGunRange.Value);
             var end = from + dir * range;
             int pierced = 0;
@@ -122,7 +135,7 @@ namespace TheExpanse
                 if (FlightSeat.PlayerCollider != null && hit.collider == FlightSeat.PlayerCollider) continue;
                 var part = hit.collider.GetComponentInParent<StructurePart>();
                 if (part != null && FlightModel.IsShipPart(part) && FlightModel.IsMainShipPart(part)) continue;    // the own ship
-                if (pierced == 0) { end = hit.point; what = part != null ? $"'{part.name}'" : $"'{hit.collider.name}' (no part: the station)"; Boom(hit.point); }
+                if (pierced == 0) { end = hit.point; what = part != null ? $"'{part.name}'" : $"'{hit.collider.name}' (no part: the station)"; }
                 if (part == null) { end = hit.point; break; }            // the station stops it
                 if (!touched.Add(part)) continue;
                 try { ReactorFire.HeatPart(part, Mathf.Max(0f, Plugin.WeaponsRailGunHeat.Value)); }
@@ -133,7 +146,6 @@ namespace TheExpanse
                 if (++pierced >= pierce) break;
             }
             Plugin.Log.LogInfo($"[Weapons] RAIL GUN fired from {from} along {dir}: hit {what} at {Vector3.Distance(from, end):0} m, through {pierced} part(s).");
-            RailGateCopy.Fire(sMuzzle != null ? sMuzzle : FlightModel.Frame, from, dir, Mathf.Max(0.001f, Plugin.WeaponsRailGunBeamSize.Value));
             ShowTrail(from, end);
         }
 
@@ -179,35 +191,5 @@ namespace TheExpanse
             return tex;
         }
 
-        static void Boom(Vector3 at)
-        {
-            if (sExplosionPrefab != null) { Spawn(at); return; }
-            if (sExplosionLoading) return;
-            sExplosionLoading = true;
-            try
-            {
-                Addressables.LoadAssetAsync<GameObject>(ExplosionGuid).Completed += handle =>
-                {
-                    sExplosionLoading = false;
-                    if (handle.Status != AsyncOperationStatus.Succeeded || handle.Result == null)
-                    { Plugin.Log.LogWarning("[Weapons] the explosion effect could not be loaded."); return; }
-                    sExplosionPrefab = handle.Result;
-                    Spawn(at);
-                };
-            }
-            catch (System.Exception ex) { sExplosionLoading = false; Plugin.Log.LogWarning("[Weapons] the explosion effect could not be loaded: " + ex.Message); }
-        }
-
-        static void Spawn(Vector3 at)
-        {
-            var boom = Object.Instantiate(sExplosionPrefab!, at, Quaternion.identity);
-            boom.name = "TheExpanse_RailGunHit";
-            boom.transform.localScale = Vector3.one * Mathf.Max(0.05f, Plugin.WeaponsRailGunBlastScale.Value);
-            boom.SetActive(true);
-            foreach (var effect in boom.GetComponentsInChildren<VisualEffect>(true))
-            { effect.enabled = true; effect.Reinit(); effect.Play(); effect.SendEvent("Start"); effect.SendEvent("OnPlay"); }
-            foreach (var system in boom.GetComponentsInChildren<ParticleSystem>(true)) system.Play(true);
-            Object.Destroy(boom, 10f);
-        }
     }
 }

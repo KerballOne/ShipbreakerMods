@@ -711,7 +711,6 @@ namespace TheExpanse
             var image = go.AddComponent<Image>();
             image.color = color;
             image.raycastTarget = false;
-            AddShadow(go);
             return rect;
         }
 

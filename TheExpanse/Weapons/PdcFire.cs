@@ -58,7 +58,7 @@ namespace TheExpanse
         internal static void ReadInput()
         {
             var pad = InputManager.ActiveDevice;
-            sFiring = Weapons.Allowed && Weapons.Mode == WeaponMode.Pdc
+            sFiring = Weapons.Allowed && Weapons.Mode == WeaponMode.Pdc && !Weapons.Looking
                       && (Input.GetMouseButton(0) || (pad != null && pad.RightTrigger.Value > 0.5f));
         }
 

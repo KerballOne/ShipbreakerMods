@@ -125,6 +125,13 @@ namespace TheExpanse
         }
         internal static float Speed => sVelocity.magnitude;
 
+        // A change of the ship's speed from outside the controls (the rail gun's recoil), in m/s.
+        internal static void Kick(Vector3 change)
+        {
+            if (!sMoving) return;
+            sVelocity += change;
+        }
+
         // How fast a point riding on the ship moves (for the pilot in the chair).
         // Parked, the ship's bodies are still: zero.
         internal static Vector3 PointVelocity(Vector3 point) => sParked ? Vector3.zero : MovingPointVelocity(point);
@@ -1032,7 +1039,8 @@ namespace TheExpanse
             float z = Axis(KeyCode.W, KeyCode.S);
             if (pad != null)
             {
-                if (!wheelOpen) { x += pad.LeftStickX.Value; z += pad.LeftStickY.Value; }
+                if (Weapons.StickLatched && pad.LeftStick.Vector.magnitude < 0.25f) Weapons.StickLatched = false;
+                if (!wheelOpen && !Weapons.StickLatched) { x += pad.LeftStickX.Value; z += pad.LeftStickY.Value; }
                 y += (pad.Action1.IsPressed ? 1f : 0f) - (pad.Action2.IsPressed ? 1f : 0f);
             }
             sThrust = Vector3.ClampMagnitude(new Vector3(x, Mathf.Clamp(y, -1f, 1f), z), 1f);

@@ -14,6 +14,20 @@ namespace TheExpanse
     {
         internal static WeaponMode Mode { get; private set; } = WeaponMode.Helm;
 
+        // The left stick picked a slice on the wheel: it moves the ship again only once let go (back near the middle),
+        // as standing up waits for Interact to be let go.
+        internal static bool StickLatched { get; set; }
+
+        // Holding View (or the right mouse button) looks around and zooms with the triggers: no firing then.
+        internal static bool Looking
+        {
+            get
+            {
+                var pad = InControl.InputManager.ActiveDevice;
+                return Input.GetMouseButton(1) || (pad != null && pad.CommandIsPressed);
+            }
+        }
+
         internal static bool Allowed => Plugin.Enabled.Value && Plugin.WeaponsEnabled.Value && FlightModel.Flying;
 
         // the mouse (and right stick) aim instead of turning the ship

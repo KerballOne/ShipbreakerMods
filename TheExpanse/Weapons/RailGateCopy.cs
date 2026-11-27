@@ -19,6 +19,11 @@ namespace TheExpanse
     // muzzle so it moves with the ship; then the same calls are made on the copies. Calls on objects that were not
     // copied are skipped (the real gate is never touched).
     //
+    // Two parts of the gate: FX_Gate_Near is the beam (placed so it leaves the muzzle along the nose; RailGunGlowSize
+    // sizes only its glow); FX_Gate is the gate's big flash (3 km across, 290 m off the beam's start at the gate): it is
+    // the blast, centered on the muzzle at RailGunBlastSize, and goes off first; the beam's calls follow
+    // RailGunBeamDelay later.
+    //
     // Timing: the gate charges for 30 s before it fires (its 'Start' at 0 s, the beam's 'Step1' with both effects
     // switched on at 30 s) and switches off at 90 s. The rail gun has its own charge, so every step up to and
     // including the firing one (the first that switches an effect on) is played at once, in order, and the steps after
@@ -48,6 +53,8 @@ namespace TheExpanse
         static readonly Dictionary<Transform, Transform> sCopies = new Dictionary<Transform, Transform>();   // top original -> copy
         static float sStarted;
         static int sNext, sFireStep = -1;
+        static GameObject? sBlastRig;
+        static readonly List<(float at, Call call)> sSchedule = new List<(float, Call)>();
 
         internal static float Duration => sSteps.Count > 0 ? sSteps[sSteps.Count - 1].At : 0f;
 
@@ -63,6 +70,9 @@ namespace TheExpanse
         {
             if (sRig != null) Object.Destroy(sRig);
             sRig = null;
+            if (sBlastRig != null) Object.Destroy(sBlastRig);
+            sBlastRig = null;
+            sSchedule.Clear();
             sCopies.Clear();
             sNext = 0;
         }
@@ -159,7 +169,7 @@ namespace TheExpanse
         // ---- playing it at the muzzle ------------------------------------------------------------------------------
 
         // Copies what the calls touch and starts the sequence there. Scale: 1 is the gate's own size.
-        internal static bool Fire(Transform? parent, Vector3 at, Vector3 dir, float scale)
+        internal static bool Fire(Transform? parent, Vector3 at, Vector3 dir, float scale, float blastScale, float beamDelay)
         {
             if (!Read() || sVillageFx == null) return false;
             Stop();
@@ -174,6 +184,7 @@ namespace TheExpanse
                     var copy = Object.Instantiate(top.gameObject, sRig.transform, true);     // same world pose under the rig
                     copy.name = top.name + "_Copy";
                     copy.SetActive(top.gameObject.activeSelf);
+                    Quiet(copy);
                     sCopies[top] = copy.transform;
                 }
             // the beam's origin is FX_Gate_Near if copied (else the first copy); its axis is the copy's forward
@@ -188,9 +199,44 @@ namespace TheExpanse
                 sRig.transform.localScale *= scale;
                 sRig.transform.position += at - origin.position;
             }
+            // the gate's flash: its own rig, centered on the muzzle, turned the same way, at the blast's size
+            foreach (var pair in sCopies)
+            {
+                if (pair.Key.name != "FX_Gate") continue;
+                sBlastRig = new GameObject("TheExpanse_RailGunBlast");
+                sBlastRig.transform.SetPositionAndRotation(at, sRig.transform.rotation);
+                sBlastRig.transform.localScale = Vector3.one * Mathf.Max(0.001f, blastScale);
+                var flash = pair.Value;
+                // its ring faces along the nose: the flash's ring axis (RailGunBlastAxis, its own x, y or z) turned onto it
+                var original = pair.Key.rotation;
+                var ringAxis = BlastAxis();
+                var flashRotation = Quaternion.FromToRotation(original * ringAxis, dir) * original;
+                flash.SetParent(sBlastRig.transform, false);
+                flash.localPosition = Vector3.zero;
+                flash.rotation = flashRotation;
+                flash.localScale = pair.Key.lossyScale;
+                // played faster (RailGunBlastSpeed)
+                float speed = Mathf.Max(0.1f, Plugin.WeaponsRailGunBlastSpeed.Value);
+                foreach (var effect in flash.GetComponentsInChildren<UnityEngine.VFX.VisualEffect>(true)) effect.playRate = speed;
+                if (parent != null) sBlastRig.transform.SetParent(parent, true);
+            }
             if (parent != null) sRig.transform.SetParent(parent, true);        // goes with the ship
             sStarted = Time.time;
             sNext = 0;
+            // every call's time on this shot: the flash's at once, the beam's (FX_Gate_Near) after the delay, the
+            // steps after the firing one over the hold time
+            sSchedule.Clear();
+            for (int i = 0; i < sSteps.Count; i++)
+                foreach (var call in sSteps[i].Calls)
+                {
+                    float t = ShotTime(i);
+                    var top = Top(TargetTransform(call.Target)!);
+                    if (i <= sFireStep && top != null && top.name == "FX_Gate_Near") t = Mathf.Max(t, beamDelay);
+                    else if (i > sFireStep) t += beamDelay;
+                    int k = sSchedule.Count;
+                    while (k > 0 && sSchedule[k - 1].at > t) k--;          // stable insert
+                    sSchedule.Insert(k, (t, call));
+                }
             if (!sPoseLogged)
             {
                 sPoseLogged = true;
@@ -207,6 +253,34 @@ namespace TheExpanse
             return true;
         }
 
+        static bool sQuietLogged;
+
+        // Takes out what lights up the whole view rather than the beam: lights and post-processing volumes (with the
+        // rail gun's copy near the camera, the gate's own glow would cover the screen). Lists the copy's parts once.
+        static void Quiet(GameObject copy)
+        {
+            var parts = new List<string>();
+            int off = 0;
+            foreach (var c in copy.GetComponentsInChildren<Component>(true))
+            {
+                if (c == null || c is Transform) continue;
+                bool quiet = c is Light || c is UnityEngine.Rendering.Volume || c is UnityEngine.Rendering.HighDefinition.HDAdditionalLightData
+                             || c.GetType().Name.Contains("LensFlare");
+                if (quiet && c is Behaviour b) { b.enabled = false; off++; }
+                if (quiet && c is Light l) l.enabled = false;
+                parts.Add($"{c.GetType().Name} '{c.name}'{(quiet ? " (off)" : "")}");
+                if (c is UnityEngine.VFX.VisualEffect vfx && vfx.visualEffectAsset != null)
+                {
+                    var exposed = new List<UnityEngine.VFX.VFXExposedProperty>();
+                    vfx.visualEffectAsset.GetExposedProperties(exposed);
+                    parts.Add($"  effect '{vfx.visualEffectAsset.name}' properties: " + string.Join(", ", exposed.ConvertAll(p => $"{p.name} ({p.type.Name})")));
+                }
+            }
+            if (sQuietLogged && copy.name != "FX_Gate_Near_Copy") return;
+            Plugin.Log.LogInfo($"[Weapons] rail gate copy '{copy.name}': {off} light(s)/volume(s) switched off; parts: " + string.Join("; ", parts));
+            if (copy.name == "FX_Gate_Near_Copy") sQuietLogged = true;
+        }
+
         static IEnumerable<string> NamesOf() { foreach (var k in sCopies.Keys) yield return k.name; }
 
         // The child of FX_Village holding a target.
@@ -221,15 +295,23 @@ namespace TheExpanse
         {
             if (sRig == null) return;
             float elapsed = Time.time - sStarted;
-            while (sNext < sSteps.Count && elapsed >= ShotTime(sNext))
+            while (sNext < sSchedule.Count && elapsed >= sSchedule[sNext].at)
             {
-                foreach (var call in sSteps[sNext].Calls) Invoke(call);
+                Invoke(sSchedule[sNext].call);
                 sNext++;
             }
-            if (sNext >= sSteps.Count && elapsed > Hold + 0.5f) Stop();
+            if (sNext >= sSchedule.Count && elapsed > Hold + 1f) Stop();
         }
 
         static float Hold => Mathf.Max(0.5f, Plugin.WeaponsRailGunBeamSeconds.Value);
+
+        static Vector3 BlastAxis()
+        {
+            string a = (Plugin.WeaponsRailGunBlastAxis.Value ?? "y").Trim().ToLowerInvariant();
+            bool minus = a.StartsWith("-");
+            var v = a.EndsWith("x") ? Vector3.right : a.EndsWith("z") ? Vector3.forward : Vector3.up;
+            return minus ? -v : v;
+        }
 
         // A step's time on a shot: up to the firing step at once; after it, spread over the hold time.
         static float ShotTime(int i)
