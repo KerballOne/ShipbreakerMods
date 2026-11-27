@@ -36,6 +36,30 @@ namespace TheExpanse
         static readonly List<RaycastHit> sSorted = new List<RaycastHit>();
 
         internal static float Charge => sCharge;
+        internal static bool Held => sHeld;
+        internal static float FiredAt { get; private set; } = -10f;
+        static bool sWasHeld;
+        static readonly RaycastHit[] sSightHits = new RaycastHit[32];
+
+        // Where the slug would strike: the first thing on the line from the muzzle along the nose that is not the own
+        // ship (within 5 km), else 5 km out. For the sight, so it sits on what is close as well as far.
+        internal static Vector3 SightPoint()
+        {
+            Aim(out var from, out var dir);
+            const float far = 5000f;
+            int n = Physics.RaycastNonAlloc(from, dir, sSightHits, far, ~0, QueryTriggerInteraction.Ignore);
+            float best = far;
+            for (int i = 0; i < n; i++)
+            {
+                var h = sSightHits[i];
+                if (h.collider == null || h.distance >= best) continue;
+                if (FlightSeat.PlayerCollider != null && h.collider == FlightSeat.PlayerCollider) continue;
+                var part = h.collider.GetComponentInParent<StructurePart>();
+                if (part != null && FlightModel.IsShipPart(part) && FlightModel.IsMainShipPart(part)) continue;
+                best = h.distance;
+            }
+            return from + dir * best;
+        }
         internal static float ReloadLeft => Mathf.Max(0f, sReadyAt - Time.time);
         internal static bool Ready => ReloadLeft <= 0f;
 
@@ -52,6 +76,7 @@ namespace TheExpanse
         }
 
         internal static void SetMuzzle(Transform muzzle) => sMuzzle = muzzle;
+        internal static bool HasMuzzle => sMuzzle != null;
 
         // The muzzle and the way it fires: the Railgun_Muzzle part, along the ship's nose; else the ship's nose.
         internal static void Aim(out Vector3 from, out Vector3 dir)
@@ -82,9 +107,12 @@ namespace TheExpanse
             bool armed = Weapons.Allowed && Weapons.Mode == WeaponMode.RailGun;
             if (!armed) sHeld = false;
             float chargeTime = Mathf.Max(0.05f, Plugin.WeaponsRailGunCharge.Value);
-            if (sHeld && Ready) sCharge = Mathf.Min(1f, sCharge + dt / chargeTime);
+            // held: it charges; let go once fully charged and it fires (let go early and the charge drains)
+            bool released = sWasHeld && !sHeld;
+            sWasHeld = sHeld;
+            if (released && sCharge >= 1f && Ready && armed && Ammo.TakeRail()) Fire();
+            else if (sHeld && Ready && Ammo.Rail > 0 && Ammo.RailReady) sCharge = Mathf.Min(1f, sCharge + dt / chargeTime);
             else sCharge = Mathf.Max(0f, sCharge - dt / (chargeTime * 0.5f));
-            if (sCharge >= 1f && sHeld && Ready && dt > 0f) Fire();
             if (sShotDue >= 0f && Time.time >= sShotDue) { sShotDue = -1f; Shoot(); }
             RailGateCopy.Tick();
             if (sTrail != null && sTrail.enabled)
@@ -105,6 +133,7 @@ namespace TheExpanse
 
         static void Fire()
         {
+            FiredAt = Time.time;
             sCharge = 0f;
             sReadyAt = Time.time + Mathf.Max(0.2f, Plugin.WeaponsRailGunCooldown.Value);
             Aim(out var muzzle, out var nose);
@@ -136,7 +165,13 @@ namespace TheExpanse
                 var part = hit.collider.GetComponentInParent<StructurePart>();
                 if (part != null && FlightModel.IsShipPart(part) && FlightModel.IsMainShipPart(part)) continue;    // the own ship
                 if (pierced == 0) { end = hit.point; what = part != null ? $"'{part.name}'" : $"'{hit.collider.name}' (no part: the station)"; }
-                if (part == null) { end = hit.point; break; }            // the station stops it
+                if (part == null)
+                {
+                    end = hit.point;
+                    // a salvage station: every piece on the line breaks, and the slug goes on through
+                    if (StationDamage.Pierce(hit.collider, hit.point, dir)) { end = from + dir * range; continue; }
+                    break;                                               // the work bay stops it
+                }
                 if (!touched.Add(part)) continue;
                 try { ReactorFire.HeatPart(part, Mathf.Max(0f, Plugin.WeaponsRailGunHeat.Value)); }
                 catch (System.Exception ex) { Plugin.Log.LogWarning("[Weapons] rail gun damage failed: " + ex.Message); }

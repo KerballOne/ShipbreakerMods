@@ -48,7 +48,17 @@ namespace TheExpanse
         internal static Vector3 AimPoint { get; private set; }
         internal static bool AimHit { get; private set; }
         internal static string AimName { get; private set; } = "";
+
+        // A turret's pieces moved to another parent (the ship's structure rebuilt): the mounts are looked for again.
+        internal static bool Lost;
         internal static int OnTarget { get; private set; }
+
+        // Every PDC this ship had this level, in the order found: one HUD segment each, kept (crossed out) after it is
+        // cut off or broken. Cleared only at a level load (Forget).
+        static readonly List<string> sKnown = new List<string>();
+        internal static IReadOnlyList<string> Known => sKnown;
+        internal static void Forget() => sKnown.Clear();
+        internal static Turret? Find(string name) => sTurrets.Find(t => t.Name == name);
 
         internal static void Reset()
         {
@@ -93,6 +103,7 @@ namespace TheExpanse
                 BarrelHalf = barrelLength * 0.5f,
             };
             sTurrets.Add(t);
+            if (!sKnown.Contains(name)) sKnown.Add(name);
             var ship = FlightModel.Frame;
             Plugin.Log.LogInfo($"[Weapons] PDC '{name}': truss turns about {Describe(trussAxis, ship)} through {trussCenter}, body about its local {bodyLocal} " +
                                $"{Describe(bodyAxis, ship)} ({Vector3.Angle(trussAxis, bodyAxis):0} deg to the truss axis), barrel points " +
@@ -137,7 +148,7 @@ namespace TheExpanse
             sCursorYaw += MouseAxis("mouse x", "Mouse X") * mouse;
             sCursorPitch += MouseAxis("mouse y", "Mouse Y") * mouse * invert;
             var camera = Camera.main;
-            float halfV = camera != null ? camera.fieldOfView * 0.5f : 30f;
+            float halfV = camera != null ? FlightCamera.ViewFov(camera) * 0.5f : 30f;
             float halfH = camera != null ? Mathf.Atan(Mathf.Tan(halfV * Mathf.Deg2Rad) * camera.aspect) * Mathf.Rad2Deg : 50f;
             sCursorYaw = Mathf.Clamp(sCursorYaw, -halfH * 0.95f, halfH * 0.95f);
             sCursorPitch = Mathf.Clamp(sCursorPitch, -halfV * 0.95f, halfV * 0.95f);
@@ -182,6 +193,7 @@ namespace TheExpanse
                 if (t.Truss == null || t.Body == null || t.Barrel == null || t.Frame == null || t.Truss.parent != t.Frame)
                 {
                     Plugin.Log.LogInfo($"[Weapons] PDC '{t.Name}' is no longer on its mount; left alone.");
+                    Lost = true;
                     sTurrets.RemoveAt(i);
                     continue;
                 }

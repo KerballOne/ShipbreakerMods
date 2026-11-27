@@ -73,15 +73,32 @@ Sit in any command chair on the ship (near it, press Interact) and you are at th
 - **Hold attitude** (thrusters stop any spin you did not ask for): T / D-pad up, on by default.
 - **Flip and burn:** G / D-pad left (`[Flight] FlipKey`). The ship turns tail-first, burns down to a crawl and stops on its thrusters. Press again, or touch the throttle, to cancel.
 - **Weapon wheel:** hold R / Y, point at a slice, let go (as the suit's tool wheel), or press 1-4: HELM, PDC, TORP, RAIL.
-- **Views:** V / D-pad right: outside, nose, seat. Outside, hold the right mouse button / View button to orbit and zoom.
+- **Views:** V / D-pad right: outside, nose, seat. Outside, hold the right mouse button / View button to orbit and zoom. The nose view opens zoomed in 2x; hold the right mouse button + wheel / View + triggers to zoom it (up to 8x).
 
 **Weapons** (pick them on the weapon wheel; they fire with the left mouse button / RT; holding the right mouse button / View to look around never fires):
 
-- **PDC** (point defense cannons): the mouse / right stick moves a red reticle and the ship holds its attitude. Each of the six turrets turns its truss, body and barrel onto the point under the reticle, but only while it can see it; a segment per turret under the reticle shows which are on target. Hold to fire tracers: rounds carry the ship's speed, spark where they hit, and heat what they hit.
+- **PDC** (point defense cannons): the mouse / right stick moves a red reticle and the ship holds its attitude. Each of the six turrets turns its truss, body and barrel onto the point under the reticle, but only while it can see it. A square per turret sits around the reticle where the turret is on the ship (dorsal above, ventral below, port left, starboard right): bright when on target, dimmer while turning, faint when it can't see the point. Hold to fire tracers: rounds carry the ship's speed, spark where they hit, and heat what they hit.
 - **TORP** (torpedoes): both tube doors open when selected. A purple box cursor, with two rows of segments for the torpedoes left in the top and bottom tubes. Each press launches one, locked on the point under the cursor, from the tube on the target's side: it eases out on its thrusters, burns clear, turns, lights its blue drive and flies there (round the ship when the target is behind it), then explodes the way the game's own explosives do. The torpedo last in that tube's tray disappears; when the tray is empty, the one in the tube goes.
-- **RAIL** (rail gun): the flight controls stay; a blue sight marks where the nose points. Hold to charge, and it fires: the rail gate's flash at the muzzle, then its beam along the nose. The slug goes through up to four parts and stops at the station; each shot pushes the ship back a little. It reloads in five seconds.
+- **RAIL** (rail gun): the flight controls stay; a blue sight marks what the nose points at. Hold to charge (CHARGING), and when FIRE flashes, let go: the rail gate's flash at the muzzle, then its beam along the nose. The slug goes through up to four parts; each shot pushes the ship back a little. It reloads in five seconds (RELOADING), then shows READY.
 
-All of it is tunable in **[Weapons]** of the settings file (rates, ranges, damage, sizes and speeds of the effects).
+**Ammunition.** Every weapon fires only while the ship still has what feeds it:
+
+- **PDC:** each cannon has its own three ammo crates of 2,400 rounds (six minutes of fire); the crates empty in turn. It fires only while every belt, feed and receiver piece of its mount is on board. The squares are colored by rounds left: green over 50 %, yellow 20-50 %, red under 20 %, gray when empty; a gray square with a red X is a cannon that is cut off or missing its feed. **AMMO** under the reticle and the wheel's PDC slice show the total.
+- **Rail gun:** 20 slugs, all in its loader crate, which feeds the breech directly. It fires only while the crate and every rail gun piece (barrels, breech, housing, muzzle, base plate) are on board; otherwise it shows OFFLINE, and NO SLUGS when empty. **AMMO** under its status.
+- **Torpedoes:** the ones still in the tubes and their trays.
+
+"On board" means still part of the ship's main structure: a piece cut loose or salvaged no longer counts. Ammunition is full again at the next level load.
+
+All of it is tunable in **[Weapons]** of the settings file (rates, ranges, damage, slugs, sizes and speeds of the effects).
+
+**Shooting up the salvage stations.** The small 3D salvage bays around the work bay can be shot apart with all three weapons:
+
+- Crates, the barge, the jacks and the stripped ship break off, shattered by the game's own cutter (metal cut faces), and drift away.
+- The bay's frame stays put: a piece is broken out of it around each hit, and the rest stays standing.
+- A wrecked crate, a piece of the frame or the stripped ship may spill collectibles: credit drives (most often), data drives, the bunny, truck parts, repair kits, oxygen and thruster fuel, copies of the ones on your ship. They drift out slowly and are picked up the game's way.
+- From the pilot's seat, and on foot with the scanner on its Objects screen, a green hexagon marks the spilled loot with its distance; a number inside counts how many are close together.
+
+The stations are back at the next level load. Tunable in **[Stations]**.
 
 **The HUD** shows the drive and thruster gauges, the speed, a prograde / retrograde bubble, the turn rate, the acceleration in m/s² and g, and the flip and burn's progress. In the outside views a thin hexagon marks the work bay, with its distance; off screen it sits on the edge with an arrow.
 
@@ -184,7 +201,16 @@ Saving the file while the game is running applies the change within a second.
 - **DrivePlume** (default false): a test burn of the plume without flying, at **TestThrottle** (0.25). In flight the plume follows the throttle.
 - **Length** (75), **MouthDiameter** (0 = the bell's), **Spread** (1.4), **Brightness** (1), **Color**, **Turbulence** (0.6), **Sheath** (0.6), **Core** (4), **CoreDiameter** (3), **FlowSpeed** (300), **ShockDiamonds** (4), **Streak** (1), **LightLumens** (150000): the plume's look, each explained in the settings file.
 
+**[Stations]**
+- **Destructible** (default true): the small salvage stations around the work bay can be shot apart.
+- **Health** (200), **PdcDamage** (2), **TorpedoDamage** (300), **TorpedoRadius** (40): how much a 50 m piece takes, and what each weapon does to it.
+- **Loot** (true), **LootChance** (0.5), **LootMax** (3): wrecks spill collectibles, how often, and at most how many.
+- **LootCopies** (true): spilled loot is copied from the collectibles on your ship (no limit). Off: your ship's own loose collectibles are moved out instead, each once.
+- **ScannerMarkers** (true): spilled loot is marked on the HUD while the scanner is on its Objects screen.
+- **CarveSize** (40), **ShatterCuts** (3), **DriftSpeed** (20): how much of the bay's frame breaks out per hit, how many cuts shatter a piece, and how fast pieces drift away.
+
 **[Debug]**
+- **QuickSit** (default true), **QuickSitKey** (F4): F4 / both stick clicks puts you straight into the ship's nearest seat, once per level, after the ship has loaded.
 - **TestTools** (default false): for testing only. Shows how many nodes are left and the reactor's balance on screen. **KillHalfNodesKey** (F8) destroys half of the nodes; **ReactorRightKey** (F11) and **ReactorWrongKey** (Shift+F11) treat the best or the worst injector as disconnected.
 - **PhysicsCostTestKey** (empty = off): for measuring, logs where the physics time goes over 5 seconds.
 

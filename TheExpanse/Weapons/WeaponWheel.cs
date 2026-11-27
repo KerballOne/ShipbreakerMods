@@ -94,7 +94,19 @@ namespace TheExpanse
                 if (sTexts.Count > 0 && sTexts[0].text != null && sTexts[0].text != text && text.color.a < 0.3f)
                     text.color = sTexts[0].text.color;
             }
+            foreach (var (text, _, slot) in sAmmo)
+                if (text != null) text.text = AmmoText((WeaponMode)slot);
         }
+
+        static readonly List<(TMP_Text text, string was, int slot)> sAmmo = new List<(TMP_Text, string, int)>();
+
+        static string AmmoText(WeaponMode mode) => mode switch
+        {
+            WeaponMode.Pdc => Ammo.Short(Ammo.PdcTotal),
+            WeaponMode.Torpedo => Torpedo.Left.ToString(),
+            WeaponMode.RailGun => Ammo.RailReady ? Ammo.Rail.ToString() : "OFF",
+            _ => "",
+        };
 
         static bool FindWheel()
         {
@@ -129,10 +141,17 @@ namespace TheExpanse
                 var h = highlights[i];
                 sWasDisabled[i] = h.Disabled;
                 // a segment past the four modes stays greyed out
-                h.Disabled = i >= 4;
+                h.Disabled = i >= 4 || !Weapons.Has((WeaponMode)i);   // greyed out: a weapon this ship hasn't got
                 Hide(h.DurabilityCircle);
                 Hide(h.DurabilityBar);
-                Hide(h.DurabilityMirrorText);
+                // the slice's "100%" under its label shows the weapon's ammunition left instead (none on HELM)
+                var ammo = i >= 1 && i < 4 && h.DurabilityMirrorText != null ? h.DurabilityMirrorText.GetComponent<TMP_Text>() : null;
+                if (ammo != null && Weapons.Has((WeaponMode)i))
+                {
+                    sAmmo.Add((ammo, ammo.text, i));
+                    if (!h.DurabilityMirrorText!.activeSelf) { sShown.Add(h.DurabilityMirrorText); h.DurabilityMirrorText.SetActive(true); }
+                }
+                else Hide(h.DurabilityMirrorText);
                 if (h.ProgressBar != null) Hide(h.ProgressBar.gameObject);
                 if (i < 4) SwapLabels(h, i);
             }
@@ -159,6 +178,8 @@ namespace TheExpanse
             Main.EventSystem.Post(ToolSelectMenuEvent.GetEvent(EquipmentController.Equipment.None, visible: false, closeWithoutSwap: true));
             SetNav(false);
             foreach (var (text, was, _) in sTexts) if (text != null) text.text = was;
+            foreach (var (text, was, _) in sAmmo) if (text != null) text.text = was;
+            sAmmo.Clear();
             sTexts.Clear();
             foreach (var go in sShown) if (go != null) go.SetActive(false);
             sShown.Clear();

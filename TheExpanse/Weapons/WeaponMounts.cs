@@ -19,6 +19,17 @@ namespace TheExpanse
 
         internal static void Reset() { sLogged = false; Pdc.Reset(); }
 
+        // The ship's structure was rebuilt under the turrets (they were found too early): find everything again,
+        // keeping torpedoes already in flight.
+        internal static void Rescan()
+        {
+            Plugin.Log.LogInfo("[Weapons] weapon mounts moved; looking for them again.");
+            Pdc.Lost = false;
+            Pdc.Reset();
+            Torpedo.ResetTubes();
+            sLogged = false;
+        }
+
         internal static void LogOnce()
         {
             if (sLogged) return;
@@ -28,14 +39,18 @@ namespace TheExpanse
             var bodies = new Dictionary<string, Transform>();
             var barrels = new Dictionary<string, Transform>();
             var trusses = new Dictionary<string, Transform>();
+            var shipParts = new List<StructurePart>();
             foreach (var part in Object.FindObjectsOfType<StructurePart>())
             {
                 if (!FlightModel.IsShipPart(part)) continue;
+                shipParts.Add(part);
+                StationLoot.NoteShipPart(part);
                 foreach (var t in part.GetComponentsInChildren<Transform>(true))
                 {
                     if (t == null || !seen.Add(t)) continue;
                     if (t.name == "Railgun_Muzzle") RailGun.SetMuzzle(t);
                     Torpedo.Note(t);
+                    Ammo.Note(t);
                     var pdc = PdcPart.Match(t.name);
                     if (pdc.Success)
                     {
@@ -53,6 +68,10 @@ namespace TheExpanse
                 else Plugin.Log.LogWarning($"[Weapons] PDC '{pair.Key}': body without {(barrels.ContainsKey(pair.Key) ? "" : "a barrel ")}{(trusses.ContainsKey(pair.Key) ? "" : "a truss")}; not driven.");
             Pdc.LogNoneOnce();
             Torpedo.Setup();
+            var pdcNames = new List<string>();
+            foreach (var turret in Pdc.Turrets) pdcNames.Add(turret.Name);
+            Ammo.Setup(pdcNames, shipParts);
+            StationLoot.ShipScanned();
             int total = 0;
             foreach (var list in groups.Values) total += list.Count;
             Plugin.Log.LogInfo($"[Weapons] {total} weapon object(s) on the ship in {groups.Count} name group(s):");

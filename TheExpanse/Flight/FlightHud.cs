@@ -37,10 +37,76 @@ namespace TheExpanse
         static readonly System.Reflection.FieldInfo? sTimerTextField = HarmonyLib.AccessTools.Field(typeof(BBI.Unity.Game.UI.GameTimerUIController), "m_TimerText");
         static TextMeshProUGUI? sDriveText, sDrivePercent, sRcsText, sRcsPercent, sSpeedText, sTurnText, sAccelText, sAutoText, sPromptText, sPromptKey;
         static TextMeshProUGUI? sModeText, sAimText;
-        static RectTransform? sAim, sPdcBar, sRail, sRailBar, sTorp, sTorpBar;
+        static RectTransform? sAim, sPdcBar, sRail, sRailBar, sTorp, sTorpBar, sLootLayer;
+        static TextMeshProUGUI? sToast;
+        static readonly List<(RectTransform marker, TextMeshProUGUI text, TextMeshProUGUI count)> sLootMarkers = new List<(RectTransform, TextMeshProUGUI, TextMeshProUGUI)>();
+        static readonly Color LootColor = new Color(0.45f, 1f, 0.55f, 0.95f);
+        const int MaxLootMarkers = 12;
+        const float LootMarkerRange = 3000f, ClusterSize = 50f;
+
+        // A small diamond with its distance on each pickup within 3 km (nearest first), from the view the player sees.
+        static void ShowLootMarkers(bool any)
+        {
+            if (sLootLayer == null) return;
+            // from the seat, or on foot with the scanner on in Objects mode
+            any = any && (FlightSeat.Seated || LootGlow.ObjectScan);
+            sLootLayer.gameObject.SetActive(any);
+            if (!any) return;
+            var camera = Camera.main;
+            if (camera == null || !Pdc.View(out var eye, out var view)) return;
+            var size = ((RectTransform)sCanvas!.transform).rect.size;
+            float half = size.y * 0.5f, halfW = size.x * 0.5f;
+            float tanV = Mathf.Tan(FlightCamera.ViewFov(camera) * 0.5f * Mathf.Deg2Rad);
+            // clusters: everything within ClusterSize of a cluster's first member goes with it; one marker each, with
+            // how many are left in it
+            var clusters = new List<(Vector3 first, Vector3 sum, int count)>();
+            foreach (var it in StationLoot.Items)
+            {
+                var p = it.Position;
+                int found = -1;
+                for (int c = 0; c < clusters.Count; c++)
+                    if ((clusters[c].first - p).sqrMagnitude <= ClusterSize * ClusterSize) { found = c; break; }
+                if (found < 0) clusters.Add((p, p, 1));
+                else { var c = clusters[found]; clusters[found] = (c.first, c.sum + p, c.count + 1); }
+            }
+            var near = new List<(float d, Vector3 at, int count)>();
+            foreach (var (_, sum, count) in clusters)
+            {
+                var at = sum / count;
+                float d = Vector3.Distance(eye, at);
+                if (d <= LootMarkerRange) near.Add((d, at, count));
+            }
+            near.Sort((a, b) => a.d.CompareTo(b.d));
+            int shown = 0;
+            foreach (var (d, at, count) in near)
+            {
+                if (shown >= MaxLootMarkers) break;
+                var local = Quaternion.Inverse(view) * (at - eye);
+                if (local.z <= 0.1f) continue;
+                var place = new Vector2(local.x / local.z, local.y / local.z) / tanV * half;
+                if (Mathf.Abs(place.x) > halfW || Mathf.Abs(place.y) > half) continue;
+                while (sLootMarkers.Count <= shown)
+                {
+                    var m = Marker(sLootLayer, "hex", 20f, LootColor, Vector2.zero);
+                    var t = Text("LootDistance", m, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -2f),
+                                 new Vector2(120f, 20f), 14f, TextAlignmentOptions.Top, LootColor);
+                    // how many are in the cluster, small inside the hexagon (none shown for one)
+                    var n = Text("LootCount", m, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
+                                 new Vector2(20f, 20f), 11f, TextAlignmentOptions.Center, LootColor);
+                    sLootMarkers.Add((m, t, n));
+                }
+                var (marker, text, countText) = sLootMarkers[shown];
+                marker.gameObject.SetActive(true);
+                marker.anchoredPosition = place;
+                countText.text = count > 1 ? count.ToString() : "";
+                text.text = (d < 1000f ? $"{d:0} M" : $"{d / 1000f:0.0} KM");
+                shown++;
+            }
+            for (int i = shown; i < sLootMarkers.Count; i++) sLootMarkers[i].marker.gameObject.SetActive(false);
+        }
         static TextMeshProUGUI? sTorpText;
         static readonly List<List<Image>> sTorpRows = new List<List<Image>>();
-        static TextMeshProUGUI? sRailText;
+        static TextMeshProUGUI? sRailText, sRailCount, sPdcAmmo;
         static readonly List<Image> sRailSegments = new List<Image>();
         static readonly List<Image> sPdcSegments = new List<Image>();
         static RectTransform? sBubble, sPrograde, sRetrograde;
@@ -65,12 +131,15 @@ namespace TheExpanse
             sReadout = sDriveFill = sRcsFill = sPrompt = null;
             sDriveText = sDrivePercent = sRcsText = sRcsPercent = sSpeedText = sTurnText = sAccelText = sAutoText = sPromptText = sPromptKey = null;
             sModeText = sAimText = null;
-            sAim = sPdcBar = sRail = sRailBar = sTorp = sTorpBar = null;
+            sAim = sPdcBar = sRail = sRailBar = sTorp = sTorpBar = sLootLayer = null;
+            sToast = null;
+            sLootMarkers.Clear();
             sTorpText = null;
             sTorpRows.Clear();
-            sRailText = null;
+            sRailText = sRailCount = sPdcAmmo = null;
             sRailSegments.Clear();
             sPdcSegments.Clear();
+            sPdcCrosses.Clear();
             sBubble = sPrograde = sRetrograde = null;
             sHome = sHomeArrow = null;
             sHomeText = null;
@@ -85,9 +154,13 @@ namespace TheExpanse
         internal static void Frame()
         {
             bool readout = FlightModel.Flying;
-            bool prompt = !FlightSeat.Seated && FlightSeat.NearChair;
+            bool chair = !FlightSeat.Seated && FlightSeat.NearChair;
+            string loot = StationLoot.NearText;
+            bool prompt = chair || loot.Length > 0;
+            bool toast = Time.unscaledTime < StationLoot.ToastUntil;
+            bool markers = StationLoot.Any;
             string setup = ShipSetup.Status;
-            if (!readout && !prompt && setup.Length == 0)
+            if (!readout && !prompt && setup.Length == 0 && !toast && !markers)
             {
                 if (sCanvas != null && sCanvas.activeSelf) sCanvas.SetActive(false);
                 return;
@@ -100,7 +173,10 @@ namespace TheExpanse
             sSetupText!.gameObject.SetActive(setup.Length > 0);
             if (setup.Length > 0) sSetupText.text = setup;
             if (readout) ShowReadout();
-            if (prompt) ShowPrompt();
+            if (prompt) { ShowPrompt(); sPromptText!.text = chair ? "SIT AT THE CONTROLS" : loot; }
+            sToast!.gameObject.SetActive(toast);
+            if (toast) sToast.text = StationLoot.Toast;
+            ShowLootMarkers(markers);
             ShowClock(readout && FlightCamera.HudHidden);
         }
 
@@ -181,9 +257,10 @@ namespace TheExpanse
                 sAutoText.fontStyle = FlightModel.AutoActive ? FontStyles.Bold : FontStyles.Normal;
             }
             // the weapon mode, over the flip and burn line (none at the helm)
-            bool weapon = Weapons.Allowed && Weapons.Mode != WeaponMode.Helm;
+            bool notice = Weapons.Allowed && Weapons.ShowingNotice;
+            bool weapon = Weapons.Allowed && (Weapons.Mode != WeaponMode.Helm || notice);
             sModeText!.gameObject.SetActive(weapon);
-            if (weapon) sModeText.text = Weapons.ModeName;
+            if (weapon) sModeText.text = notice ? Weapons.Notice : Weapons.ModeName;
             ShowAim();
             ShowRailSight();
         }
@@ -222,7 +299,7 @@ namespace TheExpanse
             if (!show) return;
             var size = ((RectTransform)sCanvas!.transform).rect.size;
             float half = size.y * 0.5f;
-            float tanV = Mathf.Tan(Camera.main!.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            float tanV = Mathf.Tan(FlightCamera.ViewFov(Camera.main!) * 0.5f * Mathf.Deg2Rad);
             var local = Quaternion.Inverse(rotation) * Pdc.CursorDirection(rotation);
             var place = local.z > 0.01f ? new Vector2(local.x / local.z, local.y / local.z) / tanV * half : Vector2.zero;
             if (torp)
@@ -242,11 +319,15 @@ namespace TheExpanse
                 float distance = Vector3.Distance(position, Pdc.AimPoint);
                 sAimText!.text = Pdc.Turrets.Count == 0 ? "NO PDCS"
                                : Pdc.AimHit ? (distance < 1000f ? $"{distance:0} M" : $"{distance / 1000f:0.0} KM") : "NO TARGET";
+                sPdcAmmo!.text = $"AMMO:   {Ammo.PdcTotal:N0}";
             }
             else sAimText!.text = "";
+            sPdcAmmo!.gameObject.SetActive(pdc);
         }
 
         static readonly Color TorpColor = new Color(0.78f, 0.45f, 1f, 0.95f);
+        static readonly Color AmmoGreen = new Color(0.35f, 1f, 0.45f, 1f), AmmoYellow = new Color(1f, 0.85f, 0.2f, 1f),
+            AmmoRed = new Color(1f, 0.2f, 0.15f, 1f), AmmoGray = new Color(0.55f, 0.55f, 0.55f, 1f);
 
         // Two rows (top tube, bottom tube), one segment per torpedo it held: bright while still there.
         static void ShowTorpBar()
@@ -288,6 +369,7 @@ namespace TheExpanse
 
         static readonly Color RailColor = new Color(0.45f, 0.75f, 1f, 0.95f);
         const int RailSegments = 10;
+        static readonly Color RailGreen = new Color(0.35f, 1f, 0.45f, 1f), RailRed = new Color(1f, 0.2f, 0.15f, 1f), RailYellow = new Color(1f, 0.85f, 0.2f, 1f);
 
         // The rail gun's sight where the ship's nose points (5 km out), its charge as segments, and its state.
         static void ShowRailSight()
@@ -296,11 +378,11 @@ namespace TheExpanse
             bool show = Weapons.Allowed && Weapons.Mode == WeaponMode.RailGun && Camera.main != null && Pdc.View(out eye, out view);
             sRail!.gameObject.SetActive(show);
             if (!show) return;
-            RailGun.Aim(out var from, out var dir);
+            // on what the slug would strike (close or far), else 5 km out along the nose
             var size = ((RectTransform)sCanvas!.transform).rect.size;
             float half = size.y * 0.5f;
-            float tanV = Mathf.Tan(Camera.main!.fieldOfView * 0.5f * Mathf.Deg2Rad);
-            var local = Quaternion.Inverse(view) * (from + dir * 5000f - eye);
+            float tanV = Mathf.Tan(FlightCamera.ViewFov(Camera.main!) * 0.5f * Mathf.Deg2Rad);
+            var local = Quaternion.Inverse(view) * (RailGun.SightPoint() - eye);
             bool ahead = local.z > 0.01f;
             sRail.gameObject.SetActive(ahead);
             if (!ahead) return;
@@ -328,38 +410,84 @@ namespace TheExpanse
                 c.a = (i + 0.5f) / RailSegments <= fill ? (RailGun.Ready ? 1f : 0.45f) : 0.12f;
                 sRailSegments[i].color = c;
             }
-            sRailText!.text = !RailGun.Ready ? $"RELOADING {reload:0.0} S" : RailGun.Charge > 0f ? "CHARGING" : "READY";
+            // READY green; CHARGING yellow; fully charged and held: FIRE flashing red (let go to fire); just fired:
+            // FIRING red a moment; then RELOADING and its time yellow
+            bool flash = (Time.unscaledTime * 8f) % 2f < 1f;
+            if (!RailGun.Ready && Time.time - RailGun.FiredAt < 0.8f) { sRailText!.text = "FIRING"; sRailText.color = RailRed; }
+            else if (!RailGun.Ready) { sRailText!.text = $"RELOADING {reload:0.0} S"; sRailText.color = RailYellow; }
+            else if (RailGun.Held && RailGun.Charge >= 1f) { sRailText!.text = "FIRE"; sRailText.color = flash ? RailRed : new Color(RailRed.r, RailRed.g, RailRed.b, 0.15f); }
+            else if (RailGun.Charge > 0f) { sRailText!.text = "CHARGING"; sRailText.color = RailYellow; }
+            else if (!Ammo.RailReady) { sRailText!.text = "OFFLINE"; sRailText.color = RailRed; }
+            else if (Ammo.Rail <= 0) { sRailText!.text = "NO SLUGS"; sRailText.color = RailRed; }
+            else { sRailText!.text = "READY"; sRailText.color = RailGreen; }
+            // the slugs left, on their own line under the state
+            sRailCount!.text = $"AMMO:   {Ammo.Rail}";
         }
 
         // One segment per turret: bright on target, dim while turning to it, faint when it can't see the aim point.
-        const float SegmentWidth = 9f, SegmentHeight = 6f, SegmentGap = 3f;
+        const float SegmentWidth = 9f, SegmentHeight = 6f, SegmentGap = 3f, PdcSegment = 11f, PdcRing = 34f;
+
+        // A PDC's square placed round the reticle where the gun sits on the ship: dorsal above, ventral below, port to
+        // the left, starboard to the right; several on one side spread along it, the fore one first (upper or left).
+        static Vector2 AroundReticle(IReadOnlyList<string> names, int index)
+        {
+            string Side(string n) => n.Contains("Dorsal") ? "top" : n.Contains("Ventral") ? "bottom" : n.Contains("Port") ? "left" : n.Contains("Stbd") || n.Contains("Starboard") ? "right" : "bottom";
+            int Order(string n) => n.Contains("Fore") ? 0 : n.Contains("Mid") ? 1 : 2;
+            string side = Side(names[index]);
+            var same = new List<string>();
+            foreach (var n in names) if (Side(n) == side) same.Add(n);
+            same.Sort((a, b) => Order(a).CompareTo(Order(b)));
+            int k = same.IndexOf(names[index]);
+            float spread = (k - (same.Count - 1) / 2f) * (PdcSegment + SegmentGap + 2f);
+            return side switch
+            {
+                "top" => new Vector2(spread, PdcRing),
+                "bottom" => new Vector2(spread, -PdcRing),
+                "left" => new Vector2(-PdcRing, -spread),
+                _ => new Vector2(PdcRing, -spread),
+            };
+        }
+        static readonly List<TextMeshProUGUI> sPdcCrosses = new List<TextMeshProUGUI>();
 
         static void ShowPdcBar()
         {
-            var turrets = Pdc.Turrets;
-            while (sPdcSegments.Count < turrets.Count)
+            // one segment for every PDC the ship had: a damaged or disconnected one (cut off, or its feed broken) stays,
+            // gray with a red X over it
+            var names = Pdc.Known;
+            while (sPdcSegments.Count < names.Count)
             {
                 var go = new GameObject("Segment", typeof(RectTransform));
-                go.transform.SetParent(sPdcBar, false);
+                go.transform.SetParent(sAim, false);
                 var image = go.AddComponent<Image>();
                 image.raycastTarget = false;
                 AddShadow(go);
+                var x = Text("Broken", go.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
+                             new Vector2(PdcSegment * 1.6f, PdcSegment * 1.6f), PdcSegment * 1.5f, TextAlignmentOptions.Center, AmmoRed);
+                x.fontStyle = FontStyles.Bold;
+                x.text = "X";
                 sPdcSegments.Add(image);
+                sPdcCrosses.Add(x);
             }
-            float width = turrets.Count * SegmentWidth + Mathf.Max(0, turrets.Count - 1) * SegmentGap;
             for (int i = 0; i < sPdcSegments.Count; i++)
             {
                 var image = sPdcSegments[i];
-                bool used = i < turrets.Count;
+                bool used = i < names.Count;
                 image.gameObject.SetActive(used);
                 if (!used) continue;
                 var rect = image.rectTransform;
-                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
-                rect.pivot = new Vector2(0f, 1f);
-                rect.sizeDelta = new Vector2(SegmentWidth, SegmentHeight);
-                rect.anchoredPosition = new Vector2(-width / 2f + i * (SegmentWidth + SegmentGap), 0f);
-                var c = WeaponColor;
-                c.a = turrets[i].State == TurretState.OnTarget ? 1f : turrets[i].State == TurretState.Tracking ? 0.45f : 0.12f;
+                rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.sizeDelta = new Vector2(PdcSegment, PdcSegment);
+                rect.anchoredPosition = AroundReticle(names, i);
+                string name = names[i];
+                var turret = Pdc.Find(name);
+                bool broken = turret == null || !Ammo.PdcReady(name);
+                sPdcCrosses[i].gameObject.SetActive(broken);
+                if (broken) { image.color = AmmoGray; continue; }
+                // its color: rounds left (green over 50 %, yellow 20-50 %, red under 20 %, gray when empty); its
+                // brightness: on target (full), turning to it, can't see it (faint)
+                float left = Ammo.PdcFraction(name);
+                var c = left <= 0f ? AmmoGray : left > 0.5f ? AmmoGreen : left >= 0.2f ? AmmoYellow : AmmoRed;
+                c.a = turret!.State == TurretState.OnTarget ? 1f : turret.State == TurretState.Tracking ? 0.6f : 0.3f;
                 image.color = c;
             }
         }
@@ -504,6 +632,9 @@ namespace TheExpanse
             sRailText = Text("RailState", sRail, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -18f),
                              new Vector2(300f, 26f), 18f, TextAlignmentOptions.Top, RailColor);
             sRailText.fontStyle = FontStyles.Bold;
+            sRailCount = Text("RailCount", sRail, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -42f),
+                              new Vector2(300f, 24f), 18f, TextAlignmentOptions.Top, RailColor);
+            sRailCount.fontStyle = FontStyles.Bold;
             // the torpedoes' cursor: a purple box with bright corners and a dot; under it a bar per tube, then the range
             sTorp = Marker(sReadout, "torpsight", 50f, TorpColor, Vector2.zero);
             var torpBar = new GameObject("TorpBar", typeof(RectTransform));
@@ -517,8 +648,11 @@ namespace TheExpanse
             sTorpText.fontStyle = FontStyles.Bold;
             // the aim cursor (PDC and torpedo modes) and the turrets' state under it
             sAim = Marker(sReadout, "reticle", 44f, WeaponColor, Vector2.zero);
-            sAimText = Text("AimRange", sAim, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -16f),
+            sAimText = Text("AimRange", sAim, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -26f),
                             new Vector2(300f, 26f), 18f, TextAlignmentOptions.Top, WeaponColor);
+            sPdcAmmo = Text("PdcAmmo", sAim, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -50f),
+                            new Vector2(300f, 24f), 18f, TextAlignmentOptions.Top, WeaponColor);
+            sPdcAmmo.fontStyle = FontStyles.Bold;
             var bar = new GameObject("PdcBar", typeof(RectTransform));
             bar.transform.SetParent(sAim, false);
             sPdcBar = (RectTransform)bar.transform;
@@ -549,6 +683,17 @@ namespace TheExpanse
             sPromptText = Text("Label", sPrompt, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(36f, 0f), new Vector2(220f, 28f), 16f,
                                TextAlignmentOptions.Left, Amber);
             sPromptText.text = "SIT AT THE CONTROLS";
+            sPromptText.rectTransform.sizeDelta = new Vector2(420f, 28f);
+            // what was just taken from a wreck, under the prompt
+            sToast = Text("Toast", sCanvas.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -165f),
+                          new Vector2(600f, 34f), 24f, TextAlignmentOptions.Center, LootColor);
+            sToast.fontStyle = FontStyles.Bold;
+            sToast.gameObject.SetActive(false);
+            var lootLayer = new GameObject("LootMarkers", typeof(RectTransform));
+            lootLayer.transform.SetParent(sCanvas.transform, false);
+            sLootLayer = (RectTransform)lootLayer.transform;
+            sLootLayer.anchorMin = Vector2.zero; sLootLayer.anchorMax = Vector2.one;
+            sLootLayer.offsetMin = sLootLayer.offsetMax = Vector2.zero;
             // setup mode: what is placed and the keys, one per line in the top left corner, under the HAB / SHIP / G
             // readout
             sSetupText = Text("Setup", sCanvas.transform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(40f, -170f),
@@ -604,7 +749,7 @@ namespace TheExpanse
             var size = ((RectTransform)sCanvas!.transform).rect.size;
             float half = size.y * 0.5f;
             var local = Quaternion.Inverse(FlightCamera.CameraRotation) * (hab.position - FlightCamera.CameraPosition);
-            float tanV = Mathf.Tan(camera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            float tanV = Mathf.Tan(FlightCamera.ViewFov(camera) * 0.5f * Mathf.Deg2Rad);
             float hw = size.x * 0.5f - HomeMargin, hh = half - HomeMargin;
             Vector2 place;
             bool onScreen = false;

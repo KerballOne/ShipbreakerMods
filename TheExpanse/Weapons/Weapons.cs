@@ -42,15 +42,39 @@ namespace TheExpanse
         internal static void SetMode(WeaponMode mode, string how)
         {
             if (mode == Mode) return;
+            // a weapon this ship doesn't have: not picked, "NO ..." shown a moment instead
+            if (!Has(mode))
+            {
+                Notice = "NO " + Names[(int)mode];
+                NoticeUntil = Time.unscaledTime + 2f;
+                Plugin.Log.LogInfo($"[Weapons] {Names[(int)mode]} picked ({how}), but this ship has none.");
+                return;
+            }
             Mode = mode;
             Plugin.Log.LogInfo($"[Weapons] mode {ModeName} ({how}).");
         }
+
+        // Which weapons this ship has (found by their parts' names: the Tachi and the Gas Hauler have no rail gun).
+        internal static bool Has(WeaponMode mode) => mode switch
+        {
+            WeaponMode.Pdc => Pdc.Turrets.Count > 0,
+            WeaponMode.Torpedo => Torpedo.HasTubes,
+            WeaponMode.RailGun => RailGun.HasMuzzle,
+            _ => true,
+        };
+
+        // A short message in place of the mode name (the HUD shows it while it lasts).
+        internal static string Notice { get; private set; } = "";
+        internal static float NoticeUntil { get; private set; }
+        internal static bool ShowingNotice => Time.unscaledTime < NoticeUntil;
 
         internal static void Reset()
         {
             Mode = WeaponMode.Helm;
             WeaponWheel.Reset();
             WeaponMounts.Reset();
+            Ammo.Reset();
+            Pdc.Forget();
             PdcFire.Reset();
             RailGun.Reset();
             Torpedo.Reset();
@@ -65,6 +89,7 @@ namespace TheExpanse
                 if (Mode != WeaponMode.Helm) SetMode(WeaponMode.Helm, "weapons off");
                 return;
             }
+            if (Pdc.Lost) WeaponMounts.Rescan();
             WeaponMounts.LogOnce();
             WeaponWheel.Tick();
             if (!WeaponWheel.Open) { Pdc.ReadAim(); PdcFire.ReadInput(); RailGun.ReadInput(); Torpedo.ReadInput(); }

@@ -134,7 +134,7 @@ namespace TheExpanse
             sView = view;
             Helmet(view == View.Seat);
             Hud(view == View.Seat);
-            if (view == View.Nose) sLookYaw = sLookPitch = 0f;
+            if (view == View.Nose) { sLookYaw = sLookPitch = 0f; sNoseZoom = NoseZoomStart; }
             Plugin.Log.LogInfo(view == View.Outside ? "[Flight] view: outside the ship."
                              : view == View.Nose ? "[Flight] view: the nose." : "[Flight] view: the seat.");
         }
@@ -189,8 +189,10 @@ namespace TheExpanse
             }
             if (sView == View.Nose)
             {
-                sLookYaw = Mathf.Clamp(sLookYaw + yaw, -170f, 170f);
-                sLookPitch = Mathf.Clamp(sLookPitch + pitch, -85f, 85f);
+                // looking around turns slower the more it is zoomed; the wheel / triggers zoom (2x when the view opens)
+                sLookYaw = Mathf.Clamp(sLookYaw + yaw / sNoseZoom, -170f, 170f);
+                sLookPitch = Mathf.Clamp(sLookPitch + pitch / sNoseZoom, -85f, 85f);
+                sNoseZoom = Mathf.Clamp(sNoseZoom * (1f + zoom * 2f), 1f, NoseZoomMax);
                 return;
             }
             sYaw += yaw;
@@ -315,6 +317,8 @@ namespace TheExpanse
             sSavedPosition = t.position;
             sSavedRotation = t.rotation;
             sSavedFar = camera.farClipPlane;
+            sSavedFov = camera.fieldOfView;
+            if (sView == View.Nose) camera.fieldOfView = Zoomed(sSavedFov);
             t.SetPositionAndRotation(sPosition, sRotation);
             camera.farClipPlane = Mathf.Max(sSavedFar, 20000f);
             FogOff(camera, !Plugin.FlightOutsideFog.Value);
@@ -328,6 +332,20 @@ namespace TheExpanse
 
         static void AfterFrame(ScriptableRenderContext context, Camera[] cameras) => Restore();
 
+        // The nose view's zoom: hold RMB + wheel / View + RT (in) or LT (out); 2x each time the view opens, up to 8x.
+        const float NoseZoomStart = 2f, NoseZoomMax = 8f;
+        static float sNoseZoom = NoseZoomStart, sSavedFov = 60f;
+
+        static float Zoomed(float fov) => 2f * Mathf.Atan(Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad) / sNoseZoom) * Mathf.Rad2Deg;
+
+        // The vertical field of view the player sees: the camera's own, narrowed in the zoomed nose view (the HUD's
+        // markers are placed with it; the game keeps the camera's own outside the frame being drawn).
+        internal static float ViewFov(Camera camera)
+        {
+            if (sMoved) return camera.fieldOfView;           // while drawing, the camera already has the zoomed one
+            return sActive && sView == View.Nose ? Zoomed(camera.fieldOfView) : camera.fieldOfView;
+        }
+
         static void Restore()
         {
             var camera = LynxCameraController.MainCamera;
@@ -335,6 +353,7 @@ namespace TheExpanse
             sMoved = false;
             camera.transform.SetPositionAndRotation(sSavedPosition, sSavedRotation);
             camera.farClipPlane = sSavedFar;
+            camera.fieldOfView = sSavedFov;
             FogOff(camera, false);
         }
 

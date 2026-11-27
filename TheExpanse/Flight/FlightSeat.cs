@@ -57,8 +57,14 @@ namespace TheExpanse
 
         static bool Allowed => Plugin.Enabled.Value && Plugin.FlightControl.Value && (PartSeparation.CustomShip || ShipSetup.Seats.Count > 0);
 
+        // When the ship finished spawning (ShipAllSpawnWrapperEvent Complete), -1 while a level loads.
+        internal static float ShipSpawnedAt = -1f;
+        static bool sQuickSat;
+
         internal static void Reset()
         {
+            ShipSpawnedAt = -1f;
+            sQuickSat = false;
             if (Seated) Stand("level change");
             if (sGiveBackPending) GiveSuitBack();
             FlightModel.Reset();
@@ -122,7 +128,29 @@ namespace TheExpanse
 
             FindChairs();
             sNearest = NearestChair(sBody!.position, Mathf.Max(0.5f, Plugin.FlightSitDistance.Value));
-            if (sNearest != null && controls.GetInputWasPressed(GameplayActions.GameplayActionSet.Interact)) Sit(sNearest);
+            if (sNearest != null && controls.GetInputWasPressed(GameplayActions.GameplayActionSet.Interact)) { Sit(sNearest); return; }
+            // for testing: straight into the nearest seat, however far (F4, or both stick clicks together)
+            // once per level: the shortcut from the Hab after spawning (later presses, e.g. stick clicks on foot after
+            // standing up, put you straight back in the seat)
+            if (Plugin.QuickSit.Value && !sQuickSat && QuickSitPressed())
+            {
+                // not while the level is still loading: the ship's bodies, the suit's controls and HUD aren't all
+                // there yet (sitting then left suit HUD pieces behind and the weapons on a half-built ship)
+                if (ShipSpawnedAt < 0f || Time.unscaledTime - ShipSpawnedAt < 3f)
+                {
+                    Plugin.Log.LogInfo("[Flight] quick sit: the ship is still loading; try again in a few seconds.");
+                    return;
+                }
+                if (sChairs.Count == 0) { sNextChairLook = 0f; sChairTries = 0; FindChairs(); }
+                var chair = NearestChair(sBody.position, float.MaxValue);
+                if (chair != null)
+                {
+                    Plugin.Log.LogInfo($"[Flight] quick sit: into '{chair.name}', {Vector3.Distance(sBody.position, chair.position):0} m away (once per level).");
+                    sQuickSat = true;
+                    Sit(chair);
+                }
+                else Plugin.Log.LogInfo("[Flight] quick sit: no seat found on this ship.");
+            }
         }
 
         // Every physics step: the suit stays in the chair.
@@ -247,6 +275,14 @@ namespace TheExpanse
                 if (!sDisabled.ContainsKey(action)) { sDisabled[action] = action.Enabled; action.ClearInputState(); }
                 if (action.Enabled) action.Enabled = false;
             }
+        }
+
+        static bool QuickSitPressed()
+        {
+            if (Plugin.QuickSitKey.Value.IsDown()) return true;
+            var pad = InputManager.ActiveDevice;
+            return pad != null && pad.LeftStickButton.IsPressed && pad.RightStickButton.IsPressed
+                   && (pad.LeftStickButton.WasPressed || pad.RightStickButton.WasPressed);
         }
 
         static bool ViewTogglePressed()

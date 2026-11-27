@@ -1678,8 +1678,9 @@ namespace TheExpanse
         // The flip and burn line: what it is doing and how to stop it, or briefly how it ended.
         static string AutoLine()
         {
+            // the flip key as set ([Flight] FlipKey), or D-pad left on a controller
             string cancel = LynxControls.Instance != null && LynxControls.Instance.LastInputType == InControl.BindingSourceType.DeviceBindingSource
-                ? "Y" : "R";
+                ? "D-PAD LEFT" : Plugin.FlightFlipKey.Value.ToString().ToUpperInvariant();
             switch (sAuto)
             {
                 case Auto.Flip: return $"\nFLIP AND BURN: FLIPPING ({cancel} to cancel)";

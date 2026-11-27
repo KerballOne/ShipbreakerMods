@@ -49,6 +49,8 @@ namespace TheExpanse
         internal static ConfigEntry<bool> RemoveGrowthAfterLastNode = null!;
         internal static ConfigEntry<bool> NodeRadiation = null!;
         internal static ConfigEntry<bool> TestTools = null!;
+        internal static ConfigEntry<bool> QuickSit = null!;
+        internal static ConfigEntry<KeyboardShortcut> QuickSitKey = null!;
         internal static ConfigEntry<KeyboardShortcut> KillHalfNodesKey = null!;
         internal static ConfigEntry<KeyboardShortcut> PhysicsCostTestKey = null!;
         internal static ConfigEntry<float> NodeRadiationDamage = null!;
@@ -135,10 +137,17 @@ namespace TheExpanse
         internal static ConfigEntry<float> WeaponsRailGunCharge = null!, WeaponsRailGunCooldown = null!, WeaponsRailGunRange = null!, WeaponsRailGunHeat = null!,
             WeaponsRailGunPush = null!, WeaponsRailGunGlowSize = null!, WeaponsRailGunBeamSeconds = null!, WeaponsRailGunBlastSize = null!, WeaponsRailGunBeamDelay = null!, WeaponsRailGunBlastSpeed = null!, WeaponsRailGunRecoil = null!;
         internal static ConfigEntry<string> WeaponsRailGunBlastAxis = null!;
-        internal static ConfigEntry<int> WeaponsRailGunPierce = null!;
+        internal static ConfigEntry<int> WeaponsRailGunPierce = null!, WeaponsRailGunSlugs = null!;
         internal static ConfigEntry<float> WeaponsTorpedoRange = null!, WeaponsTorpedoAcceleration = null!, WeaponsTorpedoSpeed = null!,
             WeaponsTorpedoLife = null!, WeaponsTorpedoBlast = null!, WeaponsTorpedoHeat = null!, WeaponsTorpedoHatchAngle = null!;
         internal static ConfigEntry<bool> WeaponsTorpedoShowHinges = null!;
+        internal static ConfigEntry<bool> StationDamageEnabled = null!;
+        internal static ConfigEntry<float> StationHealth = null!, StationPdcDamage = null!, StationTorpedoDamage = null!,
+            StationTorpedoRadius = null!, StationDriftSpeed = null!;
+        internal static ConfigEntry<int> StationShatterCuts = null!, StationLootMax = null!;
+        internal static ConfigEntry<bool> StationLoot = null!;
+        internal static ConfigEntry<float> StationLootChance = null!, StationCarveSize = null!;
+        internal static ConfigEntry<bool> StationLootCopies = null!, StationScannerMarkers = null!;
         internal static ConfigEntry<string> WeaponsTorpedoHatchPin = null!;
         internal static ConfigEntry<bool> SpaceLimits = null!;
         internal static ConfigEntry<float> SpaceWorkAreaMultiplier = null!;
@@ -477,6 +486,8 @@ namespace TheExpanse
                 "Heat damage each PDC round does to a part it hits (not the own ship), the game's way, as the reactor's fire.");
             WeaponsRailGunCharge = Config.Bind("Weapons", "RailGunCharge", 1f,
                 "Rail gun: how long RT (left mouse button) is held before it fires, in seconds.");
+            WeaponsRailGunSlugs = Config.Bind("Weapons", "RailGunSlugs", 20,
+                "Rail gun: slugs on board for each ship (until the next level load).");
             WeaponsRailGunCooldown = Config.Bind("Weapons", "RailGunCooldown", 5f,
                 "Rail gun: seconds to reload after a shot.");
             WeaponsRailGunRange = Config.Bind("Weapons", "RailGunRange", 20000f,
@@ -501,6 +512,32 @@ namespace TheExpanse
                 "Rail gun: which of the blast's own axes (x, y or z; -x etc. to flip) is turned onto the nose, so its ring stands square to the shot.");
             WeaponsRailGunBlastSize = Config.Bind("Weapons", "RailGunBlastSize", 0.005f,
                 "Rail gun: the size of the blast at the muzzle (the rail gate's own flash, which goes off first), as a share of the gate's.");
+            StationDamageEnabled = Config.Bind("Stations", "Destructible", true,
+                "The nearby salvage stations (the small 3D bays around the work bay) can be shot apart: pieces break off and drift. Back at the next level load.");
+            StationHealth = Config.Bind("Stations", "Health", 200f,
+                "How much damage a 50 m station piece takes before it breaks off (bigger pieces take more, smaller less).");
+            StationPdcDamage = Config.Bind("Stations", "PdcDamage", 2f,
+                "Damage of each PDC round that hits a station piece.");
+            StationTorpedoDamage = Config.Bind("Stations", "TorpedoDamage", 300f,
+                "Damage of a torpedo to every station piece within TorpedoRadius of where it goes off.");
+            StationTorpedoRadius = Config.Bind("Stations", "TorpedoRadius", 40f,
+                "How far a torpedo's blast reaches station pieces, in meters.");
+            StationLoot = Config.Bind("Stations", "Loot", true,
+                "Wrecked crates, the bay's frame and the stripped ship can spill pickups (credit drives most often); the barge and the jacks spill nothing.");
+            StationLootChance = Config.Bind("Stations", "LootChance", 0.5f,
+                "The chance (0-1) that a wrecked crate, frame or ship piece spills anything.");
+            StationLootMax = Config.Bind("Stations", "LootMax", 3,
+                "At most this many pickups from one wreck (1 to this many).");
+            StationLootCopies = Config.Bind("Stations", "LootCopies", true,
+                "Loot is copied from the collectibles the ship has (no limit). Off: the ship's own loose collectibles are moved out instead (each once).");
+            StationScannerMarkers = Config.Bind("Stations", "ScannerMarkers", true,
+                "With the suit's scanner on in Objects mode, spilled loot is marked on the HUD (a green hexagon with how many and how far).");
+            StationCarveSize = Config.Bind("Stations", "CarveSize", 40f,
+                "The bay's frame stays put when it breaks: a box this many meters across around the hit is broken out of it (and flies apart); the rest stays standing.");
+            StationShatterCuts = Config.Bind("Stations", "ShatterCuts", 3,
+                "How many cuts a destroyed station piece is shattered with, by the game's own cutter (cut faces filled): up to 2 to the power of this many chunks (1-4).");
+            StationDriftSpeed = Config.Bind("Stations", "DriftSpeed", 20f,
+                "How fast a broken-off station piece drifts away, in meters per second.");
             WeaponsTorpedoShowHinges = Config.Bind("Weapons", "TorpedoShowHinges", false,
                 "Torpedoes, for setting up: in torpedo mode, draw each tube door's hinge (green, along the pin) and an arm from it to the door's middle (yellow).");
             WeaponsTorpedoHatchPin = Config.Bind("Weapons", "TorpedoHatchPin", "x",
@@ -563,6 +600,11 @@ namespace TheExpanse
             ReactorWrongKey = Config.Bind("Debug", "ReactorWrongKey", new KeyboardShortcut(UnityEngine.KeyCode.F11, UnityEngine.KeyCode.LeftShift),
                 "With TestTools on: treats the injector that unbalances the plasma most as disconnected, without touching the ship.");
 
+            QuickSit = Config.Bind("Debug", "QuickSit", true,
+                "For testing: QuickSitKey (or both stick clicks together on a controller), on foot, puts you straight into the ship's nearest seat, wherever you are.");
+            QuickSitKey = Config.Bind("Debug", "QuickSitKey", new KeyboardShortcut(UnityEngine.KeyCode.F4),
+                "With QuickSit on: the key that jumps you into the nearest seat.");
+
             RemoveRetiredSettings();
 
             var harmony = new Harmony(PluginInfo.PLUGIN_GUID);
@@ -580,6 +622,7 @@ namespace TheExpanse
             }
 
             Main.EventSystem.AddHandler<LevelLoadEvent>(OnLevelLoad);
+            Main.EventSystem.AddHandler<ScannerStateChangedEvent>(ev => LootGlow.OnScanner(ev));
             Main.EventSystem.AddHandler<ShipAllSpawnWrapperEvent>(ev =>
             {
                 // A ship loaded from a save (a FreePlayPlus resume, a continued shift): make sure it is known as custom or not.
@@ -590,6 +633,9 @@ namespace TheExpanse
                     catch (Exception ex) { Log.LogError("[Flight] " + ex); }
                 }
                 if (ev.State != ShipAllSpawnWrapperEvent.SpawnState.Complete) return;
+                FlightSeat.ShipSpawnedAt = UnityEngine.Time.unscaledTime;
+                try { if (Enabled.Value && WeaponsEnabled.Value) TheExpanse.Ammo.Capture(); }
+                catch (Exception ex) { Log.LogError("[Weapons] " + ex); }
                 try { ShipSetup.OnShipSpawned(ev.ShipPreview); }
                 catch (Exception ex) { Log.LogError("[Setup] " + ex); }
                 GrowthCleanup.OnShipSpawned();
@@ -638,7 +684,7 @@ namespace TheExpanse
 
         // Settings that are no longer used are dropped from the settings file (BepInEx keeps unknown lines otherwise).
         static readonly string[] sRetired = { "Reactor/PulseSound", "Reactor/HapticDelay", "Reactor/HapticSeconds", "Reactor/BurnsParts", "Reactor/Damage",
-                                              "Reactor/SafeWindow", "Reactor/MinSafeSeconds", "Reactor/HandleTiming", "Reactor/PulsesPerLight", "Reactor/BurnInterval", "Reactor/EscalateMaxSeconds", "Reactor/EscalateMinSeconds", "Reactor/ResonanceHint", "Debug/FxGalleryKey", "Debug/FxGalleryBackKey", "Weapons/RailGunBeamScale", "Weapons/RailGunBlastScale", "Weapons/RailGunMuzzleBlast", "Weapons/RailGunBeamSize", "Weapons/TorpedoHatchHinge" };
+                                              "Reactor/SafeWindow", "Reactor/MinSafeSeconds", "Reactor/HandleTiming", "Reactor/PulsesPerLight", "Reactor/BurnInterval", "Reactor/EscalateMaxSeconds", "Reactor/EscalateMinSeconds", "Reactor/ResonanceHint", "Debug/FxGalleryKey", "Debug/FxGalleryBackKey", "Weapons/RailGunBeamScale", "Weapons/RailGunBlastScale", "Weapons/RailGunMuzzleBlast", "Weapons/RailGunBeamSize", "Weapons/TorpedoHatchHinge", "Stations/RailDamage", "Stations/LootValues", "Stations/ScannerGlow", "Stations/ScannerGlowRange" };
         private void RemoveRetiredSettings()
         {
             try
@@ -740,6 +786,10 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightModel.LateFrame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
+            try { TheExpanse.StationLoot.Frame(); }
+            catch (Exception ex) { Log.LogError("[Stations] " + ex); }
+            try { StationDamage.Frame(); }
+            catch (Exception ex) { Log.LogError("[Stations] " + ex); }
             try { TheExpanse.Weapons.ShipFrame(); }
             catch (Exception ex) { Log.LogError("[Weapons] " + ex); }
             // after the ship's frame is smoothed for this frame: the background is placed from it
@@ -797,6 +847,9 @@ namespace TheExpanse
             TheExpanse.DrivePlume.Reset();
             FlightSeat.Reset();
             TheExpanse.Weapons.Reset();
+            StationDamage.Reset();
+            TheExpanse.StationLoot.Reset();
+            LootGlow.Reset();
             ShipSetup.Reset();
             DeckBoots.Reset();
             MagBootsGuard.Resume();

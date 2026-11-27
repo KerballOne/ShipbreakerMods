@@ -101,6 +101,8 @@ namespace TheExpanse
                 gun.due += dt;
                 while (gun.due >= interval && sRounds.Count < MaxRounds)
                 {
+                    // out of rounds in its crates on board: it stops
+                    if (!Ammo.TakePdc(t.Name)) { gun.due = 0f; shooting = false; break; }
                     gun.due -= interval;
                     gun.count++;
                     // spread along this frame so a burst isn't bunched
@@ -115,7 +117,7 @@ namespace TheExpanse
                     sShots++;
                 }
                 // the muzzle flash: on alternate frames, a short bright puff along the barrel
-                bool flash = (Time.frameCount & 1) == 0;
+                bool flash = shooting && (Time.frameCount & 1) == 0;
                 gun.flash.enabled = flash;
                 if (flash)
                 {
@@ -193,6 +195,7 @@ namespace TheExpanse
                 try { ReactorFire.HeatPart(part, Mathf.Max(0f, Plugin.WeaponsPdcHeatPerRound.Value)); }
                 catch (System.Exception ex) { Plugin.Log.LogWarning("[Weapons] PDC hit damage failed: " + ex.Message); }
             }
+            else StationDamage.Hit(hit.collider, Plugin.StationPdcDamage.Value, hit.point, velocity.normalized);
             // a spark: a short bright streak bounced off the surface
             Spark? spark = null;
             foreach (var s in sSparks) if (!s.Line.enabled) { spark = s; break; }

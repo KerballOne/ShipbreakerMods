@@ -2,6 +2,18 @@ Changelog for the TheExpanse page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+0.8.1
+Ammunition: each PDC has three crates of 2,400 rounds and needs its belts, feeds and receivers on board; the rail gun has 20 slugs in its loader crate and needs all its parts.
+PDC squares sit around the reticle where each turret is on the ship, colored by rounds left; a red X marks a cut-off turret. AMMO counts under the reticles and on the wheel.
+Rail gun fires when you let go of a full charge, with READY, CHARGING, FIRE and RELOADING shown in color; the sight sits on what the nose points at.
+The small salvage stations around the work bay can be shot apart: pieces shatter with the game's cutter and drift away, the bay's frame stays standing.
+Wrecked crates, frames and the stripped ship can spill real collectibles: credit drives most often, data drives, the bunny, truck parts, repair kits, oxygen and thruster fuel.
+Green hexagons mark spilled loot from the seat and on the scanner's Objects screen, with distance and a count.
+The nose view opens at 2x zoom and zooms up to 8x.
+The stick that picked a wheel slice no longer moves the ship until it is let go.
+The flip and burn's cancel hint shows the right key.
+Quick sit for testing: F4 or both stick clicks put you in the nearest seat once the ship has loaded.
+
 0.8.0
 Weapon control from the pilot's seat: hold R / Y for the weapon wheel (the suit's tool wheel) or press 1-4: HELM, PDC, TORP, RAIL.
 PDC: six turrets track the reticle when they can see it and fire tracers that spark and heat what they hit.

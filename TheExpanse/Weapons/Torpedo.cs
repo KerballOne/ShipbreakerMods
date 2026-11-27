@@ -92,6 +92,19 @@ namespace TheExpanse
         internal static Vector3? LastLock { get; private set; }
 
         // Each tube, top first: how many it held and how many are left (the HUD's two rows).
+        internal static bool HasTubes => sTubes.Count > 0;
+
+        // Torpedoes left in all tubes and trays.
+        internal static int Left
+        {
+            get
+            {
+                int n = 0;
+                foreach (var tube in sTubes.Values) n += tube.Count;
+                return n;
+            }
+        }
+
         internal static List<(int capacity, int left)> Rows
         {
             get
@@ -122,6 +135,14 @@ namespace TheExpanse
             sTubes.Clear();
             sPressed = false;
             LastLock = null;
+        }
+
+        // The tubes only (found again after the ship's structure was rebuilt); torpedoes in flight fly on.
+        internal static void ResetTubes()
+        {
+            foreach (var tube in sTubes.Values) if (tube.HingeLine != null) Object.Destroy(tube.HingeLine.transform.parent.gameObject);
+            foreach (var t in sFlying) t.Tube.Busy = false;
+            sTubes.Clear();
         }
 
         // ---- the tubes, from WeaponMounts' scan ---------------------------------------------------------------------
@@ -551,6 +572,10 @@ namespace TheExpanse
                     if (body != null && !body.isKinematic) body.AddExplosionForce(Plugin.WeaponsTorpedoHeat.Value * 300f, at, radius, 0.5f, ForceMode.Impulse);
                 }
             }
+            // a station: what it strikes breaks outright (as the rail gun's slug), the rest around takes the blast
+            int struck = Physics.OverlapSphereNonAlloc(at, 6f, sNear, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < struck; i++) StationDamage.Pierce(sNear[i], at, t.Nose);
+            StationDamage.Blast(at, Plugin.StationTorpedoRadius.Value * scale, Plugin.StationTorpedoDamage.Value);
             Plugin.Log.LogInfo($"[Weapons] torpedo detonated at {at} after {t.Age:0.0} s ({t.Phase}), {Vector3.Distance(at, t.Lock):0.0} m from its lock, " +
                                $"{(real ? "a real explosion from its warhead" : "explosion effect and heat")}.");
             Object.Destroy(t.Visual);
