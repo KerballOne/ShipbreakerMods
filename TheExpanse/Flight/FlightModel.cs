@@ -10,8 +10,8 @@ namespace TheExpanse
 {
     // Flight Control, step 2: flying the ship from the seat. The inputs follow the suit's own layout (see the flight
     // controls doc): side thrusters on the suit's move keys, turning on the mouse / right stick, roll on Q/E, brake on
-    // L-Ctrl (or Q + E, or L3 + R3); throttle on the wheel / triggers, Z full, X / D-pad down cut; R / Y flip and
-    // burn; T / D-pad up hold attitude.
+    // L-Ctrl (or Q + E, or L3 + R3); throttle on the wheel / triggers, Z full, X / D-pad down cut; G / D-pad left flip
+    // and burn (R / Y is the weapon wheel); T / D-pad up hold attitude.
     //
     // How the ship moves: the game holds every ship body of 50 tonnes or more fixed (kinematic), so the hull ignores
     // forces. The mod keeps the ship's speed and spin itself and moves those fixed bodies together each physics step,
@@ -1023,14 +1023,16 @@ namespace TheExpanse
             if (!sFlying) return;
             var pad = InputManager.ActiveDevice;
             bool camera = Input.GetMouseButton(1) || (pad != null && pad.CommandIsPressed);   // the camera has these
+            // the weapon wheel has the mouse and left stick while open; aiming (PDC, torpedo) has the mouse and right stick
+            bool wheelOpen = WeaponWheel.Open;
+            if (wheelOpen || Weapons.Aiming) camera = true;
 
             // side thrusters: the suit's move keys
             float x = Axis(KeyCode.D, KeyCode.A), y = Axis(KeyCode.Space, KeyCode.C) - (Input.GetKey(KeyCode.LeftShift) ? 1f : 0f);
             float z = Axis(KeyCode.W, KeyCode.S);
             if (pad != null)
             {
-                x += pad.LeftStickX.Value;
-                z += pad.LeftStickY.Value;
+                if (!wheelOpen) { x += pad.LeftStickX.Value; z += pad.LeftStickY.Value; }
                 y += (pad.Action1.IsPressed ? 1f : 0f) - (pad.Action2.IsPressed ? 1f : 0f);
             }
             sThrust = Vector3.ClampMagnitude(new Vector3(x, Mathf.Clamp(y, -1f, 1f), z), 1f);
@@ -1070,7 +1072,7 @@ namespace TheExpanse
                 sHold = !sHold;
                 Plugin.Log.LogInfo(sHold ? "[Flight] hold attitude on." : "[Flight] hold attitude off.");
             }
-            if (Input.GetKeyDown(KeyCode.R) || (pad != null && pad.Action4.WasPressed))
+            if (Plugin.FlightFlipKey.Value.IsDown() || (pad != null && pad.DPadLeft.WasPressed))
             {
                 if (sAuto != Auto.None) CancelAuto("flip and burn pressed again");
                 else StartFlip();
@@ -1169,7 +1171,7 @@ namespace TheExpanse
             spinLocal += command * dt + new Vector3(-sMouseTurn.x, sMouseTurn.y, 0f) * Mathf.Deg2Rad;
             sMouseTurn = Vector3.zero;
             if (sAuto == Auto.Flip || sAuto == Auto.Burn) spinLocal = FlipSpin(spinLocal, turnAccel, maxRate, dt, local);
-            else if (sHold || sBrake || sAuto == Auto.Stop)
+            else if (sHold || sBrake || sAuto == Auto.Stop || Weapons.HoldAttitude)
             {
                 // each axis not being turned is stopped by the thrusters
                 if (Mathf.Abs(command.x) < 1e-4f) spinLocal.x = Mathf.MoveTowards(spinLocal.x, 0f, turnAccel * dt);

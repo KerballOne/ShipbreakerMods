@@ -114,6 +114,8 @@ namespace TheExpanse
                     return;
                 }
                 if (ViewTogglePressed()) FlightCamera.CycleView();
+                try { Weapons.Tick(); }
+                catch (System.Exception ex) { Plugin.Log.LogError("[Weapons] " + ex); }
                 FlightModel.ReadInput();
                 return;
             }
@@ -196,6 +198,7 @@ namespace TheExpanse
         static void Stand(string why)
         {
             var chair = sSeat;
+            Weapons.Stand();
             // the flight model first: leaving the controls parks the ship, which may move it (onto the parking sphere),
             // and the player is stood up where the ship is after that (it was left 15 km behind the parked ship)
             FlightModel.End();
@@ -240,6 +243,7 @@ namespace TheExpanse
             foreach (var action in set.Actions)
             {
                 if (action == null || action.Name == interact || action.Name == pause) continue;
+                if (WeaponWheel.KeepsOn(action.Name)) continue;     // the weapon wheel's mouse / stick, while it is open
                 if (!sDisabled.ContainsKey(action)) { sDisabled[action] = action.Enabled; action.ClearInputState(); }
                 if (action.Enabled) action.Enabled = false;
             }

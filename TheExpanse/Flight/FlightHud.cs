@@ -28,7 +28,7 @@ namespace TheExpanse
 
         static GameObject? sCanvas;
         static RectTransform? sReadout, sDriveFill, sRcsFill, sPrompt;
-        static TextMeshProUGUI? sSetupText, sSetupShadow;
+        static TextMeshProUGUI? sSetupText;
         static TextMeshProUGUI? sClock;
         static BBI.Unity.Game.UI.GameTimerUIController? sTimer;
         static TextMeshProUGUI? sTimerText;
@@ -36,6 +36,9 @@ namespace TheExpanse
         static bool sClockLogged;
         static readonly System.Reflection.FieldInfo? sTimerTextField = HarmonyLib.AccessTools.Field(typeof(BBI.Unity.Game.UI.GameTimerUIController), "m_TimerText");
         static TextMeshProUGUI? sDriveText, sDrivePercent, sRcsText, sRcsPercent, sSpeedText, sTurnText, sAccelText, sAutoText, sPromptText, sPromptKey;
+        static TextMeshProUGUI? sModeText, sAimText;
+        static RectTransform? sAim, sPdcBar;
+        static readonly List<Image> sPdcSegments = new List<Image>();
         static RectTransform? sBubble, sPrograde, sRetrograde;
         static RectTransform? sHome, sHomeArrow;
         static TextMeshProUGUI? sHomeText;
@@ -51,10 +54,15 @@ namespace TheExpanse
         {
             if (sCanvas != null) Object.Destroy(sCanvas);
             if (sShadowed != null) Object.Destroy(sShadowed);
+            foreach (var m in sGlows.Values) if (m != null) Object.Destroy(m);
+            sGlows.Clear();
             sCanvas = null;
             sShadowed = null;
             sReadout = sDriveFill = sRcsFill = sPrompt = null;
             sDriveText = sDrivePercent = sRcsText = sRcsPercent = sSpeedText = sTurnText = sAccelText = sAutoText = sPromptText = sPromptKey = null;
+            sModeText = sAimText = null;
+            sAim = sPdcBar = null;
+            sPdcSegments.Clear();
             sBubble = sPrograde = sRetrograde = null;
             sHome = sHomeArrow = null;
             sHomeText = null;
@@ -82,8 +90,7 @@ namespace TheExpanse
             sReadout!.gameObject.SetActive(readout);
             sPrompt!.gameObject.SetActive(prompt);
             sSetupText!.gameObject.SetActive(setup.Length > 0);
-            sSetupShadow!.gameObject.SetActive(setup.Length > 0);
-            if (setup.Length > 0) { sSetupText.text = setup; sSetupShadow.text = setup; }
+            if (setup.Length > 0) sSetupText.text = setup;
             if (readout) ShowReadout();
             if (prompt) ShowPrompt();
             ShowClock(readout && FlightCamera.HudHidden);
@@ -99,7 +106,7 @@ namespace TheExpanse
                 sNextTimerLook = Time.unscaledTime + 2f;
                 sTimer = Object.FindObjectOfType<BBI.Unity.Game.UI.GameTimerUIController>();
                 sTimerText = sTimer != null ? sTimerTextField?.GetValue(sTimer) as TextMeshProUGUI : null;
-                if (sTimerText != null) sClock.fontSize = sTimerText.fontSize;
+                if (sTimerText != null) sClock.fontSize = Mathf.Max(ClockSize, sTimerText.fontSize * 1.6f);
             }
             bool show = want && sTimerText != null && sTimerText.enabled && !string.IsNullOrEmpty(sTimerText.text);
             sClock.gameObject.SetActive(show);
@@ -134,16 +141,10 @@ namespace TheExpanse
                                        (placed ? "same place" : "off screen, top center instead") + ".");
                 }
             }
-            if (placed)
-            {
-                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
-                rect.anchoredPosition = local;
-            }
-            else
-            {
-                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
-                rect.anchoredPosition = new Vector2(0f, -40f);
-            }
+            // the first row of the top: over the speed
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, -ClockTop);
         }
 
         // ---- the readout -------------------------------------------------------------------------------------------
@@ -160,6 +161,7 @@ namespace TheExpanse
             sTurnText!.text = $"{FlightModel.TurnRate:0.0}°/s";
             sSpeedText!.text = $"{FlightModel.Speed:0.0} m/s";
             sAccelText!.text = $"{FlightModel.FeltAcceleration:0.00} m/s²  {FlightModel.FeltG:0.00} g";
+            PlaceRowTwo();
             ShowBubble();
             ShowHome();
             string auto = FlightModel.AutoStatus;
@@ -170,6 +172,107 @@ namespace TheExpanse
                 sAutoText.color = FlightModel.AutoActive ? RcsColor : Amber;
                 sAutoText.fontStyle = FlightModel.AutoActive ? FontStyles.Bold : FontStyles.Normal;
             }
+            // the weapon mode, over the flip and burn line (none at the helm)
+            bool weapon = Weapons.Allowed && Weapons.Mode != WeaponMode.Helm;
+            sModeText!.gameObject.SetActive(weapon);
+            if (weapon) sModeText.text = Weapons.ModeName;
+            ShowAim();
+        }
+
+        // The text's material: the dark drop shadow (underlay) and a bloom in the text's own color (glow), one per color.
+        static readonly Dictionary<Color, Material> sGlows = new Dictionary<Color, Material>();
+
+        static Material? Glowing(Color color)
+        {
+            if (sShadowed == null) return null;
+            if (sGlows.TryGetValue(color, out var cached) && cached != null) return cached;
+            var m = new Material(sShadowed) { name = "TheExpanse_HudGlow" };
+            if (m.HasProperty("_GlowColor"))
+            {
+                m.EnableKeyword("GLOW_ON");
+                m.SetColor("_GlowColor", new Color(color.r, color.g, color.b, 0.55f));
+                m.SetFloat("_GlowOffset", 0.1f);
+                m.SetFloat("_GlowInner", 0.1f);
+                m.SetFloat("_GlowOuter", 0.75f);
+                m.SetFloat("_GlowPower", 0.6f);
+            }
+            sGlows[color] = m;
+            return m;
+        }
+
+        static readonly Color WeaponColor = new Color(1f, 0.35f, 0.25f, 0.95f);
+
+        // The aim cursor where the aim point is on the screen, with the turrets' state.
+        static void ShowAim()
+        {
+            Vector3 position = Vector3.zero; Quaternion rotation = Quaternion.identity;
+            bool show = Weapons.Aiming && Camera.main != null && Pdc.View(out position, out rotation);
+            sAim!.gameObject.SetActive(show);
+            if (!show) return;
+            var size = ((RectTransform)sCanvas!.transform).rect.size;
+            float half = size.y * 0.5f;
+            float tanV = Mathf.Tan(Camera.main!.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            var local = Quaternion.Inverse(rotation) * Pdc.CursorDirection(rotation);
+            sAim.anchoredPosition = local.z > 0.01f ? new Vector2(local.x / local.z, local.y / local.z) / tanV * half : Vector2.zero;
+            bool pdc = Weapons.Mode == WeaponMode.Pdc;
+            sPdcBar!.gameObject.SetActive(pdc);
+            if (pdc)
+            {
+                ShowPdcBar();
+                float distance = Vector3.Distance(position, Pdc.AimPoint);
+                sAimText!.text = Pdc.Turrets.Count == 0 ? "NO PDCS"
+                               : Pdc.AimHit ? (distance < 1000f ? $"{distance:0} M" : $"{distance / 1000f:0.0} KM") : "NO TARGET";
+            }
+            else sAimText!.text = "";
+        }
+
+        // One segment per turret: bright on target, dim while turning to it, faint when it can't see the aim point.
+        const float SegmentWidth = 9f, SegmentHeight = 6f, SegmentGap = 3f;
+
+        static void ShowPdcBar()
+        {
+            var turrets = Pdc.Turrets;
+            while (sPdcSegments.Count < turrets.Count)
+            {
+                var go = new GameObject("Segment", typeof(RectTransform));
+                go.transform.SetParent(sPdcBar, false);
+                var image = go.AddComponent<Image>();
+                image.raycastTarget = false;
+                AddShadow(go);
+                sPdcSegments.Add(image);
+            }
+            float width = turrets.Count * SegmentWidth + Mathf.Max(0, turrets.Count - 1) * SegmentGap;
+            for (int i = 0; i < sPdcSegments.Count; i++)
+            {
+                var image = sPdcSegments[i];
+                bool used = i < turrets.Count;
+                image.gameObject.SetActive(used);
+                if (!used) continue;
+                var rect = image.rectTransform;
+                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+                rect.pivot = new Vector2(0f, 1f);
+                rect.sizeDelta = new Vector2(SegmentWidth, SegmentHeight);
+                rect.anchoredPosition = new Vector2(-width / 2f + i * (SegmentWidth + SegmentGap), 0f);
+                var c = WeaponColor;
+                c.a = turrets[i].State == TurretState.OnTarget ? 1f : turrets[i].State == TurretState.Tracking ? 0.45f : 0.12f;
+                image.color = c;
+            }
+        }
+
+        // The top of the screen, in rows: the shift clock (outside views), then the speed, the heading bubble and the
+        // turn rate centered together, then the acceleration in both units centered.
+        const float ClockTop = 10f, ClockSize = 30f, RowTwoTop = 50f, RowThreeTop = 98f, SpeedSize = 30f, RowSize = 22f, RowGap = 16f;
+
+        static void PlaceRowTwo()
+        {
+            float speed = sSpeedText!.preferredWidth, turn = sTurnText!.preferredWidth;
+            float total = speed + RowGap + BubbleSize + RowGap + turn;
+            float x = -total / 2f;
+            sSpeedText.rectTransform.anchoredPosition = new Vector2(x, -RowTwoTop);
+            x += speed + RowGap;
+            sBubble!.anchoredPosition = new Vector2(x + BubbleSize / 2f, -RowTwoTop + 4f);
+            x += BubbleSize + RowGap;
+            sTurnText.rectTransform.anchoredPosition = new Vector2(x, -RowTwoTop - 6f);
         }
 
         static void SetFill(RectTransform fill, float level)
@@ -258,14 +361,14 @@ namespace TheExpanse
             // top middle: speed
             // top middle: speed in the middle; the heading marker and the turn rate to its right; the acceleration under
             // it; all bold
-            sSpeedText = Text("Speed", sReadout, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -Edge),
-                              new Vector2(240f, 44f), 36f, TextAlignmentOptions.Top, Amber);
-            sTurnText = Text("Turn", sReadout, new Vector2(0.5f, 1f), new Vector2(0f, 1f), new Vector2(170f, -Edge - 8f),
-                             new Vector2(260f, 34f), 26f, TextAlignmentOptions.TopLeft, Amber);
-            sAccelText = Text("Accel", sReadout, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -Edge - 46f),
-                              new Vector2(420f, 34f), 26f, TextAlignmentOptions.Top, Amber);
+            sSpeedText = Text("Speed", sReadout, new Vector2(0.5f, 1f), new Vector2(0f, 1f), new Vector2(0f, -RowTwoTop),
+                              new Vector2(260f, 40f), SpeedSize, TextAlignmentOptions.TopLeft, Amber);
+            sTurnText = Text("Turn", sReadout, new Vector2(0.5f, 1f), new Vector2(0f, 1f), new Vector2(0f, -RowTwoTop - 6f),
+                             new Vector2(200f, 30f), RowSize, TextAlignmentOptions.TopLeft, Amber);
+            sAccelText = Text("Accel", sReadout, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -RowThreeTop),
+                              new Vector2(520f, 30f), RowSize, TextAlignmentOptions.Top, Amber);
             foreach (var top in new[] { sSpeedText, sTurnText, sAccelText }) top.fontStyle = FontStyles.Bold;
-            sBubble = Bubble(sReadout, new Vector2(140f, -Edge - 3f));
+            sBubble = Bubble(sReadout, new Vector2(0f, -RowTwoTop + 4f));
             // the bay marker (outside and nose views): a thin hexagon outline with the distance, over the bay or on the
             // screen's edge
             var home = new GameObject("Home", typeof(RectTransform));
@@ -281,6 +384,21 @@ namespace TheExpanse
             // bottom middle: flip and burn
             sAutoText = Text("Auto", sReadout, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, Edge),
                              new Vector2(900f, 30f), 18f, TextAlignmentOptions.Bottom, Amber);
+            // over it: the weapon mode, large
+            sModeText = Text("WeaponMode", sReadout, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, Edge + 34f),
+                             new Vector2(500f, 60f), 48f, TextAlignmentOptions.Bottom, new Color(1f, 0.35f, 0.25f, 1f));
+            sModeText.fontStyle = FontStyles.Bold;
+            // the aim cursor (PDC and torpedo modes) and the turrets' state under it
+            sAim = Marker(sReadout, "reticle", 44f, WeaponColor, Vector2.zero);
+            sAimText = Text("AimRange", sAim, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -16f),
+                            new Vector2(300f, 26f), 18f, TextAlignmentOptions.Top, WeaponColor);
+            var bar = new GameObject("PdcBar", typeof(RectTransform));
+            bar.transform.SetParent(sAim, false);
+            sPdcBar = (RectTransform)bar.transform;
+            sPdcBar.anchorMin = sPdcBar.anchorMax = new Vector2(0.5f, 0f);
+            sPdcBar.pivot = new Vector2(0.5f, 1f);
+            sPdcBar.anchoredPosition = new Vector2(0f, -4f);
+            sAimText.fontStyle = FontStyles.Bold;
 
             // sit prompt: under the middle of the screen, like the game's own interaction prompts
             var prompt = new GameObject("SitPrompt", typeof(RectTransform));
@@ -305,15 +423,12 @@ namespace TheExpanse
                                TextAlignmentOptions.Left, Amber);
             sPromptText.text = "SIT AT THE CONTROLS";
             // setup mode: what is placed and the keys, one per line in the top left corner, under the HAB / SHIP / G
-            // readout; a dark copy behind it is the drop shadow
-            sSetupShadow = Text("SetupShadow", sCanvas.transform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(42f, -172f),
-                                new Vector2(500f, 220f), 16f, TextAlignmentOptions.TopLeft, new Color(0f, 0f, 0f, 0.85f));
-            sSetupShadow.fontStyle = FontStyles.Bold;
+            // readout
             sSetupText = Text("Setup", sCanvas.transform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(40f, -170f),
                               new Vector2(500f, 220f), 16f, TextAlignmentOptions.TopLeft, Amber);
             sSetupText.fontStyle = FontStyles.Bold;
-            sClock = Text("Clock", sCanvas.transform, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(0f, -40f),
-                          new Vector2(300f, 40f), 24f, TextAlignmentOptions.Center, Amber);
+            sClock = Text("Clock", sCanvas.transform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -ClockTop),
+                          new Vector2(300f, 40f), ClockSize, TextAlignmentOptions.Top, Amber);
             sClock.gameObject.SetActive(false);
             sCanvas.SetActive(false);
         }
@@ -422,10 +537,7 @@ namespace TheExpanse
             image.texture = MarkerTexture(textureKey ?? shape);
             image.color = color;
             image.raycastTarget = false;
-            var shadow = go.AddComponent<Shadow>();
-            shadow.effectColor = new Color(0f, 0f, 0f, 0.8f);
-            shadow.effectDistance = new Vector2(1.5f, -1.5f);
-            shadow.useGraphicAlpha = false;
+            AddShadow(go);
             return rect;
         }
 
@@ -446,6 +558,12 @@ namespace TheExpanse
                     switch (shape)
                     {
                         case "ring": a = Line(r - 0.93f, 0.06f); break;
+                        case "reticle":     // a ring with four ticks pointing in, and a dot
+                            a = Line(r - 0.8f, 0.05f);
+                            if (Abs(u) < 0.05f && Abs(v) > 0.45f && Abs(v) < 0.8f) a = Mathf.Max(a, Line(u, 0.05f));
+                            if (Abs(v) < 0.05f && Abs(u) > 0.45f && Abs(u) < 0.8f) a = Mathf.Max(a, Line(v, 0.05f));
+                            if (r < 0.07f) a = 1f;
+                            break;
                         case "ringfill": a = r < 0.93f ? 1f : 0f; break;
                         case "nose":        // a small plus
                             a = Mathf.Max(Abs(u) < 0.9f ? Line(v, 0.12f) : 0f, Abs(v) < 0.9f ? Line(u, 0.12f) : 0f); break;
@@ -524,12 +642,29 @@ namespace TheExpanse
             var image = go.AddComponent<Image>();
             image.color = color;
             image.raycastTarget = false;
+            AddShadow(go);
             return rect;
         }
 
-        static TextMeshProUGUI Text(string name, Transform parent, Vector2 anchor, Vector2 pivot, Vector2 position, Vector2 size, float fontSize,
-                                    TextAlignmentOptions alignment, Color color)
+        // A drop shadow under a picture (the same offset and darkness as the texts').
+        static void AddShadow(GameObject go)
         {
+            var shadow = go.AddComponent<Shadow>();
+            shadow.effectColor = ShadowColor;
+            shadow.effectDistance = ShadowOffset;
+            shadow.useGraphicAlpha = true;
+        }
+
+        static TextMeshProUGUI Text(string name, Transform parent, Vector2 anchor, Vector2 pivot, Vector2 position, Vector2 size, float fontSize,
+                                    TextAlignmentOptions alignment, Color color, bool glow = true, bool shadow = true)
+        {
+            // the drop shadow: a dark copy, made first so it is drawn under the text, kept in step with it each frame
+            TextMeshProUGUI? copy = null;
+            if (shadow)
+            {
+                copy = Text(name + "Shadow", parent, anchor, pivot, position + ShadowOffset, size, fontSize, alignment, ShadowColor, glow: false, shadow: false);
+                if (sPlain != null) copy.fontSharedMaterial = sPlain;
+            }
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
             var rect = (RectTransform)go.transform;
@@ -539,25 +674,76 @@ namespace TheExpanse
             rect.sizeDelta = size;
             var text = go.AddComponent<TextMeshProUGUI>();
             if (sFont != null) text.font = sFont;
-            if (sShadowed != null) text.fontSharedMaterial = sShadowed;
+            var material = glow ? Glowing(color) : sShadowed;
+            if (material != null) text.fontSharedMaterial = material;
             text.fontSize = fontSize;
             text.alignment = alignment;
             text.color = color;
             text.enableWordWrapping = false;
             text.richText = true;
             text.raycastTarget = false;
+            if (copy != null) go.AddComponent<DropShadow>().Copy = copy;
             return text;
         }
 
-        // The game's clean HUD face (Rajdhani, as on its ship-name and hazard banners); failing that, whatever most of
-        // its on-screen text uses. Its material gets a soft dark underlay: the drop shadow.
+        static readonly Vector2 ShadowOffset = new Vector2(3f, -3f);
+        static readonly Color ShadowColor = new Color(0f, 0f, 0f, 0.9f);
+        static Material? sPlain;                // the font's own material, for the shadow copies (no glow)
+
+        // Keeps a text's dark copy under it: same words, size, style and place (offset down-right), shown with it.
+        sealed class DropShadow : MonoBehaviour
+        {
+            internal TextMeshProUGUI? Copy;
+            TextMeshProUGUI? mText;
+            RectTransform? mRect;
+
+            void OnDisable() { if (Copy != null) Copy.gameObject.SetActive(false); }
+
+            void LateUpdate()
+            {
+                if (Copy == null) return;
+                mText ??= GetComponent<TextMeshProUGUI>();
+                mRect ??= (RectTransform)transform;
+                if (mText == null) return;
+                bool show = mText.isActiveAndEnabled && mText.color.a > 0.01f;
+                if (Copy.gameObject.activeSelf != show) Copy.gameObject.SetActive(show);
+                if (!show) return;
+                if (Copy.text != mText.text) Copy.text = mText.text;
+                Copy.fontSize = mText.fontSize;
+                Copy.fontStyle = mText.fontStyle;
+                Copy.alignment = mText.alignment;
+                var c = ShadowColor; c.a *= mText.color.a;
+                Copy.color = c;
+                var r = Copy.rectTransform;
+                r.anchorMin = mRect.anchorMin; r.anchorMax = mRect.anchorMax; r.pivot = mRect.pivot;
+                r.sizeDelta = mRect.sizeDelta;
+                r.anchoredPosition = mRect.anchoredPosition + ShadowOffset;
+            }
+        }
+
+        // The suit HUD's own face and look: its speed readout's font and material (as on the suit's velocity and
+        // acceleration). Failing that Rajdhani (the game's ship-name and hazard banners), then whatever most of its
+        // on-screen text uses. Its material gets a soft dark underlay (the drop shadow) and a glow (the bloom).
+        static readonly System.Reflection.FieldInfo? sVelocityField = HarmonyLib.AccessTools.Field(typeof(VelocityUIController), "m_VelocityTextField");
+        static string sFontFrom = "a search";
+
         static void FindFont()
         {
             sFont = null;
+            Material? baseMaterial = null;
+            // the suit HUD's speed readout (VelocityUIController): its font and its material
+            var velocity = Object.FindObjectOfType<VelocityUIController>();
+            if (velocity != null && sVelocityField?.GetValue(velocity) is TMP_Text speed && speed.font != null)
+            {
+                sFont = speed.font;
+                baseMaterial = speed.fontSharedMaterial;
+                sFontFrom = $"the suit's speed readout '{speed.name}'";
+            }
             string[] wanted = { "Rajdhani-SemiBold", "Rajdhani-Medium", "Rajdhani-Regular" };
             var fonts = Resources.FindObjectsOfTypeAll<TMP_FontAsset>();    // only font assets: a handful
             foreach (var name in wanted)
             {
+                if (sFont != null) break;
                 foreach (var f in fonts) if (f != null && f.name.StartsWith(name)) { sFont = f; break; }
                 if (sFont != null) break;
             }
@@ -571,20 +757,24 @@ namespace TheExpanse
                 foreach (var pair in counts) if (pair.Value > best) { best = pair.Value; sFont = pair.Key; }
             }
             if (sFont == null) sFont = TMP_Settings.defaultFontAsset;
-            if (sFont != null && sFont.material != null)
+            if (baseMaterial == null && sFont != null) { baseMaterial = sFont.material; sFontFrom = "its font asset"; }
+            if (baseMaterial != null)
             {
-                sShadowed = new Material(sFont.material) { name = "TheExpanse_HudShadowed" };
+                sPlain = baseMaterial;
+                sShadowed = new Material(baseMaterial) { name = "TheExpanse_HudShadowed" };
                 sShadowed.EnableKeyword("UNDERLAY_ON");
                 sShadowed.SetColor("_UnderlayColor", new Color(0f, 0f, 0f, 0.9f));
-                sShadowed.SetFloat("_UnderlayOffsetX", 0.5f);
-                sShadowed.SetFloat("_UnderlayOffsetY", -0.5f);
+                sShadowed.SetFloat("_UnderlayOffsetX", 0.7f);
+                sShadowed.SetFloat("_UnderlayOffsetY", -0.7f);
                 sShadowed.SetFloat("_UnderlayDilate", 0.2f);
                 sShadowed.SetFloat("_UnderlaySoftness", 0.5f);
             }
             if (!sFontLogged)
             {
                 sFontLogged = true;
-                Plugin.Log.LogInfo($"[Flight] readout font: '{(sFont != null ? sFont.name : "none")}'.");
+                var shader = baseMaterial != null ? baseMaterial.shader : null;
+                Plugin.Log.LogInfo($"[Flight] readout font: '{(sFont != null ? sFont.name : "none")}' from {sFontFrom}, material '{(baseMaterial != null ? baseMaterial.name : "none")}', shader '{(shader != null ? shader.name : "none")}' " +
+                                   $"(glow {(sShadowed != null && sShadowed.HasProperty("_GlowColor") ? "yes" : "NO")}, shadow {(sShadowed != null && sShadowed.HasProperty("_UnderlayColor") ? "yes" : "NO")}).");
             }
         }
     }

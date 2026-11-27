@@ -128,6 +128,10 @@ namespace TheExpanse
         internal static ConfigEntry<float> FlightParkingSphere = null!;
         internal static ConfigEntry<float> FlightMasterJackMass = null!;
         internal static ConfigEntry<float> FlightLightJackMass = null!;
+        internal static ConfigEntry<KeyboardShortcut> FlightFlipKey = null!;
+        internal static ConfigEntry<bool> WeaponsEnabled = null!;
+        internal static ConfigEntry<float> WeaponsAimSpeed = null!, WeaponsPdcSlewRate = null!, WeaponsPdcRange = null!;
+        internal static ConfigEntry<float> WeaponsPdcRate = null!, WeaponsPdcMuzzleSpeed = null!, WeaponsPdcHeatPerRound = null!;
         internal static ConfigEntry<bool> SpaceLimits = null!;
         internal static ConfigEntry<float> SpaceWorkAreaMultiplier = null!;
         internal static ConfigEntry<bool> SpaceFlatEarthMode = null!;
@@ -448,6 +452,23 @@ namespace TheExpanse
                 "The Master Jack (the Hab) always stays put.");
             FlightMasterJackMass = Config.Bind("Flight", "MasterJackMass", 200f,
                 "Not used: the Master Jack (the Hab) always stays put.");
+            FlightFlipKey = Config.Bind("Flight", "FlipKey", new KeyboardShortcut(UnityEngine.KeyCode.G),
+                "Flip and burn (D-pad left on a pad): turn tail-first and burn the drive down to a stop. R is the weapon wheel.");
+            WeaponsEnabled = Config.Bind("Weapons", "Enabled", true,
+                "Weapon control from the pilot's seat: hold R (Y on a pad) for the weapon wheel, as the suit's tool wheel, or press " +
+                "1-4: Helm (flying), PDC, Torpedo, Rail gun.");
+            WeaponsAimSpeed = Config.Bind("Weapons", "AimSpeed", 40f,
+                "PDC and torpedo modes: how fast the right stick moves the aim cursor, in degrees per second.");
+            WeaponsPdcSlewRate = Config.Bind("Weapons", "PdcSlewRate", 120f,
+                "How fast the PDC turrets turn and raise their barrels, in degrees per second.");
+            WeaponsPdcRate = Config.Bind("Weapons", "PdcRate", 20f,
+                "Rounds a second from each PDC on target while RT (left mouse button) is held. Every third is a tracer.");
+            WeaponsPdcMuzzleSpeed = Config.Bind("Weapons", "PdcMuzzleSpeed", 1000f,
+                "How fast PDC rounds leave the barrel, in meters per second (added to the ship's own speed).");
+            WeaponsPdcHeatPerRound = Config.Bind("Weapons", "PdcHeatPerRound", 2f,
+                "Heat damage each PDC round does to a part it hits (not the own ship), the game's way, as the reactor's fire.");
+            WeaponsPdcRange = Config.Bind("Weapons", "PdcRange", 2000f,
+                "How far the PDCs reach, in meters: the aim point is the first thing the cursor's line meets within it, else a point this far out.");
             FlightLightJackMass = Config.Bind("Flight", "LightJackMass", 20f,
                 "With FreeJacks on: each light jack's weight, in tonnes.");
 
@@ -659,12 +680,16 @@ namespace TheExpanse
             catch (Exception ex) { Log.LogError("[Reactor] " + ex); }
             try { TheExpanse.DrivePlume.Frame(); }
             catch (Exception ex) { Log.LogError("[Drive] " + ex); }
+            try { TheExpanse.Weapons.LateFrame(); }
+            catch (Exception ex) { Log.LogError("[Weapons] " + ex); }
             try { FlightHud.Frame(); SuitAccelReadout.Frame(); RcsBlocks.Frame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightJacks.Frame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
             try { FlightModel.LateFrame(); }
             catch (Exception ex) { Log.LogError("[Flight] " + ex); }
+            try { TheExpanse.Weapons.ShipFrame(); }
+            catch (Exception ex) { Log.LogError("[Weapons] " + ex); }
             // after the ship's frame is smoothed for this frame: the background is placed from it
             try { TheExpanse.SpaceLimits.LateTick(); }
             catch (Exception ex) { Log.LogError("[Space] " + ex); }
@@ -719,6 +744,7 @@ namespace TheExpanse
             TheExpanse.ReactorControl.Reset();
             TheExpanse.DrivePlume.Reset();
             FlightSeat.Reset();
+            TheExpanse.Weapons.Reset();
             ShipSetup.Reset();
             DeckBoots.Reset();
             MagBootsGuard.Resume();
