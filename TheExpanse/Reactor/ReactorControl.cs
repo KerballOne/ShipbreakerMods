@@ -58,6 +58,7 @@ namespace TheExpanse
             internal bool UsesFeeds;            // a fuel line found at setup: whether it still reaches its anchors decides it
             internal readonly HashSet<Entity> Anchors = new HashSet<Entity>();   // where its fuel line joined the ship at setup
             internal readonly HashSet<Entity> Released = new HashSet<Entity>();  // what its handle lets go of, from setup
+            internal bool EngineMounted;        // jointed to the big engine nozzle at setup: that joint decides the handle
             internal readonly HashSet<Entity> Line = new HashSet<Entity>();      // its fuel line's pipe parts, as last checked
             internal int LastAttached = -1;     // joints at the last check (-1 before the first)
             internal float LastHeated = -100f;
@@ -674,6 +675,14 @@ namespace TheExpanse
                 }
                 var pipeCache = new Dictionary<Entity, bool>();
                 bool Pipe(Entity e) { if (!pipeCache.TryGetValue(e, out bool p)) pipeCache[e] = p = IsPipeLike(em, e); return p; }
+                var engineCache = new Dictionary<Entity, bool>();
+                bool Engine(Entity e)
+                {
+                    if (!engineCache.TryGetValue(e, out bool n))
+                        engineCache[e] = n = em.Exists(e) && em.TryGetComponentObject<StructurePart>(e, out var part) && part != null
+                                             && part.name.StartsWith("EngineNozzle", System.StringComparison.OrdinalIgnoreCase);
+                    return n;
+                }
 
                 var nodesOf = new HashSet<Entity>[Count];
                 var anyInjector = new HashSet<Entity>();
@@ -689,7 +698,7 @@ namespace TheExpanse
                     var injector = sInjectors[i];
                     var nodes = nodesOf[i];
                     // its own joints to the rest of the ship
-                    int joints = 0;
+                    int joints = 0, engineJoints = 0;
                     var holders = new List<string>();
                     var start = new List<Entity>();
                     foreach (var node in nodes)
@@ -698,6 +707,7 @@ namespace TheExpanse
                             {
                                 if (nodes.Contains(other)) continue;
                                 joints++;
+                                if (Engine(other)) engineJoints++;
                                 if (Pipe(other) && !anyInjector.Contains(other)) start.Add(other);
                                 if (!injector.HasHandle && sCore != null && em.Exists(other) && em.TryGetComponentObject<StructurePart>(other, out var held)
                                     && held != null && held.name.IndexOf("AirlockConsole", System.StringComparison.OrdinalIgnoreCase) >= 0)
@@ -736,10 +746,14 @@ namespace TheExpanse
                             foreach (var other in near)
                                 if (!nodes.Contains(other) && !IsHandleOrCutPoint(em, other)) mounts.Add(other);
 
+                    // The handle lets go of the injector's joint to the big engine nozzle (its own panel of it): that
+                    // joint gone, the injector is off. (Waiting for every mounting joint to go missed injectors whose
+                    // nozzle flaps stay jointed to them.) Ships without that joint: every mounting joint recorded at
+                    // setup gone.
                     bool first = injector.LastAttached < 0;
-                    if (first) { injector.Released.Clear(); injector.Released.UnionWith(mounts); }
-                    int mounted = mounts.Count(x => injector.Released.Contains(x));
-                    bool handlePulled = injector.Released.Count > 0 && mounted == 0;
+                    if (first) { injector.Released.Clear(); injector.Released.UnionWith(mounts); injector.EngineMounted = engineJoints > 0; }
+                    int mounted = injector.EngineMounted ? engineJoints : mounts.Count(x => injector.Released.Contains(x));
+                    bool handlePulled = injector.EngineMounted ? engineJoints == 0 : injector.Released.Count > 0 && mounted == 0;
                     if (first)
                     {
                         // keep the anchors at the reactor's lid, if the line reaches it
@@ -767,7 +781,8 @@ namespace TheExpanse
                             Plugin.Log.LogInfo($"[Reactor] injector {i}: {joints} joint(s) to the rest of the ship" +
                                                (holders.Count > 0 ? " (" + string.Join(", ", holders.Distinct()) + ")" : "") +
                                                $"; line {pipes.Count} pipe part(s), reaching {reached} of its {injector.Anchors.Count} anchor(s)" +
-                                               $"; mounting {mounted} of {injector.Released.Count} joint(s){(handlePulled ? " (handle pulled)" : "")}" +
+                                               (injector.EngineMounted ? $"; {engineJoints} joint(s) to the engine nozzle{(handlePulled ? " (handle pulled: off the engine nozzle)" : "")}"
+                                                                       : $"; mounting {mounted} of {injector.Released.Count} joint(s){(handlePulled ? " (handle pulled)" : "")}") +
                                                (connected ? "." : "; it counts as disconnected."));
                         injector.LastAttached = state;
                     }

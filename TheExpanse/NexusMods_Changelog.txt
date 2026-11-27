@@ -2,6 +2,9 @@ Changelog for the TheExpanse page on NexusMods. One block per version: the first
 enter, the lines under it are the changelog lines.
 
 
+0.7.5
+Pulling an injector's handle now always takes it off: its beam goes out and the screen updates. On the Rocinante the nozzle flaps kept it counted as connected.
+
 0.7.4
 Setup mode: fit any ship for flight. Demo charges mark the spots; Alt+1 RCS thruster blocks, Alt+2 drive plumes, Alt+3 a seat, Alt+Backspace removes.
 Fittings are saved per ship class in ships.json (hand-editable) and come back on resumed saves.
