@@ -85,6 +85,18 @@ namespace TheExpanse
         internal static Vector3 SpinCommand { get; private set; }
         internal static float HalfLength => Mathf.Max(sLocalBox.extents.x, Mathf.Max(sLocalBox.extents.y, sLocalBox.extents.z));
 
+        // How far the hull reaches out from its long axis: the larger of the box's two shorter half-sides.
+        internal static float HalfWidth
+        {
+            get
+            {
+                var e = sLocalBox.extents;
+                float a = e.x, b = e.y, c = e.z;
+                float longest = Mathf.Max(a, Mathf.Max(b, c));
+                return longest == a ? Mathf.Max(b, c) : longest == b ? Mathf.Max(a, c) : Mathf.Max(a, b);
+            }
+        }
+
         // where the ship's bodies are: the parked pose while parked, else the flight model's
         static Vector3 BodyPivot => sParked ? sParkPivot : sPivot;
         static Quaternion BodyRotation => sParked ? sParkRotation : ShipRotation;

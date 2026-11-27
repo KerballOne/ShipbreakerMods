@@ -35,6 +35,7 @@ namespace TheExpanse
                 {
                     if (t == null || !seen.Add(t)) continue;
                     if (t.name == "Railgun_Muzzle") RailGun.SetMuzzle(t);
+                    Torpedo.Note(t);
                     var pdc = PdcPart.Match(t.name);
                     if (pdc.Success)
                     {
@@ -51,6 +52,7 @@ namespace TheExpanse
                 if (barrels.TryGetValue(pair.Key, out var barrel) && trusses.TryGetValue(pair.Key, out var truss)) Pdc.Add(pair.Key, truss, pair.Value, barrel);
                 else Plugin.Log.LogWarning($"[Weapons] PDC '{pair.Key}': body without {(barrels.ContainsKey(pair.Key) ? "" : "a barrel ")}{(trusses.ContainsKey(pair.Key) ? "" : "a truss")}; not driven.");
             Pdc.LogNoneOnce();
+            Torpedo.Setup();
             int total = 0;
             foreach (var list in groups.Values) total += list.Count;
             Plugin.Log.LogInfo($"[Weapons] {total} weapon object(s) on the ship in {groups.Count} name group(s):");

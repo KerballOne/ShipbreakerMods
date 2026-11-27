@@ -37,7 +37,9 @@ namespace TheExpanse
         static readonly System.Reflection.FieldInfo? sTimerTextField = HarmonyLib.AccessTools.Field(typeof(BBI.Unity.Game.UI.GameTimerUIController), "m_TimerText");
         static TextMeshProUGUI? sDriveText, sDrivePercent, sRcsText, sRcsPercent, sSpeedText, sTurnText, sAccelText, sAutoText, sPromptText, sPromptKey;
         static TextMeshProUGUI? sModeText, sAimText;
-        static RectTransform? sAim, sPdcBar, sRail, sRailBar;
+        static RectTransform? sAim, sPdcBar, sRail, sRailBar, sTorp, sTorpBar;
+        static TextMeshProUGUI? sTorpText;
+        static readonly List<List<Image>> sTorpRows = new List<List<Image>>();
         static TextMeshProUGUI? sRailText;
         static readonly List<Image> sRailSegments = new List<Image>();
         static readonly List<Image> sPdcSegments = new List<Image>();
@@ -63,7 +65,9 @@ namespace TheExpanse
             sReadout = sDriveFill = sRcsFill = sPrompt = null;
             sDriveText = sDrivePercent = sRcsText = sRcsPercent = sSpeedText = sTurnText = sAccelText = sAutoText = sPromptText = sPromptKey = null;
             sModeText = sAimText = null;
-            sAim = sPdcBar = sRail = sRailBar = null;
+            sAim = sPdcBar = sRail = sRailBar = sTorp = sTorpBar = null;
+            sTorpText = null;
+            sTorpRows.Clear();
             sRailText = null;
             sRailSegments.Clear();
             sPdcSegments.Clear();
@@ -212,13 +216,24 @@ namespace TheExpanse
         {
             Vector3 position = Vector3.zero; Quaternion rotation = Quaternion.identity;
             bool show = Weapons.Aiming && Camera.main != null && Pdc.View(out position, out rotation);
-            sAim!.gameObject.SetActive(show);
+            bool torp = show && Weapons.Mode == WeaponMode.Torpedo;
+            sAim!.gameObject.SetActive(show && !torp);
+            sTorp!.gameObject.SetActive(torp);
             if (!show) return;
             var size = ((RectTransform)sCanvas!.transform).rect.size;
             float half = size.y * 0.5f;
             float tanV = Mathf.Tan(Camera.main!.fieldOfView * 0.5f * Mathf.Deg2Rad);
             var local = Quaternion.Inverse(rotation) * Pdc.CursorDirection(rotation);
-            sAim.anchoredPosition = local.z > 0.01f ? new Vector2(local.x / local.z, local.y / local.z) / tanV * half : Vector2.zero;
+            var place = local.z > 0.01f ? new Vector2(local.x / local.z, local.y / local.z) / tanV * half : Vector2.zero;
+            if (torp)
+            {
+                sTorp.anchoredPosition = place;
+                ShowTorpBar();
+                float d = Vector3.Distance(position, Pdc.AimPoint);
+                sTorpText!.text = d < 1000f ? $"{d:0} M" : $"{d / 1000f:0.0} KM";
+                return;
+            }
+            sAim.anchoredPosition = place;
             bool pdc = Weapons.Mode == WeaponMode.Pdc;
             sPdcBar!.gameObject.SetActive(pdc);
             if (pdc)
@@ -230,6 +245,46 @@ namespace TheExpanse
             }
             else sAimText!.text = "";
         }
+
+        static readonly Color TorpColor = new Color(0.78f, 0.45f, 1f, 0.95f);
+
+        // Two rows (top tube, bottom tube), one segment per torpedo it held: bright while still there.
+        static void ShowTorpBar()
+        {
+            var rows = Torpedo.Rows;
+            for (int r = 0; r < rows.Count; r++)
+            {
+                if (sTorpRows.Count <= r) sTorpRows.Add(new List<Image>());
+                var segments = sTorpRows[r];
+                int capacity = rows[r].capacity, left = rows[r].left;
+                while (segments.Count < capacity)
+                {
+                    var go = new GameObject("Torpedo", typeof(RectTransform));
+                    go.transform.SetParent(sTorpBar, false);
+                    var image = go.AddComponent<Image>();
+                    image.raycastTarget = false;
+                    AddShadow(go);
+                    var rect = image.rectTransform;
+                    rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+                    rect.pivot = new Vector2(0f, 1f);
+                    rect.sizeDelta = new Vector2(TorpSegment, SegmentHeight);
+                    segments.Add(image);
+                }
+                float width = capacity * TorpSegment + Mathf.Max(0, capacity - 1) * SegmentGap;
+                for (int i = 0; i < segments.Count; i++)
+                {
+                    var image = segments[i];
+                    image.gameObject.SetActive(i < capacity);
+                    if (i >= capacity) continue;
+                    image.rectTransform.anchoredPosition = new Vector2(-width / 2f + i * (TorpSegment + SegmentGap), -r * (SegmentHeight + SegmentGap));
+                    var c = TorpColor;
+                    c.a = i < left ? 1f : 0.12f;
+                    image.color = c;
+                }
+            }
+        }
+
+        const float TorpSegment = 12f;
 
         static readonly Color RailColor = new Color(0.45f, 0.75f, 1f, 0.95f);
         const int RailSegments = 10;
@@ -449,6 +504,17 @@ namespace TheExpanse
             sRailText = Text("RailState", sRail, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -18f),
                              new Vector2(300f, 26f), 18f, TextAlignmentOptions.Top, RailColor);
             sRailText.fontStyle = FontStyles.Bold;
+            // the torpedoes' cursor: a purple box with bright corners and a dot; under it a bar per tube, then the range
+            sTorp = Marker(sReadout, "torpsight", 50f, TorpColor, Vector2.zero);
+            var torpBar = new GameObject("TorpBar", typeof(RectTransform));
+            torpBar.transform.SetParent(sTorp, false);
+            sTorpBar = (RectTransform)torpBar.transform;
+            sTorpBar.anchorMin = sTorpBar.anchorMax = new Vector2(0.5f, 0f);
+            sTorpBar.pivot = new Vector2(0.5f, 1f);
+            sTorpBar.anchoredPosition = new Vector2(0f, -6f);
+            sTorpText = Text("TorpRange", sTorp, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -27f),
+                             new Vector2(300f, 26f), 18f, TextAlignmentOptions.Top, TorpColor);
+            sTorpText.fontStyle = FontStyles.Bold;
             // the aim cursor (PDC and torpedo modes) and the turrets' state under it
             sAim = Marker(sReadout, "reticle", 44f, WeaponColor, Vector2.zero);
             sAimText = Text("AimRange", sAim, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -16f),
@@ -619,6 +685,16 @@ namespace TheExpanse
                     switch (shape)
                     {
                         case "ring": a = Line(r - 0.93f, 0.06f); break;
+                        case "torpsight":   // a faint box, its corners bright, a dot in the middle
+                        {
+                            float au = Abs(u), av = Abs(v);
+                            float edge = Mathf.Max(au, av);
+                            a = Line(edge - 0.88f, 0.04f) * 0.35f;
+                            bool nearCorner = au > 0.55f && av > 0.55f;
+                            if (nearCorner) a = Mathf.Max(a, Line(edge - 0.88f, 0.07f));
+                            if (r < 0.08f) a = 1f;
+                            break;
+                        }
                         case "railsight":   // four corner brackets and a dot: the nose's line
                         {
                             float au = Abs(u), av = Abs(v);

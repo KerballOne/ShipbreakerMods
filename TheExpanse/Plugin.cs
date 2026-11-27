@@ -136,6 +136,10 @@ namespace TheExpanse
             WeaponsRailGunPush = null!, WeaponsRailGunGlowSize = null!, WeaponsRailGunBeamSeconds = null!, WeaponsRailGunBlastSize = null!, WeaponsRailGunBeamDelay = null!, WeaponsRailGunBlastSpeed = null!, WeaponsRailGunRecoil = null!;
         internal static ConfigEntry<string> WeaponsRailGunBlastAxis = null!;
         internal static ConfigEntry<int> WeaponsRailGunPierce = null!;
+        internal static ConfigEntry<float> WeaponsTorpedoRange = null!, WeaponsTorpedoAcceleration = null!, WeaponsTorpedoSpeed = null!,
+            WeaponsTorpedoLife = null!, WeaponsTorpedoBlast = null!, WeaponsTorpedoHeat = null!, WeaponsTorpedoHatchAngle = null!;
+        internal static ConfigEntry<bool> WeaponsTorpedoShowHinges = null!;
+        internal static ConfigEntry<string> WeaponsTorpedoHatchPin = null!;
         internal static ConfigEntry<bool> SpaceLimits = null!;
         internal static ConfigEntry<float> SpaceWorkAreaMultiplier = null!;
         internal static ConfigEntry<bool> SpaceFlatEarthMode = null!;
@@ -497,6 +501,24 @@ namespace TheExpanse
                 "Rail gun: which of the blast's own axes (x, y or z; -x etc. to flip) is turned onto the nose, so its ring stands square to the shot.");
             WeaponsRailGunBlastSize = Config.Bind("Weapons", "RailGunBlastSize", 0.005f,
                 "Rail gun: the size of the blast at the muzzle (the rail gate's own flash, which goes off first), as a share of the gate's.");
+            WeaponsTorpedoShowHinges = Config.Bind("Weapons", "TorpedoShowHinges", true,
+                "Torpedoes, for setting up: in torpedo mode, draw each tube door's hinge (green, along the pin) and an arm from it to the door's middle (yellow).");
+            WeaponsTorpedoHatchPin = Config.Bind("Weapons", "TorpedoHatchPin", "x",
+                "Torpedoes: which of a tube door's own axes its hinge pins run along (x, y or z; x in the Corvette's model). Applies from the next level load.");
+            WeaponsTorpedoHatchAngle = Config.Bind("Weapons", "TorpedoHatchAngle", 180f,
+                "Torpedoes: how far a tube's door swings open about its hinge, in degrees.");
+            WeaponsTorpedoRange = Config.Bind("Weapons", "TorpedoRange", 10000f,
+                "Torpedoes: how far the aim reaches for a lock, in meters (with nothing under the cursor, the lock is a point this far out).");
+            WeaponsTorpedoAcceleration = Config.Bind("Weapons", "TorpedoAcceleration", 80f,
+                "Torpedoes: how hard the drive pushes once lit, in meters per second per second.");
+            WeaponsTorpedoSpeed = Config.Bind("Weapons", "TorpedoSpeed", 800f,
+                "Torpedoes: the fastest they fly, in meters per second.");
+            WeaponsTorpedoLife = Config.Bind("Weapons", "TorpedoLife", 60f,
+                "Torpedoes: seconds of flight before one detonates on its own.");
+            WeaponsTorpedoBlast = Config.Bind("Weapons", "TorpedoBlast", 1f,
+                "Torpedoes: the size of the explosion, as a share of the torpedo's own explosive settings (or of the reactor core's effect if it has none).");
+            WeaponsTorpedoHeat = Config.Bind("Weapons", "TorpedoHeat", 80f,
+                "Torpedoes without explosive settings of their own: heat damage to each part within the blast.");
             WeaponsPdcRange = Config.Bind("Weapons", "PdcRange", 2000f,
                 "How far the PDCs reach, in meters: the aim point is the first thing the cursor's line meets within it, else a point this far out.");
             FlightLightJackMass = Config.Bind("Flight", "LightJackMass", 20f,
@@ -616,7 +638,7 @@ namespace TheExpanse
 
         // Settings that are no longer used are dropped from the settings file (BepInEx keeps unknown lines otherwise).
         static readonly string[] sRetired = { "Reactor/PulseSound", "Reactor/HapticDelay", "Reactor/HapticSeconds", "Reactor/BurnsParts", "Reactor/Damage",
-                                              "Reactor/SafeWindow", "Reactor/MinSafeSeconds", "Reactor/HandleTiming", "Reactor/PulsesPerLight", "Reactor/BurnInterval", "Reactor/EscalateMaxSeconds", "Reactor/EscalateMinSeconds", "Reactor/ResonanceHint", "Debug/FxGalleryKey", "Debug/FxGalleryBackKey", "Weapons/RailGunBeamScale", "Weapons/RailGunBlastScale", "Weapons/RailGunMuzzleBlast", "Weapons/RailGunBeamSize" };
+                                              "Reactor/SafeWindow", "Reactor/MinSafeSeconds", "Reactor/HandleTiming", "Reactor/PulsesPerLight", "Reactor/BurnInterval", "Reactor/EscalateMaxSeconds", "Reactor/EscalateMinSeconds", "Reactor/ResonanceHint", "Debug/FxGalleryKey", "Debug/FxGalleryBackKey", "Weapons/RailGunBeamScale", "Weapons/RailGunBlastScale", "Weapons/RailGunMuzzleBlast", "Weapons/RailGunBeamSize", "Weapons/TorpedoHatchHinge" };
         private void RemoveRetiredSettings()
         {
             try

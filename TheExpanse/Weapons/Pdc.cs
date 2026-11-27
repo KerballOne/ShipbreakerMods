@@ -47,6 +47,7 @@ namespace TheExpanse
         internal static IReadOnlyList<Turret> Turrets => sTurrets;
         internal static Vector3 AimPoint { get; private set; }
         internal static bool AimHit { get; private set; }
+        internal static string AimName { get; private set; } = "";
         internal static int OnTarget { get; private set; }
 
         internal static void Reset()
@@ -168,9 +169,10 @@ namespace TheExpanse
 
         internal static void Frame()
         {
+            // the aim point: for the PDCs, and for the torpedoes (their lock) at their own range
+            if (Weapons.Aiming) FindAimPoint();
             if (sTurrets.Count == 0) return;
             bool aiming = Weapons.Allowed && Weapons.Mode == WeaponMode.Pdc;
-            if (aiming) FindAimPoint();
             float slew = Mathf.Max(1f, Plugin.WeaponsPdcSlewRate.Value) * Time.deltaTime;
             int onTarget = 0;
             for (int i = sTurrets.Count - 1; i >= 0; i--)
@@ -294,7 +296,7 @@ namespace TheExpanse
 
         static void FindAimPoint()
         {
-            float range = Mathf.Max(50f, Plugin.WeaponsPdcRange.Value);
+            float range = Mathf.Max(50f, Weapons.Mode == WeaponMode.Torpedo ? Plugin.WeaponsTorpedoRange.Value : Plugin.WeaponsPdcRange.Value);
             if (!View(out var position, out var rotation)) return;
             var dir = CursorDirection(rotation);
             AimHit = false;
@@ -311,6 +313,7 @@ namespace TheExpanse
                 best = hit.distance;
                 AimPoint = hit.point;
                 AimHit = true;
+                AimName = part != null ? part.name : hit.collider.name;
             }
         }
 
