@@ -174,11 +174,13 @@ namespace BiggerBays
                 if (posedFit <= plainFit && posedFit <= turnedFit)
                 {
                     Plugin.Log.LogInfo($"[Centering] {from}; it was saved where the game put it, so it is left there.");
+                    PlacedBox = posedBox;
                     return spawn;
                 }
                 if (plainFit <= turnedFit)
                 {
                     Plugin.Log.LogInfo($"[Centering] {from}; it was saved centered but not straightened, moved by ({plainDelta.x:0.0}, {plainDelta.y:0.0}, {plainDelta.z:0.0}) to match.");
+                    PlacedBox = Shifted(posedBox, plainDelta);
                     return new RigidTransform(spawn.rot, spawn.pos + (float3)plainDelta);
                 }
                 Plugin.Log.LogInfo($"[Centering] {from}; it was saved straightened and centered, placed to match.");
@@ -192,11 +194,13 @@ namespace BiggerBays
                 {
                     // Clearly neither: it was saved under different settings. Follow the saved parts.
                     Plugin.Log.LogInfo($"[Centering] {from}; rebuilt there to match.");
+                    PlacedBox = Shifted(posedBox, savedShift);
                     return new RigidTransform(spawn.rot, spawn.pos + (float3)savedShift);
                 }
                 if (asPosed <= centered)
                 {
                     Plugin.Log.LogInfo($"[Centering] {from}; it was saved where the game put it, so it is left there.");
+                    PlacedBox = posedBox;
                     return spawn;
                 }
                 Plugin.Log.LogInfo($"[Centering] {from}; it was saved centered, moved by ({delta.x:0.0}, {delta.y:0.0}, {delta.z:0.0}) to match.");
@@ -204,8 +208,11 @@ namespace BiggerBays
             else
                 Plugin.Log.LogInfo($"[Centering] '{shipPreview.ShipName}': {modules} module(s), {size}; moved by ({delta.x:0.0}, {delta.y:0.0}, {delta.z:0.0}) to center it.");
 
+            PlacedBox = Shifted(box, delta);
             return centeredSpawn;
         }
+
+        static Bounds Shifted(Bounds b, Vector3 by) => new Bounds(b.center + by, b.size);
 
         // The shift that puts a box in the middle of the bay, its rear end the set distance in front of the back wall.
         static Vector3 DeltaFor(Bounds box) =>
@@ -574,6 +581,10 @@ namespace BiggerBays
 
         // True once the ship now loading has been taken on by this class; the jacks are only moved for those ships.
         internal static bool Centered;
+
+        // Where the whole ship's estimated box was put (null when it was not worked out). A ship loaded from a save is
+        // sized by this rather than by measuring its parts, which may have been cut loose and scattered anywhere.
+        internal static Bounds? PlacedBox;
 
         // A custom ship is one whose modules come out of a mod's bundle, i.e. a bundle file under BepInEx\plugins.
         static bool IsCustom(ShipPreview shipPreview)

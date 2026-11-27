@@ -193,6 +193,7 @@ namespace BiggerBays
             if (ev.State == LevelLoadEvent.LoadState.Start)
             {
                 ShipCentering.Centered = false;
+                ShipCentering.PlacedBox = null;
                 // Pick up edits made to the settings file while the game was running, before the next bay is built.
                 if (!EditSession.IsOpen)
                 {

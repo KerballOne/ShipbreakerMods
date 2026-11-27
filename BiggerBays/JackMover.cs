@@ -63,7 +63,8 @@ namespace BiggerBays
 
             // Where the ship actually ended up, against where the centering aimed (it worked from an estimate of the box).
             var size = ship.size;
-            Plugin.Log.LogInfo($"[JackMover] ship: {parts} parts, size {size.x:0.0} x {size.y:0.0} x {size.z:0.0} m, {B(ship)}; " +
+            string from = BayMemory.Restoring && ShipCentering.PlacedBox != null ? " (from a save: the box it was placed with, not its parts as they lie now)" : "";
+            Plugin.Log.LogInfo($"[JackMover] ship{from}: {parts} parts, size {size.x:0.0} x {size.y:0.0} x {size.z:0.0} m, {B(ship)}; " +
                                $"off its target by {ship.center.x - ShipCentering.BayCenterX:0.0} m across and {ship.center.y - Plugin.BayCenterY.Value:0.0} m in height, " +
                                $"rear end {ship.min.z - ShipCentering.BackWallZ:0.0} m from the back wall.");
 
@@ -131,6 +132,15 @@ namespace BiggerBays
             }
             if (members.Count == 0 && all.Count > 0)
                 Plugin.Log.LogWarning($"[JackMover] none of the {all.Count} structure parts is tagged as a ship member; measuring all of them.");
+
+            // A ship loaded from a save is sized as it was when new: where its estimated box was placed. Its parts may have
+            // been cut loose and scattered anywhere (one player's reached 320 m up the bay, which put the Hab 235 m out).
+            if (BayMemory.Restoring && ShipCentering.PlacedBox is Bounds placed)
+            {
+                ship = placed;
+                parts = members.Count > 0 ? members.Count : all.Count;
+                return parts > 0;
+            }
 
             foreach (var sp in members.Count > 0 ? members : all)
             {

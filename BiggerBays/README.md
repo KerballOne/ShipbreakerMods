@@ -23,7 +23,7 @@ The second furnace and processor work like the originals: salvage thrown into th
 
 ## Saved ships
 
-The bay a ship was given is remembered, so loading a save gives you the same bay again, however much of the ship is left.
+The bay a ship was given is remembered, so loading a save gives you the same bay again, however much of the ship is left. The jacks are placed for the whole ship as it was when new, so parts cut loose and scattered around the bay do not push the Master Jack away.
 
 ## Settings
 
