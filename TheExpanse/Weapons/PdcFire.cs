@@ -31,7 +31,7 @@ namespace TheExpanse
         }
 
         const int TracerEvery = 3, MaxRounds = 600;
-        const float TracerLength = 30f, TracerWidth = 0.35f, FlashTime = 0.04f, SparkTime = 0.12f;
+        const float TracerLength = 45f, TracerWidth = 0.7f, FlashTime = 0.04f, SparkTime = 0.12f;
 
         static readonly List<Round> sRounds = new List<Round>();
         static readonly Stack<Round> sFreeRounds = new Stack<Round>();
@@ -155,7 +155,7 @@ namespace TheExpanse
                 if (r.Tracer != null)
                 {
                     var dir = r.Velocity.normalized;
-                    float w = Mathf.Max(TracerWidth, Vector3.Distance(eye, r.Position) * 0.0015f);
+                    float w = Mathf.Max(TracerWidth, Vector3.Distance(eye, r.Position) * 0.003f);
                     r.Tracer.SetPosition(0, r.Position - dir * Mathf.Min(TracerLength, r.Travelled + 1f));
                     r.Tracer.SetPosition(1, r.Position);
                     r.Tracer.startWidth = r.Tracer.endWidth = w;
@@ -223,7 +223,7 @@ namespace TheExpanse
             if (sRoot != null) return true;
             sRoot = new GameObject("TheExpanse_PdcFire");
             Object.DontDestroyOnLoad(sRoot);
-            sTracerMaterial = DrivePlume.AdditiveMaterial(Paint(true, new Color(2.4f, 0.75f, 0.3f)));
+            sTracerMaterial = DrivePlume.AdditiveMaterial(Paint(true, new Color(8f, 2.6f, 0.9f), core: 10f));
             sFlashMaterial = DrivePlume.AdditiveMaterial(Paint(false, new Color(3f, 2.1f, 1.2f)));
             sSparkMaterial = DrivePlume.AdditiveMaterial(Paint(true, new Color(3f, 1.6f, 0.6f)));
             return true;
@@ -253,7 +253,7 @@ namespace TheExpanse
         }
 
         // streak: bright head at the end (u = 1) fading back to the tail, soft across; glow: a round soft spot.
-        static Texture2D Paint(bool streak, Color color)
+        static Texture2D Paint(bool streak, Color color, float core = 0f)
         {
             const int W = 64, H = 16;
             int w = streak ? W : 32, h = streak ? H : 32;
@@ -266,7 +266,9 @@ namespace TheExpanse
                     float a;
                     if (streak) a = Mathf.Pow(u, 1.5f) * Mathf.Exp(-v * v * 6f);
                     else { float uu = u * 2f - 1f; a = Mathf.Exp(-(uu * uu + v * v) * 4f); }
-                    pixels[y * w + x] = new Color(color.r * a, color.g * a, color.b * a, a);
+                    // a white-hot core along the middle of a streak
+                    float hot = streak && core > 0f ? core * Mathf.Pow(u, 1.5f) * Mathf.Exp(-v * v * 40f) : 0f;
+                    pixels[y * w + x] = new Color(color.r * a + hot, color.g * a + hot, color.b * a + hot, Mathf.Min(1f, a + hot));
                 }
             tex.SetPixels(pixels);
             tex.Apply(false, true);

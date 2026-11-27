@@ -34,6 +34,7 @@ namespace TheExpanse
                 foreach (var t in part.GetComponentsInChildren<Transform>(true))
                 {
                     if (t == null || !seen.Add(t)) continue;
+                    if (t.name == "Railgun_Muzzle") RailGun.SetMuzzle(t);
                     var pdc = PdcPart.Match(t.name);
                     if (pdc.Success)
                     {

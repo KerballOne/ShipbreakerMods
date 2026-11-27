@@ -37,7 +37,9 @@ namespace TheExpanse
         static readonly System.Reflection.FieldInfo? sTimerTextField = HarmonyLib.AccessTools.Field(typeof(BBI.Unity.Game.UI.GameTimerUIController), "m_TimerText");
         static TextMeshProUGUI? sDriveText, sDrivePercent, sRcsText, sRcsPercent, sSpeedText, sTurnText, sAccelText, sAutoText, sPromptText, sPromptKey;
         static TextMeshProUGUI? sModeText, sAimText;
-        static RectTransform? sAim, sPdcBar;
+        static RectTransform? sAim, sPdcBar, sRail, sRailBar;
+        static TextMeshProUGUI? sRailText;
+        static readonly List<Image> sRailSegments = new List<Image>();
         static readonly List<Image> sPdcSegments = new List<Image>();
         static RectTransform? sBubble, sPrograde, sRetrograde;
         static RectTransform? sHome, sHomeArrow;
@@ -61,7 +63,9 @@ namespace TheExpanse
             sReadout = sDriveFill = sRcsFill = sPrompt = null;
             sDriveText = sDrivePercent = sRcsText = sRcsPercent = sSpeedText = sTurnText = sAccelText = sAutoText = sPromptText = sPromptKey = null;
             sModeText = sAimText = null;
-            sAim = sPdcBar = null;
+            sAim = sPdcBar = sRail = sRailBar = null;
+            sRailText = null;
+            sRailSegments.Clear();
             sPdcSegments.Clear();
             sBubble = sPrograde = sRetrograde = null;
             sHome = sHomeArrow = null;
@@ -177,6 +181,7 @@ namespace TheExpanse
             sModeText!.gameObject.SetActive(weapon);
             if (weapon) sModeText.text = Weapons.ModeName;
             ShowAim();
+            ShowRailSight();
         }
 
         // The text's material: the dark drop shadow (underlay) and a bloom in the text's own color (glow), one per color.
@@ -224,6 +229,51 @@ namespace TheExpanse
                                : Pdc.AimHit ? (distance < 1000f ? $"{distance:0} M" : $"{distance / 1000f:0.0} KM") : "NO TARGET";
             }
             else sAimText!.text = "";
+        }
+
+        static readonly Color RailColor = new Color(0.45f, 0.75f, 1f, 0.95f);
+        const int RailSegments = 10;
+
+        // The rail gun's sight where the ship's nose points (5 km out), its charge as segments, and its state.
+        static void ShowRailSight()
+        {
+            Vector3 eye = Vector3.zero; Quaternion view = Quaternion.identity;
+            bool show = Weapons.Allowed && Weapons.Mode == WeaponMode.RailGun && Camera.main != null && Pdc.View(out eye, out view);
+            sRail!.gameObject.SetActive(show);
+            if (!show) return;
+            RailGun.Aim(out var from, out var dir);
+            var size = ((RectTransform)sCanvas!.transform).rect.size;
+            float half = size.y * 0.5f;
+            float tanV = Mathf.Tan(Camera.main!.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            var local = Quaternion.Inverse(view) * (from + dir * 5000f - eye);
+            bool ahead = local.z > 0.01f;
+            sRail.gameObject.SetActive(ahead);
+            if (!ahead) return;
+            sRail.anchoredPosition = new Vector2(local.x / local.z, local.y / local.z) / tanV * half;
+            while (sRailSegments.Count < RailSegments)
+            {
+                var go = new GameObject("Segment", typeof(RectTransform));
+                go.transform.SetParent(sRailBar, false);
+                var image = go.AddComponent<Image>();
+                image.raycastTarget = false;
+                AddShadow(go);
+                var rect = image.rectTransform;
+                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+                rect.pivot = new Vector2(0f, 1f);
+                rect.sizeDelta = new Vector2(SegmentWidth, SegmentHeight);
+                float width = RailSegments * SegmentWidth + (RailSegments - 1) * SegmentGap;
+                rect.anchoredPosition = new Vector2(-width / 2f + sRailSegments.Count * (SegmentWidth + SegmentGap), 0f);
+                sRailSegments.Add(image);
+            }
+            float reload = RailGun.ReloadLeft, total = Mathf.Max(0.2f, Plugin.WeaponsRailGunCooldown.Value);
+            float fill = RailGun.Ready ? RailGun.Charge : 1f - reload / total;
+            for (int i = 0; i < sRailSegments.Count; i++)
+            {
+                var c = RailColor;
+                c.a = (i + 0.5f) / RailSegments <= fill ? (RailGun.Ready ? 1f : 0.45f) : 0.12f;
+                sRailSegments[i].color = c;
+            }
+            sRailText!.text = !RailGun.Ready ? $"RELOADING {reload:0.0} S" : RailGun.Charge > 0f ? "CHARGING" : "READY";
         }
 
         // One segment per turret: bright on target, dim while turning to it, faint when it can't see the aim point.
@@ -388,6 +438,17 @@ namespace TheExpanse
             sModeText = Text("WeaponMode", sReadout, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, Edge + 34f),
                              new Vector2(500f, 60f), 48f, TextAlignmentOptions.Bottom, new Color(1f, 0.35f, 0.25f, 1f));
             sModeText.fontStyle = FontStyles.Bold;
+            // the rail gun's sight: where the ship's nose points, with its charge under it
+            sRail = Marker(sReadout, "railsight", 56f, RailColor, Vector2.zero);
+            var railBar = new GameObject("RailBar", typeof(RectTransform));
+            railBar.transform.SetParent(sRail, false);
+            sRailBar = (RectTransform)railBar.transform;
+            sRailBar.anchorMin = sRailBar.anchorMax = new Vector2(0.5f, 0f);
+            sRailBar.pivot = new Vector2(0.5f, 1f);
+            sRailBar.anchoredPosition = new Vector2(0f, -6f);
+            sRailText = Text("RailState", sRail, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -18f),
+                             new Vector2(300f, 26f), 18f, TextAlignmentOptions.Top, RailColor);
+            sRailText.fontStyle = FontStyles.Bold;
             // the aim cursor (PDC and torpedo modes) and the turrets' state under it
             sAim = Marker(sReadout, "reticle", 44f, WeaponColor, Vector2.zero);
             sAimText = Text("AimRange", sAim, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(0f, -16f),
@@ -558,6 +619,14 @@ namespace TheExpanse
                     switch (shape)
                     {
                         case "ring": a = Line(r - 0.93f, 0.06f); break;
+                        case "railsight":   // four corner brackets and a dot: the nose's line
+                        {
+                            float au = Abs(u), av = Abs(v);
+                            bool corner = au > 0.55f && av > 0.55f && au < 0.95f && av < 0.95f;
+                            if (corner) a = Mathf.Max(Line(au - 0.9f, 0.05f) * (av > 0.6f ? 1f : 0f), Line(av - 0.9f, 0.05f) * (au > 0.6f ? 1f : 0f));
+                            if (r < 0.07f) a = 1f;
+                            break;
+                        }
                         case "reticle":     // a ring with four ticks pointing in, and a dot
                             a = Line(r - 0.8f, 0.05f);
                             if (Abs(u) < 0.05f && Abs(v) > 0.45f && Abs(v) < 0.8f) a = Mathf.Max(a, Line(u, 0.05f));

@@ -38,6 +38,7 @@ namespace TheExpanse
         // what was changed on opening, put back on closing
         static readonly List<(TMP_Text text, string was, int slot)> sTexts = new List<(TMP_Text, string, int)>();
         static readonly List<(GameObject go, bool active)> sHidden = new List<(GameObject, bool)>();
+        static readonly List<GameObject> sShown = new List<GameObject>();     // switched on to show a label; off again on closing
         // the wheel and its dark backdrop, each seen through the faded suit HUD (outside and nose views) by a canvas
         // group ignoring the HUD's: (group, added by the mod, its ignoreParentGroups before)
         static readonly List<(CanvasGroup group, bool added, bool ignored)> sGroups = new List<(CanvasGroup, bool, bool)>();
@@ -82,7 +83,17 @@ namespace TheExpanse
             // the game's localization puts its own back when they are shown
             foreach (var (go, _) in sHidden) if (go != null && go.activeSelf) go.SetActive(false);
             foreach (var (text, _, slot) in sTexts)
-                if (text != null && text.text != Labels[slot]) text.text = Labels[slot];
+            {
+                if (text == null) continue;
+                if (text.text != Labels[slot]) text.text = Labels[slot];
+                // a slice the suit greys out (the scanner's before it is unlocked) hides its label: shown here, in the
+                // look of the first slice's label
+                if (!text.enabled) text.enabled = true;
+                for (var t = text.transform; t != null && t != sWheel!.transform; t = t.parent)
+                    if (!t.gameObject.activeSelf) { sShown.Add(t.gameObject); t.gameObject.SetActive(true); }
+                if (sTexts.Count > 0 && sTexts[0].text != null && sTexts[0].text != text && text.color.a < 0.3f)
+                    text.color = sTexts[0].text.color;
+            }
         }
 
         static bool FindWheel()
@@ -149,6 +160,8 @@ namespace TheExpanse
             SetNav(false);
             foreach (var (text, was, _) in sTexts) if (text != null) text.text = was;
             sTexts.Clear();
+            foreach (var go in sShown) if (go != null) go.SetActive(false);
+            sShown.Clear();
             foreach (var (go, active) in sHidden) if (go != null) go.SetActive(active);
             sHidden.Clear();
             foreach (var (group, added, ignored) in sGroups)

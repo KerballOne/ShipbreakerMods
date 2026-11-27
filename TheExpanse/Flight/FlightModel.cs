@@ -1061,7 +1061,8 @@ namespace TheExpanse
             {
                 float wheel = MouseAxis("mouse z", "Mouse ScrollWheel");
                 if (Mathf.Abs(wheel) > 0.01f) PilotThrottle(Mathf.Clamp01(Throttle + Mathf.Sign(wheel) * 0.05f));
-                if (pad != null && Mathf.Abs(pad.RightTrigger.Value - pad.LeftTrigger.Value) > 0.05f)
+                // (not in rail gun mode: RT fires it; the throttle stays as set)
+                if (pad != null && Weapons.Mode != WeaponMode.RailGun && Mathf.Abs(pad.RightTrigger.Value - pad.LeftTrigger.Value) > 0.05f)
                     PilotThrottle(Mathf.Clamp01(Throttle + (pad.RightTrigger.Value - pad.LeftTrigger.Value) * 0.5f * Time.unscaledDeltaTime));
             }
             if (Input.GetKeyDown(KeyCode.Z)) PilotThrottle(1f);

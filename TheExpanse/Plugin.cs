@@ -132,6 +132,9 @@ namespace TheExpanse
         internal static ConfigEntry<bool> WeaponsEnabled = null!;
         internal static ConfigEntry<float> WeaponsAimSpeed = null!, WeaponsPdcSlewRate = null!, WeaponsPdcRange = null!;
         internal static ConfigEntry<float> WeaponsPdcRate = null!, WeaponsPdcMuzzleSpeed = null!, WeaponsPdcHeatPerRound = null!;
+        internal static ConfigEntry<float> WeaponsRailGunCharge = null!, WeaponsRailGunCooldown = null!, WeaponsRailGunRange = null!, WeaponsRailGunHeat = null!,
+            WeaponsRailGunPush = null!, WeaponsRailGunBeamSize = null!, WeaponsRailGunBeamSeconds = null!, WeaponsRailGunBlastScale = null!;
+        internal static ConfigEntry<int> WeaponsRailGunPierce = null!;
         internal static ConfigEntry<bool> SpaceLimits = null!;
         internal static ConfigEntry<float> SpaceWorkAreaMultiplier = null!;
         internal static ConfigEntry<bool> SpaceFlatEarthMode = null!;
@@ -467,6 +470,24 @@ namespace TheExpanse
                 "How fast PDC rounds leave the barrel, in meters per second (added to the ship's own speed).");
             WeaponsPdcHeatPerRound = Config.Bind("Weapons", "PdcHeatPerRound", 2f,
                 "Heat damage each PDC round does to a part it hits (not the own ship), the game's way, as the reactor's fire.");
+            WeaponsRailGunCharge = Config.Bind("Weapons", "RailGunCharge", 1f,
+                "Rail gun: how long RT (left mouse button) is held before it fires, in seconds.");
+            WeaponsRailGunCooldown = Config.Bind("Weapons", "RailGunCooldown", 5f,
+                "Rail gun: seconds to reload after a shot.");
+            WeaponsRailGunRange = Config.Bind("Weapons", "RailGunRange", 20000f,
+                "Rail gun: how far the slug reaches, in meters.");
+            WeaponsRailGunPierce = Config.Bind("Weapons", "RailGunPierce", 4,
+                "Rail gun: how many parts the slug goes through (the bay and stations stop it).");
+            WeaponsRailGunHeat = Config.Bind("Weapons", "RailGunHeat", 60f,
+                "Rail gun: heat damage to each part the slug goes through, the game's way.");
+            WeaponsRailGunPush = Config.Bind("Weapons", "RailGunPush", 20000f,
+                "Rail gun: the shove each loose part the slug goes through gets, as an impulse (kg m/s).");
+            WeaponsRailGunBeamSize = Config.Bind("Weapons", "RailGunBeamSize", 1f,
+                "Rail gun: the size of the beam, the village rail gate's own firing copied at the muzzle, as a share of the gate's (1 = the gate's own size).");
+            WeaponsRailGunBeamSeconds = Config.Bind("Weapons", "RailGunBeamSeconds", 3f,
+                "Rail gun: how long the beam's copy is kept after the gate's sequence has played, in seconds.");
+            WeaponsRailGunBlastScale = Config.Bind("Weapons", "RailGunBlastScale", 0.5f,
+                "Rail gun: the size of the explosion effect where the slug hits, as a share of the reactor core's.");
             WeaponsPdcRange = Config.Bind("Weapons", "PdcRange", 2000f,
                 "How far the PDCs reach, in meters: the aim point is the first thing the cursor's line meets within it, else a point this far out.");
             FlightLightJackMass = Config.Bind("Flight", "LightJackMass", 20f,
@@ -586,7 +607,7 @@ namespace TheExpanse
 
         // Settings that are no longer used are dropped from the settings file (BepInEx keeps unknown lines otherwise).
         static readonly string[] sRetired = { "Reactor/PulseSound", "Reactor/HapticDelay", "Reactor/HapticSeconds", "Reactor/BurnsParts", "Reactor/Damage",
-                                              "Reactor/SafeWindow", "Reactor/MinSafeSeconds", "Reactor/HandleTiming", "Reactor/PulsesPerLight", "Reactor/BurnInterval", "Reactor/EscalateMaxSeconds", "Reactor/EscalateMinSeconds", "Reactor/ResonanceHint", "Debug/FxGalleryKey", "Debug/FxGalleryBackKey" };
+                                              "Reactor/SafeWindow", "Reactor/MinSafeSeconds", "Reactor/HandleTiming", "Reactor/PulsesPerLight", "Reactor/BurnInterval", "Reactor/EscalateMaxSeconds", "Reactor/EscalateMinSeconds", "Reactor/ResonanceHint", "Debug/FxGalleryKey", "Debug/FxGalleryBackKey", "Weapons/RailGunBeamScale" };
         private void RemoveRetiredSettings()
         {
             try

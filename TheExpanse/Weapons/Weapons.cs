@@ -38,6 +38,7 @@ namespace TheExpanse
             WeaponWheel.Reset();
             WeaponMounts.Reset();
             PdcFire.Reset();
+            RailGun.Reset();
         }
 
         // Every frame while seated (from FlightSeat.Tick, before the flight controls are read).
@@ -51,7 +52,7 @@ namespace TheExpanse
             }
             WeaponMounts.LogOnce();
             WeaponWheel.Tick();
-            if (!WeaponWheel.Open) { Pdc.ReadAim(); PdcFire.ReadInput(); }
+            if (!WeaponWheel.Open) { Pdc.ReadAim(); PdcFire.ReadInput(); RailGun.ReadInput(); }
             if (WeaponWheel.Open) return;
             // 1-4 as on the suit, not with Alt (setup mode's keys)
             if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) return;
@@ -76,6 +77,7 @@ namespace TheExpanse
         {
             Pdc.Frame();
             PdcFire.Frame();
+            RailGun.Frame();
         }
     }
 }
