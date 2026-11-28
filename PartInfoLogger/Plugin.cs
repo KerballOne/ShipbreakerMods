@@ -34,6 +34,10 @@ namespace PartInfoLogger
         internal static ConfigEntry<int> BayGeometryMaxVerts = null!;
         internal static ConfigEntry<KeyCode> CensusHotkey = null!;
         internal static ConfigEntry<KeyCode> NetworkHotkey = null!;
+        internal static ConfigEntry<KeyCode> PartInspectorHotkey = null!;
+        internal static ConfigEntry<float> PartInspectorRange = null!;
+        internal static ConfigEntry<float> PartInspectorOverlaySeconds = null!;
+        internal static ConfigEntry<int> PartInspectorFontSize = null!;
         internal static ConfigEntry<float> SpawnSnapshotDelay = null!;
         internal static ConfigEntry<string> SpawnLooseExpected = null!;
         internal static ConfigEntry<float> FireWatchSeconds = null!;
@@ -168,9 +172,17 @@ namespace PartInfoLogger
                 "Key that writes joint_census_live.csv (every part's jointed neighbours as they are at that moment, same " +
                 "columns as joint_census_spawn.csv). Press again to overwrite. None disables it.");
             NetworkHotkey = Config.Bind(
-                "ElectricNetwork", "Hotkey", KeyCode.F9,
+                "ElectricNetwork", "Hotkey", KeyCode.F8,
                 "Key that writes machine_network.csv (every electricity/cryo/fuel machine part: role, what it is receiving " +
                 "from right now, hazard components, MachinePartActions state) and logs breaker/generator state. None disables it.");
+            PartInspectorHotkey = Config.Bind(
+                "PartInspector", "Hotkey", KeyCode.F9,
+                "Key that shows info on the part under the crosshair: name, hierarchy path, SP / joint type, mass, yankable, " +
+                "cut rating, structure group and every jointed neighbour, in the upper left of the screen and in the log. " +
+                "Press on empty space to clear. None disables it.");
+            PartInspectorRange = Config.Bind("PartInspector", "Range", 50f, "How far the F9 ray reaches, in metres.");
+            PartInspectorOverlaySeconds = Config.Bind("PartInspector", "OverlaySeconds", 60f, "How long the on-screen panel stays up.");
+            PartInspectorFontSize = Config.Bind("PartInspector", "FontSize", 22, "Font size of the on-screen panel.");
             SpawnSnapshotDelay = Config.Bind(
                 "SpawnDiagnostics", "SnapshotDelaySeconds", 1.5f,
                 "Seconds after gameplay start before the spawn snapshot is taken.");
@@ -314,8 +326,11 @@ namespace PartInfoLogger
         static bool s_lastGreetingShowing;
         static string? s_lastGreetingNarrativeAsset;
 
+        private void OnGUI() => PartInspector.OnGUI();
+
         private void Update()
         {
+            PartInspector.Tick();
             PickupInspector.Tick();
             SpawnDiagnostics.Tick();
             PerfProbe.Tick();

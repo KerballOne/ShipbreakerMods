@@ -38,6 +38,10 @@ namespace PartInfoLogger
             public string Flags = "", Path = "", Verdict = "";
             // Exact joint graph: entity index of this part and of every jointed neighbour (names repeat, indices do not).
             public string NeighbourIds = "";
+            // Yank = the game's own grapple check (StructureHelpers.TryGetBreakableJointComponent with GrappleThrow):
+            // a joint of this part (or its structure group) tears when grapple-thrown. Sp = its StructurePartAsset name.
+            public bool Yank;
+            public string Sp = "";
         }
 
         const float MovedMeters = 0.15f;
@@ -147,13 +151,15 @@ namespace PartInfoLogger
             using var connected = new NativeList<Entity>(Allocator.Temp);
             var sb = new System.Text.StringBuilder();
             // New columns are appended after Flags so existing readers of the first eight keep working.
-            sb.AppendLine("PartName,Jsa,WorldPos,Integrity,IntegrityMax,JointedNeighbours,NeighbourNames,Flags,Verdict,Active,MeshVerts,ChildParts,ChildPartsJointed,Path,Id,NeighbourIds");
+            sb.AppendLine("PartName,Jsa,WorldPos,Integrity,IntegrityMax,JointedNeighbours,NeighbourNames,Flags,Verdict,Active,MeshVerts,ChildParts,ChildPartsJointed,Path,Id,NeighbourIds,Yank,Sp");
             int isolated = 0;
             var byPart = new Dictionary<StructurePart, Rec>(parts.Length);
             foreach (var part in parts)
             {
                 var r = new Rec { Part = part, Name = part.gameObject.name.Replace("(Clone)", "").Trim(), Pos0 = part.transform.position };
                 r.Jsa = part.StructurePartAsset?.Data?.JointSetupAsset?.name ?? "";
+                try { r.Sp = part.StructurePartAsset?.name ?? ""; } catch { }
+                try { r.Yank = StructureHelpers.TryGetBreakableJointComponent(part, BreakableJointComponent.ForceAppliedBy.GrappleThrow, out _); } catch { }
                 var flags = new List<string>();
                 if (EntityBlueprintComponent.IsValid(part.EntityBlueprintComponent))
                 {
@@ -215,7 +221,7 @@ namespace PartInfoLogger
                 catch { }
                 r.Verdict = Verdict(r, loose);
                 counts[r.Verdict] = counts.TryGetValue(r.Verdict, out var n) ? n + 1 : 1;
-                sb.AppendLine($"{Csv(r.Name)},{Csv(r.Jsa)},{P(r.Pos0)},{r.Integrity0:F3},{r.IntegrityMax:F3},{r.NeighbourCount},{Csv(r.Neighbours)},{r.Flags},{r.Verdict},{(r.Active ? 1 : 0)},{r.MeshVerts},{r.ChildParts},{r.ChildPartsJointed},{Csv(r.Path)},{(r.HasEntity ? r.Entity.Index : -1)},{r.NeighbourIds}");
+                sb.AppendLine($"{Csv(r.Name)},{Csv(r.Jsa)},{P(r.Pos0)},{r.Integrity0:F3},{r.IntegrityMax:F3},{r.NeighbourCount},{Csv(r.Neighbours)},{r.Flags},{r.Verdict},{(r.Active ? 1 : 0)},{r.MeshVerts},{r.ChildParts},{r.ChildPartsJointed},{Csv(r.Path)},{(r.HasEntity ? r.Entity.Index : -1)},{r.NeighbourIds},{(r.Yank ? 1 : 0)},{Csv(r.Sp)}");
             }
             var path = Path.Combine(outDir, fileName);
             File.WriteAllText(path, sb.ToString());
