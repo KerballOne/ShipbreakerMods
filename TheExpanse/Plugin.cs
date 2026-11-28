@@ -600,8 +600,8 @@ namespace TheExpanse
             ReactorWrongKey = Config.Bind("Debug", "ReactorWrongKey", new KeyboardShortcut(UnityEngine.KeyCode.F11, UnityEngine.KeyCode.LeftShift),
                 "With TestTools on: treats the injector that unbalances the plasma most as disconnected, without touching the ship.");
 
-            QuickSit = Config.Bind("Debug", "QuickSit", true,
-                "For testing: QuickSitKey (or both stick clicks together on a controller), on foot, puts you straight into the ship's nearest seat, wherever you are.");
+            QuickSit = Config.Bind("Debug", "QuickSit", false,
+                "For testing: QuickSitKey, on foot, puts you straight into the ship's nearest seat, wherever you are.");
             QuickSitKey = Config.Bind("Debug", "QuickSitKey", new KeyboardShortcut(UnityEngine.KeyCode.F4),
                 "With QuickSit on: the key that jumps you into the nearest seat.");
 

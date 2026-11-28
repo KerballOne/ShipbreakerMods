@@ -210,7 +210,7 @@ Saving the file while the game is running applies the change within a second.
 - **CarveSize** (40), **ShatterCuts** (3), **DriftSpeed** (20): how much of the bay's frame breaks out per hit, how many cuts shatter a piece, and how fast pieces drift away.
 
 **[Debug]**
-- **QuickSit** (default true), **QuickSitKey** (F4): F4 / both stick clicks puts you straight into the ship's nearest seat, once per level, after the ship has loaded.
+- **QuickSit** (default false), **QuickSitKey** (F4): F4 puts you straight into the ship's nearest seat, once per level, after the ship has loaded.
 - **TestTools** (default false): for testing only. Shows how many nodes are left and the reactor's balance on screen. **KillHalfNodesKey** (F8) destroys half of the nodes; **ReactorRightKey** (F11) and **ReactorWrongKey** (Shift+F11) treat the best or the worst injector as disconnected.
 - **PhysicsCostTestKey** (empty = off): for measuring, logs where the physics time goes over 5 seconds.
 

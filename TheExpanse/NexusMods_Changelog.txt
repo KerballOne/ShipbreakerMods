@@ -12,7 +12,7 @@ Green hexagons mark spilled loot from the seat and on the scanner's Objects scre
 The nose view opens at 2x zoom and zooms up to 8x.
 The stick that picked a wheel slice no longer moves the ship until it is let go.
 The flip and burn's cancel hint shows the right key.
-Quick sit for testing: F4 or both stick clicks put you in the nearest seat once the ship has loaded.
+Quick sit for testing (off by default): F4 puts you in the nearest seat once the ship has loaded.
 
 0.8.0
 Weapon control from the pilot's seat: hold R / Y for the weapon wheel (the suit's tool wheel) or press 1-4: HELM, PDC, TORP, RAIL.

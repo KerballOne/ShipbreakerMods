@@ -129,8 +129,8 @@ namespace TheExpanse
             FindChairs();
             sNearest = NearestChair(sBody!.position, Mathf.Max(0.5f, Plugin.FlightSitDistance.Value));
             if (sNearest != null && controls.GetInputWasPressed(GameplayActions.GameplayActionSet.Interact)) { Sit(sNearest); return; }
-            // for testing: straight into the nearest seat, however far (F4, or both stick clicks together)
-            // once per level: the shortcut from the Hab after spawning (later presses, e.g. stick clicks on foot after
+            // for testing: straight into the nearest seat, however far (F4)
+            // once per level: the shortcut from the Hab after spawning (later presses on foot after
             // standing up, put you straight back in the seat)
             if (Plugin.QuickSit.Value && !sQuickSat && QuickSitPressed())
             {
@@ -277,12 +277,12 @@ namespace TheExpanse
             }
         }
 
+        // The key only (both stick clicks are the flight's brake).
         static bool QuickSitPressed()
         {
-            if (Plugin.QuickSitKey.Value.IsDown()) return true;
-            var pad = InputManager.ActiveDevice;
-            return pad != null && pad.LeftStickButton.IsPressed && pad.RightStickButton.IsPressed
-                   && (pad.LeftStickButton.WasPressed || pad.RightStickButton.WasPressed);
+            if (!Plugin.QuickSitKey.Value.IsDown()) return false;
+            Plugin.Log.LogInfo($"[Flight] quick sit: by the key {Plugin.QuickSitKey.Value}.");
+            return true;
         }
 
         static bool ViewTogglePressed()
